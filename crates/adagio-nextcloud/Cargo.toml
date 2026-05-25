@@ -1,0 +1,41 @@
+[package]
+name = "adagio-nextcloud"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Adagio Nextcloud adapter — WebDAV client and credential management"
+
+[dependencies]
+adagio-core = { path = "../adagio-core" }
+tokio = { workspace = true }
+reqwest = { workspace = true }
+quick-xml = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+sha2 = { workspace = true }
+md-5 = { workspace = true }
+hex = { workspace = true }
+base64 = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+keyring = { workspace = true }
+async-trait = { workspace = true }
+bytes = { workspace = true }
+futures = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+tempfile = "3"
+
+[[test]]
+name = "sync_cycle"
+path = "../../tests/integration/sync_cycle.rs"
+
+[[test]]
+name = "transfer_integration"
+path = "../../tests/integration/transfer.rs"

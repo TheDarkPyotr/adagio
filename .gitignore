@@ -1,0 +1,70 @@
+# Rust
+target/
+debug/
+release/
+**/*.rs.bk
+*.rlib
+Cargo.lock.bak
+
+# SQLx offline query cache (committed intentionally — only ignore build artifacts)
+# .sqlx/  <-- keep this, it's checked in
+
+# Database files (dev only)
+*.db
+*.db-shm
+*.db-wal
+dev-journal.db
+
+# Node.js / Svelte frontend
+node_modules/
+dist/
+build/
+.svelte-kit/
+.vite/
+*.local
+
+# Environment files (credentials must never be committed)
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.tmp
+*~
+
+# IDE
+.vscode/
+.idea/
+*.iml
+*.suo
+*.user
+
+# Tauri
+# Keep src-tauri/gen in source control if generated (Tauri 2.x)
+# target/ above covers the build output
+
+# Criterion benchmark results
+target/criterion/
+
+# Coverage
+lcov.info
+tarpaulin-report.html
+coverage/
+
+# Profiling
+*.prof
+*.profraw
+perf.data
+
+# GitHub Actions local act runner
+.actrc
+
+# Temporary adagio sync files (should never appear in repo)
+.adagio_tmp_*

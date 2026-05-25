@@ -1,0 +1,82 @@
+[workspace]
+members = [
+    "crates/adagio-core",
+    "crates/adagio-nextcloud",
+    "crates/adagio-desktop",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.78"
+authors = ["Adagio Contributors"]
+license = "GPL-3.0-or-later"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io", "rt"] }
+
+# HTTP / WebDAV
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
+quick-xml = { version = "0.36", features = ["serialize", "async-tokio"] }
+
+# Database
+sqlx = { version = "0.8", default-features = false, features = ["sqlite", "runtime-tokio", "macros", "migrate", "chrono"] }
+
+# Filesystem watching
+notify = { version = "6", default-features = false, features = ["macos_kqueue"] }
+notify-debouncer-full = { version = "0.3" }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Error handling
+thiserror = "1"
+anyhow = "1"
+
+# Logging / tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-appender = "0.2"
+
+# Cryptography / checksums
+sha2 = "0.10"
+md-5 = "0.10"
+hex = "0.4"
+base64 = "0.22"
+
+# Date/time
+chrono = { version = "0.4", features = ["serde"] }
+
+# UUIDs
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Concurrency utilities
+dashmap = "6"
+
+# OS keychain
+# sync-secret-service: accessed via spawn_blocking to avoid blocking the executor
+keyring = { version = "3", features = ["sync-secret-service"] }
+
+# Async trait
+async-trait = "0.1"
+
+# Byte buffers and streaming
+bytes = "1"
+futures = "0.3"
+
+# Criterion benchmarks
+criterion = { version = "0.5", features = ["async_tokio"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"
+
+[profile.dev]
+opt-level = 0
+debug = true

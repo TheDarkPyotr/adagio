@@ -40,7 +40,24 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+Verify each gate; mark ✅ pass / ❌ fail / N/A:
+
+| Gate | Principle | Status |
+|------|-----------|--------|
+| Tests authored and FAIL before implementation begins | I. Test-First | |
+| All public Rust items have `///` doc comments | II. Documentation as Code | |
+| ADR recorded in `docs/adr/` for significant design decisions | II. Documentation as Code | |
+| Structured logging added to all new sync/network operations | III. Observability | |
+| No `println!` in production code paths | III. Observability | |
+| New feature implemented as independent crate/module with no direct coupling to core | IV. Extensibility | |
+| Cross-module calls go through defined trait/interface contracts | IV. Extensibility | |
+| Idle memory budget <100 MB RSS confirmed or N/A for this feature | V. Performance-Oriented | |
+| UI actions provide feedback within 100 ms confirmed or N/A | V. Performance-Oriented | |
+| Benchmarks added for any hot-path changes (sync diff, file I/O, network) | V. Performance-Oriented | |
+| `cargo clippy -- -D warnings` passes | Dev Workflow | |
+| `cargo fmt --check` passes | Dev Workflow | |
+| All `unsafe` blocks have `// SAFETY:` comments | Dev Workflow | |
+| All three platform CI targets (Linux, macOS, Windows) pass | Technology | |
 
 ## Project Structure
 

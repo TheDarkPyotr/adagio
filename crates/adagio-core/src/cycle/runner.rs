@@ -1,0 +1,201 @@
+use crate::cycle::SyncCycle;
+use crate::journal::Journal;
+use crate::remote::RemoteClient;
+use crate::types::{PairId, SyncPair};
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
+use tracing::{info, warn};
+
+/// Background sync loop for a single sync pair.
+///
+/// Holds the handles needed to trigger an immediate cycle or stop the runner.
+/// The actual tokio task is spawned on construction and runs until cancelled.
+pub struct PairRunner {
+    /// The pair this runner serves.
+    pub pair_id: PairId,
+    cancel: CancellationToken,
+    trigger_tx: mpsc::Sender<()>,
+    handle: tokio::task::JoinHandle<()>,
+}
+
+impl PairRunner {
+    /// Spawn a background sync loop for `pair`.
+    ///
+    /// Runs `SyncCycle::run` on startup (if `pair.scan_on_startup`) and then
+    /// on each interval tick or explicit trigger. The loop exits cleanly when
+    /// the returned `PairRunner` is stopped or dropped.
+    pub fn spawn(
+        pair: Arc<SyncPair>,
+        client: Arc<dyn RemoteClient>,
+        journal: Arc<dyn Journal>,
+    ) -> Self {
+        let cancel = CancellationToken::new();
+        let (trigger_tx, mut trigger_rx) = mpsc::channel::<()>(1);
+        let pair_id = pair.id.clone();
+
+        let cancel_child = cancel.child_token();
+        let handle = tokio::spawn(async move {
+            let interval_secs = pair.scan_interval_secs.max(1);
+            let mut ticker = tokio::time::interval(Duration::from_secs(interval_secs));
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            // Consume the immediate first tick so the interval starts from now.
+            ticker.tick().await;
+
+            if pair.scan_on_startup {
+                run_cycle(&pair, &*client, &*journal).await;
+            }
+
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = cancel_child.cancelled() => {
+                        info!(pair_id = %pair.id, "pair runner stopped");
+                        break;
+                    }
+                    _ = ticker.tick() => {
+                        info!(pair_id = %pair.id, "scheduled sync cycle starting");
+                        run_cycle(&pair, &*client, &*journal).await;
+                    }
+                    Some(()) = trigger_rx.recv() => {
+                        // Drain queued triggers so we run exactly one cycle.
+                        while trigger_rx.try_recv().is_ok() {}
+                        info!(pair_id = %pair.id, "triggered sync cycle starting");
+                        run_cycle(&pair, &*client, &*journal).await;
+                    }
+                }
+            }
+        });
+
+        Self {
+            pair_id,
+            cancel,
+            trigger_tx,
+            handle,
+        }
+    }
+
+    /// Send an immediate sync trigger. Fire-and-forget; returns `false` if the
+    /// runner's channel is full (a cycle is already queued).
+    pub fn trigger(&self) -> bool {
+        self.trigger_tx.try_send(()).is_ok()
+    }
+
+    /// Cancel the runner and abort its task. Non-blocking.
+    pub fn stop(self) {
+        self.cancel.cancel();
+        self.handle.abort();
+    }
+}
+
+async fn run_cycle(pair: &SyncPair, client: &dyn RemoteClient, journal: &dyn Journal) {
+    let cycle = SyncCycle {
+        pair,
+        client,
+        journal,
+    };
+    match cycle.run().await {
+        Ok(report) => {
+            info!(
+                pair_id = %pair.id,
+                uploaded = report.uploaded,
+                downloaded = report.downloaded,
+                errors = report.errors,
+                "sync cycle completed"
+            );
+        }
+        Err(e) => {
+            warn!(pair_id = %pair.id, error = %e, "sync cycle failed");
+        }
+    }
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::journal::sqlite::SqliteJournal;
+    use crate::remote::mock::MockRemoteClient;
+    use crate::types::{AccountId, LocalPath, PairStatus, RemotePath};
+    use sqlx::sqlite::{
+        SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous,
+    };
+    use std::str::FromStr;
+    use tempfile::TempDir;
+
+    async fn make_journal() -> Arc<SqliteJournal> {
+        let opts = SqliteConnectOptions::from_str("sqlite::memory:")
+            .unwrap()
+            .create_if_missing(true)
+            .journal_mode(SqliteJournalMode::Memory)
+            .synchronous(SqliteSynchronous::Off)
+            .foreign_keys(true);
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(opts)
+            .await
+            .unwrap();
+        SqliteJournal::run_migrations(&pool).await.unwrap();
+        Arc::new(SqliteJournal::new(pool))
+    }
+
+    fn make_pair(local_root: &std::path::Path) -> Arc<SyncPair> {
+        Arc::new(SyncPair {
+            id: PairId::new(),
+            account_id: AccountId::new(),
+            local_root: LocalPath::new(local_root),
+            remote_root: RemotePath::new(""),
+            status: PairStatus::Idle,
+            exclude_patterns: vec![],
+            selective_paths: vec![],
+            created_at: chrono::Utc::now(),
+            last_synced_at: None,
+            scan_interval_secs: 3600,
+            scan_on_startup: false,
+            max_upload_concurrency: 3,
+            max_download_concurrency: 3,
+        })
+    }
+
+    #[tokio::test]
+    async fn runner_spawns_and_stops_cleanly() {
+        let dir = TempDir::new().unwrap();
+        let pair = make_pair(dir.path());
+        let client = Arc::new(MockRemoteClient::new());
+        let journal = make_journal().await;
+        let runner = PairRunner::spawn(pair, client, journal);
+        // stop must not panic or deadlock
+        runner.stop();
+    }
+
+    #[tokio::test]
+    async fn trigger_returns_true_when_runner_is_alive() {
+        let dir = TempDir::new().unwrap();
+        let pair = make_pair(dir.path());
+        let client = Arc::new(MockRemoteClient::new());
+        let journal = make_journal().await;
+        let runner = PairRunner::spawn(pair, client, journal);
+        assert!(
+            runner.trigger(),
+            "trigger should succeed while runner is alive"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        runner.stop();
+    }
+
+    #[tokio::test]
+    async fn runner_with_scan_on_startup_runs_cycle() {
+        let dir = TempDir::new().unwrap();
+        let mut pair = (*make_pair(dir.path())).clone();
+        pair.scan_on_startup = true;
+        let client = Arc::new(MockRemoteClient::new());
+        let journal = make_journal().await;
+        // Spawn and give the startup cycle time to complete
+        let runner = PairRunner::spawn(Arc::new(pair), client, journal);
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        runner.stop();
+        // No assertion other than "didn't panic" — verifies run_cycle is called without error
+    }
+}
