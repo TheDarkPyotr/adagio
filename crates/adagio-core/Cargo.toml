@@ -1,0 +1,65 @@
+[package]
+name = "adagio-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Adagio sync engine — core logic, traits, and journal"
+
+[dependencies]
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing-appender = { workspace = true }
+sqlx = { workspace = true }
+notify = { workspace = true }
+notify-debouncer-full = { workspace = true }
+sha2 = { workspace = true }
+md-5 = { workspace = true }
+hex = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+dashmap = { workspace = true }
+async-trait = { workspace = true }
+bytes = { workspace = true }
+futures = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+criterion = { workspace = true }
+tempfile = "3"
+uuid = { workspace = true }
+
+[[test]]
+name = "journal_contract"
+path = "../../tests/contract/journal.rs"
+
+[[test]]
+name = "remote_client_contract"
+path = "../../tests/contract/remote_client.rs"
+
+[[test]]
+name = "conflict_integration"
+path = "../../tests/integration/conflict.rs"
+
+[[test]]
+name = "error_recovery"
+path = "../../tests/integration/error_recovery.rs"
+
+[[bench]]
+name = "reconciler"
+harness = false
+
+[[bench]]
+name = "checksum"
+harness = false
+
+[[bench]]
+name = "transfer_throughput"
+harness = false
