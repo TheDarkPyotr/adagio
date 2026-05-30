@@ -12,7 +12,7 @@ export interface SidebarAccount {
   color: string;
 }
 
-export default function Sidebar({ selected, onSelect, accounts, activeAccountId, onSwitchAccount, onAddAccount, onRemoveAccount, pairs, syncStatus }: {
+export default function Sidebar({ selected, onSelect, accounts, activeAccountId, onSwitchAccount, onAddAccount, onRemoveAccount, pairs, activePairId, onSelectPair, syncStatus }: {
   selected: Section;
   onSelect: (s: Section) => void;
   accounts: SidebarAccount[];
@@ -21,6 +21,8 @@ export default function Sidebar({ selected, onSelect, accounts, activeAccountId,
   onAddAccount: () => void;
   onRemoveAccount: (id: string) => void;
   pairs: PairDto[];
+  activePairId: string | null;
+  onSelectPair: (id: string) => void;
   syncStatus: SyncStatusDto | null;
 }) {
   const [dropOpen, setDropOpen] = useState(false);
@@ -88,7 +90,17 @@ export default function Sidebar({ selected, onSelect, accounts, activeAccountId,
         {pairs.map(pair => {
           const name = pair.local_root.split('/').filter(Boolean).pop() ?? pair.local_root;
           const isSyncing = syncStatus?.status === 'syncing';
-          return <PinnedFolder key={pair.id} name={name} status={isSyncing ? 'sync' : 'ok'} />;
+          const isActive = pair.id === activePairId;
+          return (
+            <PinnedFolder
+              key={pair.id}
+              name={name}
+              status={isSyncing ? 'sync' : 'ok'}
+              active={isActive}
+              isVfs={pair.vfs_enabled}
+              onClick={() => { onSelectPair(pair.id); onSelect('all'); }}
+            />
+          );
         })}
         {pairs.length === 0 && <div style={{ padding: '6px 9px', fontSize: 13, color: 'var(--ink-muted)' }}>No folders yet</div>}
       </SidebarSection>
@@ -162,11 +174,16 @@ function SidebarItem({ icon, label, badge, id, selected, onSelect }: {
   );
 }
 
-function PinnedFolder({ name, status }: { name: string; status: 'ok' | 'sync' }) {
+function PinnedFolder({ name, status, active, isVfs, onClick }: { name: string; status: 'ok' | 'sync'; active?: boolean; isVfs?: boolean; onClick?: () => void }) {
+  const [h, setH] = useState(false);
   return (
-    <div style={{ padding: '6px 9px', display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: 'var(--ink-soft)' }}>
+    <div
+      onClick={onClick}
+      onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
+      style={{ padding: '6px 9px', display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: active ? 'var(--ink)' : 'var(--ink-soft)', cursor: 'pointer', borderRadius: 'var(--r-2)', background: active ? 'color-mix(in srgb, var(--ink) 8%, transparent)' : h ? 'color-mix(in srgb, var(--ink) 4%, transparent)' : 'transparent', margin: '0 4px' }}>
       <div style={{ width: 4, height: 4, borderRadius: 2, background: status === 'sync' ? 'var(--clay)' : 'var(--good)', flexShrink: 0 }}/>
-      <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</span>
+      <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: active ? 500 : 400 }}>{name}</span>
+      {isVfs && <span style={{ fontSize: 9, fontFamily: 'var(--mono)', background: 'var(--clay)', color: '#fff', borderRadius: 3, padding: '1px 4px', letterSpacing: '0.04em', flexShrink: 0 }}>VFS</span>}
       {status === 'sync' && <SpinDot color="var(--clay)" />}
     </div>
   );

@@ -158,6 +158,7 @@ pub async fn dispatch(req: DaemonRequest, state: &DaemonProcess) -> Result<Daemo
                         "remote_root": p.remote_root.as_str(),
                         "scan_interval_secs": p.scan_interval_secs,
                         "selective_paths": p.selective_paths.iter().map(|r| r.as_str()).collect::<Vec<_>>(),
+                        "vfs_enabled": p.vfs_enabled,
                     })
                 })
                 .collect();
@@ -168,6 +169,9 @@ pub async fn dispatch(req: DaemonRequest, state: &DaemonProcess) -> Result<Daemo
             account_id,
             local_root,
             remote_root,
+            vfs_enabled,
+            vfs_cache_max_bytes,
+            vfs_eviction_threshold_bytes,
         } => {
             use adagio_core::types::{
                 AccountId, LocalPath, PairId, PairStatus, RemotePath, SyncPair,
@@ -191,9 +195,9 @@ pub async fn dispatch(req: DaemonRequest, state: &DaemonProcess) -> Result<Daemo
                 bulk_upload_workers: 8,
                 bulk_upload_threshold_files: 50,
                 bulk_upload_chunk_threshold_bytes: 10 * 1024 * 1024,
-                vfs_enabled: false,
-                vfs_cache_max_bytes: 20 * 1024 * 1024 * 1024,
-                vfs_eviction_threshold_bytes: 5 * 1024 * 1024 * 1024,
+                vfs_enabled,
+                vfs_cache_max_bytes,
+                vfs_eviction_threshold_bytes,
             };
             let dto = serde_json::json!({
                 "id": pair.id.to_string(),
@@ -202,6 +206,7 @@ pub async fn dispatch(req: DaemonRequest, state: &DaemonProcess) -> Result<Daemo
                 "remote_root": remote_root,
                 "scan_interval_secs": pair.scan_interval_secs,
                 "selective_paths": [],
+                "vfs_enabled": pair.vfs_enabled,
             });
             {
                 let mut pairs = state.pairs.write().await;
@@ -212,6 +217,17 @@ pub async fn dispatch(req: DaemonRequest, state: &DaemonProcess) -> Result<Daemo
             let accounts = state.accounts.list().map_err(|e| e.to_string())?;
             if let Some(account) = accounts.iter().find(|a| a.id == pair.account_id) {
                 let _ = state.journal.register_pair(account, &pair).await;
+            }
+
+            // Start the sync runner immediately — don't wait for daemon restart.
+            if let Some(client) = build_client(&state.accounts, &pair).await {
+                let client = std::sync::Arc::new(client);
+                if pair.vfs_enabled {
+                    let provider = adagio_vfs::create_platform_provider();
+                    state.engine.start_vfs_pair(pair.clone(), client, state.journal.clone(), provider);
+                } else {
+                    state.engine.start_pair(pair.clone(), client, state.journal.clone(), None).await;
+                }
             }
 
             save_config(state).await?;
@@ -240,15 +256,16 @@ pub async fn dispatch(req: DaemonRequest, state: &DaemonProcess) -> Result<Daemo
             relative_path,
         } => {
             use adagio_core::types::{PairId, RelativePath};
+            use adagio_core::vfs::types::VfsState;
             let pid = PairId(pair_id.clone());
 
-            // Find the pair to get its local_root.
-            let local_root = {
+            // Find the pair to get its local_root and vfs_enabled flag.
+            let (local_root, vfs_enabled) = {
                 let pairs = state.pairs.read().await;
-                pairs
+                let p = pairs
                     .get_pair(&pid)
-                    .map(|p| p.local_root.0.clone())
-                    .ok_or_else(|| format!("pair {pair_id} not found"))?
+                    .ok_or_else(|| format!("pair {pair_id} not found"))?;
+                (p.local_root.0.clone(), p.vfs_enabled)
             };
 
             // Strip leading '/' so frontend's "/" becomes "" (root level).
@@ -258,6 +275,81 @@ pub async fn dispatch(req: DaemonRequest, state: &DaemonProcess) -> Result<Daemo
                 .trim_start_matches('/')
                 .to_string();
 
+            if vfs_enabled {
+                // VFS pair: serve entries from vfs_cache_metadata (journal),
+                // not from the local filesystem. FUSE makes the directory
+                // read-accessible, but we want remote metadata (size, mtime)
+                // and VFS state for the status column.
+                let all_entries = state.journal.all_vfs_entries(&pid).await
+                    .map_err(|e| e.to_string())?;
+
+                // Collect unique direct children of `sub`.
+                let mut seen: std::collections::HashMap<String, serde_json::Value> = std::collections::HashMap::new();
+                for entry in &all_entries {
+                    let p = entry.path.as_str();
+                    let child_name = if sub.is_empty() {
+                        let first = p.split('/').next().unwrap_or(p);
+                        first.to_string()
+                    } else {
+                        let prefix = format!("{sub}/");
+                        if !p.starts_with(&prefix) { continue; }
+                        let rest = &p[prefix.len()..];
+                        rest.split('/').next().unwrap_or(rest).to_string()
+                    };
+                    if child_name.is_empty() { continue; }
+
+                    let rel_str = if sub.is_empty() {
+                        child_name.clone()
+                    } else {
+                        format!("{sub}/{child_name}")
+                    };
+                    let is_dir = entry.path.as_str().len() > rel_str.len()
+                        && entry.path.as_str()[rel_str.len()..].starts_with('/');
+
+                    if seen.contains_key(&child_name) {
+                        // Mark as dir if any entry under this name is deeper.
+                        if is_dir {
+                            if let Some(v) = seen.get_mut(&child_name) {
+                                v["is_dir"] = serde_json::json!(true);
+                            }
+                        }
+                        continue;
+                    }
+
+                    let status = match &entry.state {
+                        VfsState::CloudOnly => "cloud",
+                        VfsState::Pinned { .. } => "pin",
+                        VfsState::LocallyAvailable { .. } => "ok",
+                    };
+                    let size = if is_dir { 0 } else { entry.remote_size };
+                    let mtime = entry.remote_mtime.timestamp_millis();
+
+                    seen.insert(child_name.clone(), serde_json::json!({
+                        "path": format!("/{rel_str}"),
+                        "name": child_name,
+                        "is_dir": is_dir,
+                        "size": size,
+                        "mtime": mtime,
+                        "status": status,
+                        "etag": serde_json::Value::Null,
+                        "item_count": serde_json::Value::Null,
+                    }));
+                }
+                let mut dtos: Vec<serde_json::Value> = seen.into_values().collect();
+                dtos.sort_by(|a, b| {
+                    let a_dir = a["is_dir"].as_bool().unwrap_or(false);
+                    let b_dir = b["is_dir"].as_bool().unwrap_or(false);
+                    match (b_dir, a_dir) {
+                        (true, false) => std::cmp::Ordering::Greater,
+                        (false, true) => std::cmp::Ordering::Less,
+                        _ => a["name"].as_str().unwrap_or("").to_lowercase()
+                            .cmp(&b["name"].as_str().unwrap_or("").to_lowercase()),
+                    }
+                });
+                return Ok(DaemonResponse::SyncedFiles(dtos));
+            }
+
+            // Copy-sync pair: read local filesystem.
             let target_dir = if sub.is_empty() {
                 local_root.clone()
             } else {
@@ -705,19 +797,34 @@ pub async fn dispatch(req: DaemonRequest, state: &DaemonProcess) -> Result<Daemo
             pinned,
         } => {
             use adagio_core::types::PairId;
-            use chrono::Utc;
             let pid = PairId(pair_id);
+            // Paths from the UI always carry a leading '/'; strip it before
+            // looking up vfs_cache_metadata rows which store bare relative paths.
+            let path = path.trim_start_matches('/').to_string();
+
             if pinned {
-                state
-                    .journal
-                    .pin_path(&pid, &path, Utc::now())
-                    .await
-                    .map_err(|e| e.to_string())?;
+                // Full pin: writes DB row + spawns background download.
+                let pair = {
+                    let pairs = state.pairs.read().await;
+                    pairs.get_pair(&pid).cloned()
+                        .ok_or_else(|| format!("pair {pid} not found"))?
+                };
+                let client = build_client(&state.accounts, &pair).await
+                    .ok_or_else(|| "credentials unavailable for this pair".to_string())?;
+                let provider = adagio_vfs::create_platform_provider();
+                adagio_core::vfs::pin_path(
+                    &pid,
+                    &path,
+                    state.journal.clone(),
+                    std::sync::Arc::new(client),
+                    &pair,
+                    provider,
+                )
+                .await
+                .map_err(|e| e.to_string())?;
             } else {
-                state
-                    .journal
-                    .unpin_path(&pid, &path)
-                    .await
+                // Unpin: remove the pin row; file stays locally available.
+                state.journal.unpin_path(&pid, &path).await
                     .map_err(|e| e.to_string())?;
             }
             Ok(DaemonResponse::Unit {})
@@ -725,33 +832,36 @@ pub async fn dispatch(req: DaemonRequest, state: &DaemonProcess) -> Result<Daemo
 
         DaemonRequest::EvictVfsFile { pair_id, path } => {
             use adagio_core::types::PairId;
-            use adagio_core::vfs::types::VfsState;
             let pid = PairId(pair_id);
-            // Guard: pinned paths cannot be evicted.
-            if state
-                .journal
-                .is_path_pinned(&pid, &path)
-                .await
-                .unwrap_or(false)
-            {
-                return Err("path is pinned — unpin before evicting".to_string());
-            }
-            // Set state to cloud_only and zero cache_bytes.
-            if let Ok(Some(mut entry)) = state.journal.get_vfs_entry(&pid, &path).await {
-                entry.state = VfsState::CloudOnly;
-                entry.cache_bytes = 0;
-                state
-                    .journal
-                    .upsert_vfs_entry(&entry)
-                    .await
-                    .map_err(|e| e.to_string())?;
-            }
+            let path = path.trim_start_matches('/').to_string();
+            // Full evict: removes local file content + updates journal state.
+            let provider = adagio_vfs::create_platform_provider();
+            adagio_core::vfs::evict_file(
+                &pid,
+                &path,
+                &*state.journal,
+                provider.as_ref(),
+            )
+            .await
+            .map_err(|e| e.to_string())?;
             Ok(DaemonResponse::Unit {})
         }
     }
 }
 
 /// Resolve account by ID, or pick the first if `account_id` is None.
+/// Build a Nextcloud client for a pair, returning None if credentials are unavailable.
+async fn build_client(
+    accounts: &adagio_core::account_manager::AccountManager,
+    pair: &adagio_core::types::SyncPair,
+) -> Option<adagio_nextcloud::client::NextcloudClient> {
+    let account = accounts.list().ok()?.into_iter().find(|a| a.id == pair.account_id)?;
+    let key = account.keychain_service_key.clone();
+    let password = tokio::task::spawn_blocking(move || adagio_nextcloud::auth::retrieve_credentials(&key))
+        .await.ok()?.ok()??;
+    Some(adagio_nextcloud::client::NextcloudClient::new(&account.server_url, &account.username, &password))
+}
+
 fn resolve_account(
     accounts: &[adagio_core::types::Account],
     account_id: Option<&str>,
@@ -821,6 +931,9 @@ fn build_saved_config(
             "bulk_upload_workers": p.bulk_upload_workers,
             "bulk_upload_threshold_files": p.bulk_upload_threshold_files,
             "bulk_upload_chunk_threshold_bytes": p.bulk_upload_chunk_threshold_bytes,
+            "vfs_enabled": p.vfs_enabled,
+            "vfs_cache_max_bytes": p.vfs_cache_max_bytes,
+            "vfs_eviction_threshold_bytes": p.vfs_eviction_threshold_bytes,
         })).collect::<Vec<_>>(),
     })
 }

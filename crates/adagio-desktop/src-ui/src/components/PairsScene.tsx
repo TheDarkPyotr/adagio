@@ -12,6 +12,7 @@ export default function PairsScene({ pairs, account, onBack, onPairsChange }: {
   const [showAdd, setShowAdd] = useState(false);
   const [localRoot, setLocalRoot] = useState('');
   const [remoteRoot, setRemoteRoot] = useState('/');
+  const [vfsEnabled, setVfsEnabled] = useState(false);
   const [adding, setAdding] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [addError, setAddError] = useState<string | null>(null);
@@ -58,11 +59,13 @@ export default function PairsScene({ pairs, account, onBack, onPairsChange }: {
         account_id: account.id,
         local_root: localRoot.trim(),
         remote_root: remoteRoot.trim() || '/',
+        vfs_enabled: vfsEnabled,
       });
       onPairsChange([...pairs, pair]);
       setShowAdd(false);
       setLocalRoot('');
       setRemoteRoot('/');
+      setVfsEnabled(false);
     } catch (e: unknown) {
       setAddError(e instanceof Error ? e.message : 'Failed to create pair.');
     }
@@ -174,11 +177,32 @@ export default function PairsScene({ pairs, account, onBack, onPairsChange }: {
                 placeholder="/Adagio"
                 style={INPUT_STYLE}
               />
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 16, cursor: 'pointer', userSelect: 'none' }}>
+                <div
+                  onClick={() => setVfsEnabled(v => !v)}
+                  style={{
+                    width: 36, height: 20, borderRadius: 10, background: vfsEnabled ? 'var(--ink)' : 'var(--hairline)',
+                    position: 'relative', transition: 'background 0.15s', flexShrink: 0, cursor: 'pointer',
+                  }}
+                >
+                  <div style={{
+                    position: 'absolute', top: 3, left: vfsEnabled ? 19 : 3, width: 14, height: 14,
+                    borderRadius: '50%', background: 'var(--paper)', transition: 'left 0.15s',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.18)',
+                  }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>VFS on-demand</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--ink-muted)', marginTop: 2 }}>
+                    Files appear instantly as placeholders; content downloads only when opened.
+                  </div>
+                </div>
+              </label>
               {addError && (
                 <div style={{ fontSize: 12, color: 'var(--clay)', marginTop: 10 }}>{addError}</div>
               )}
               <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
-                <button onClick={() => { setShowAdd(false); setAddError(null); }}
+                <button onClick={() => { setShowAdd(false); setAddError(null); setVfsEnabled(false); }}
                   style={{ background: 'transparent', border: '1px solid var(--hairline)', padding: '7px 16px', borderRadius: 'var(--r-pill)', fontSize: 12.5, cursor: 'pointer', color: 'var(--ink)' }}>
                   Cancel
                 </button>
@@ -233,7 +257,7 @@ function PairRow({ pair, syncing, syncElapsed, lastDuration, deleting, onSync, o
             <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink-muted)', letterSpacing: '0.08em' }}>
               {pair.id.slice(0, 8)}
             </div>
-            {(pair as any).vfs_enabled && (
+            {pair.vfs_enabled && (
               <div style={{ fontSize: 10, fontFamily: 'var(--mono)', background: 'var(--clay)', color: '#fff', borderRadius: 3, padding: '1px 5px', letterSpacing: '0.06em' }}>
                 VFS
               </div>

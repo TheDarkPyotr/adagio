@@ -37,7 +37,16 @@ pub struct CreatePairRequest {
     pub selective_paths: Vec<String>,
     #[serde(default)]
     pub exclude_patterns: Vec<String>,
+    #[serde(default)]
+    pub vfs_enabled: bool,
+    #[serde(default = "default_vfs_cache_bytes")]
+    pub vfs_cache_max_bytes: u64,
+    #[serde(default = "default_vfs_eviction_bytes")]
+    pub vfs_eviction_threshold_bytes: u64,
 }
+
+fn default_vfs_cache_bytes() -> u64 { 20 * 1024 * 1024 * 1024 }
+fn default_vfs_eviction_bytes() -> u64 { 5 * 1024 * 1024 * 1024 }
 
 fn default_scan_interval() -> u64 {
     7200
@@ -79,6 +88,9 @@ pub async fn create_pair(
             account_id: req.account_id,
             local_root: req.local_root,
             remote_root: req.remote_root,
+            vfs_enabled: req.vfs_enabled,
+            vfs_cache_max_bytes: req.vfs_cache_max_bytes,
+            vfs_eviction_threshold_bytes: req.vfs_eviction_threshold_bytes,
         })
         .await
         .map_err(|e| e.to_string())

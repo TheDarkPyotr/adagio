@@ -183,6 +183,12 @@ pub enum PairsCommand {
         /// Account ID to use for this pair.
         #[arg(long)]
         account: String,
+        /// Enable VFS on-demand mode (files appear as placeholders; content downloaded on access).
+        #[arg(long, default_value_t = false)]
+        vfs: bool,
+        /// Maximum local cache size in bytes for VFS mode (default: 20 GB).
+        #[arg(long, default_value_t = 20 * 1024 * 1024 * 1024)]
+        vfs_cache_bytes: u64,
     },
     /// Remove a sync pair.
     Remove {

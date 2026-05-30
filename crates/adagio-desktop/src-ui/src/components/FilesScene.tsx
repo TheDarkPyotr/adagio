@@ -2,8 +2,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { open as shellOpen } from '@tauri-apps/plugin-shell';
 import { Icon, FileGlyph, StatusDot, FlatBtn } from './shared';
-import type { FileStatusDto, SyncStatusDto } from '../tauri';
-import { listSyncedFiles } from '../tauri';
+import type { FileStatusDto, SyncStatusDto, VfsStatsDto } from '../tauri';
+import { listSyncedFiles, getVfsStats, setVfsPin, evictVfsFile } from '../tauri';
 
 function fmtBytes(n: number | null): string {
   if (n === null) return '—';
@@ -24,8 +24,9 @@ interface ContextMenuState {
   file: FileStatusDto & { kind: string };
 }
 
-export default function FilesScene({ pairId, serverHost, currentPath, onPathChange, onShare, onNew, syncStatus, favorites, onToggleFavorite }: {
+export default function FilesScene({ pairId, isVfsPair, serverHost, currentPath, onPathChange, onShare, onNew, syncStatus, favorites, onToggleFavorite }: {
   pairId: string | null;
+  isVfsPair?: boolean;
   serverHost: string;
   currentPath: string;
   onPathChange: (path: string) => void;
@@ -39,6 +40,8 @@ export default function FilesScene({ pairId, serverHost, currentPath, onPathChan
   const [selected, setSelected] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null);
+  const [vfsStats, setVfsStats] = useState<VfsStatsDto | null>(null);
+  const [vfsAction, setVfsAction] = useState<string | null>(null);
 
   useEffect(() => { setSelected(null); setCtxMenu(null); }, [currentPath]);
 
@@ -73,6 +76,36 @@ export default function FilesScene({ pairId, serverHost, currentPath, onPathChan
     return () => clearInterval(t);
   }, [load]);
 
+  // Poll VFS stats when on a VFS pair.
+  useEffect(() => {
+    if (!pairId || !isVfsPair) { setVfsStats(null); return; }
+    const fetchStats = () => getVfsStats(pairId).then(setVfsStats).catch(() => {});
+    fetchStats();
+    const t = setInterval(fetchStats, 5000);
+    return () => clearInterval(t);
+  }, [pairId, isVfsPair]);
+
+  const handlePin = useCallback(async (path: string) => {
+    if (!pairId) return;
+    setVfsAction('pin');
+    try { await setVfsPin(pairId, path, true); await load(); } catch {}
+    setVfsAction(null);
+  }, [pairId, load]);
+
+  const handleUnpin = useCallback(async (path: string) => {
+    if (!pairId) return;
+    setVfsAction('unpin');
+    try { await setVfsPin(pairId, path, false); await load(); } catch {}
+    setVfsAction(null);
+  }, [pairId, load]);
+
+  const handleEvict = useCallback(async (path: string) => {
+    if (!pairId) return;
+    setVfsAction('evict');
+    try { await evictVfsFile(pairId, path); await load(); } catch {}
+    setVfsAction(null);
+  }, [pairId, load]);
+
   // breadcrumb segments
   const crumbs: { label: string; path: string }[] = [{ label: serverHost || 'Nextcloud', path: '/' }];
   currentPath.replace(/^\//, '').split('/').filter(Boolean).reduce((acc, p) => {
@@ -100,7 +133,15 @@ export default function FilesScene({ pairId, serverHost, currentPath, onPathChan
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <FlatBtn icon="plus" label="New" onClick={onNew} />
-          <FlatBtn icon="cloud-dl" label="Make available offline" />
+          {isVfsPair && selected !== null && files[selected]?.status === 'cloud' && (
+            <FlatBtn icon="cloud-dl" label="Make available offline"
+              onClick={() => handlePin(files[selected].path)} />
+          )}
+          {isVfsPair && selected !== null && files[selected]?.status === 'ok' && (
+            <FlatBtn icon="trash" label="Free up space"
+              onClick={() => handleEvict(files[selected].path)} />
+          )}
+          {!isVfsPair && <FlatBtn icon="cloud-dl" label="Make available offline" />}
           <FlatBtn icon="share" label="Share" primary onClick={() => {
             if (selected !== null) onShare(files[selected].path);
           }} disabled={selected === null} />
@@ -140,8 +181,22 @@ export default function FilesScene({ pairId, serverHost, currentPath, onPathChan
       <div style={{ height: 32, flexShrink: 0, borderTop: '1px solid var(--hairline)', background: 'var(--paper)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-muted)', letterSpacing: '0.04em' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <span>{files.length} items · {selected !== null ? '1 selected' : 'nothing selected'}</span>
-          <span>·</span>
-          <span>{localGb.toFixed(1)} GB local</span>
+          {isVfsPair && vfsStats ? (
+            <>
+              <span>·</span>
+              <span style={{ color: 'var(--ink-muted)' }}>
+                {vfsStats.cloud_only_count} cloud · {vfsStats.locally_available_count} local · {vfsStats.pinned_count} pinned
+              </span>
+              <span>·</span>
+              <span>{fmtBytes(vfsStats.cached_bytes)} / {fmtBytes(vfsStats.cache_max_bytes)} cached</span>
+              {vfsAction && <span style={{ color: 'var(--clay)' }}>· {vfsAction}…</span>}
+            </>
+          ) : (
+            <>
+              <span>·</span>
+              <span>{localGb.toFixed(1)} GB local</span>
+            </>
+          )}
           {syncStatus?.status === 'syncing' && (
             <>
               <span>·</span>
@@ -167,8 +222,12 @@ export default function FilesScene({ pairId, serverHost, currentPath, onPathChan
           file={ctxMenu.file}
           starred={favorites?.has(ctxMenu.file.path) ?? false}
           serverUrl={serverHost ? `https://${serverHost}` : ''}
+          isVfsPair={isVfsPair}
           onShare={() => { setCtxMenu(null); onShare(ctxMenu.file.path); }}
           onToggleStar={onToggleFavorite ? () => { setCtxMenu(null); onToggleFavorite(ctxMenu.file); } : undefined}
+          onPin={isVfsPair ? () => handlePin(ctxMenu.file.path) : undefined}
+          onUnpin={isVfsPair ? () => handleUnpin(ctxMenu.file.path) : undefined}
+          onEvict={isVfsPair ? () => handleEvict(ctxMenu.file.path) : undefined}
           onClose={() => setCtxMenu(null)}
         />,
         document.body,
@@ -227,14 +286,18 @@ function FileRowItem({ file, selected, starred, onClick, onDblClick, onShare, on
 
 // ── Context Menu ──────────────────────────────────────────────────────────────
 
-function ContextMenu({ x, y, file, starred, serverUrl, onShare, onToggleStar, onClose }: {
+function ContextMenu({ x, y, file, starred, serverUrl, isVfsPair, onShare, onToggleStar, onPin, onUnpin, onEvict, onClose }: {
   x: number;
   y: number;
   file: FileStatusDto & { kind: string };
   starred: boolean;
   serverUrl: string;
+  isVfsPair?: boolean;
   onShare: () => void;
   onToggleStar?: () => void;
+  onPin?: () => void;
+  onUnpin?: () => void;
+  onEvict?: () => void;
   onClose: () => void;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -277,17 +340,35 @@ function ContextMenu({ x, y, file, starred, serverUrl, onShare, onToggleStar, on
       kind: 'item', icon: 'star', label: starred ? 'Unstar' : 'Star',
       onClick: () => { onToggleStar?.(); onClose(); },
     },
-    {
-      kind: 'item', icon: 'cloud-dl', label: 'Make available offline',
+    // VFS-specific actions — shown only for VFS pairs
+    ...(isVfsPair ? [
+      { kind: 'sep' } as MenuItem,
+      ...(file.status === 'cloud' ? [{
+        kind: 'item' as const, icon: 'cloud-dl' as const, label: 'Make available offline',
+        onClick: () => { onPin?.(); onClose(); },
+      }] : []),
+      ...(file.status === 'ok' && !file.is_dir ? [{
+        kind: 'item' as const, icon: 'pin' as const, label: 'Keep always available',
+        onClick: () => { onPin?.(); onClose(); },
+      }, {
+        kind: 'item' as const, icon: 'cloud' as const, label: 'Free up space',
+        onClick: () => { onEvict?.(); onClose(); },
+      }] : []),
+      ...(file.status === 'pin' ? [{
+        kind: 'item' as const, icon: 'cloud' as const, label: 'Remove pin',
+        onClick: () => { onUnpin?.(); onClose(); },
+      }] : []),
+    ] : [{
+      kind: 'item' as const, icon: 'cloud-dl' as const, label: 'Make available offline',
       onClick: () => { onClose(); },
-    },
+    }]),
     { kind: 'sep' },
     {
       kind: 'item', icon: 'trash', label: 'Move to trash',
       danger: true,
       onClick: () => { onClose(); },
     },
-  ];
+  ] satisfies MenuItem[];
 
   return (
     <div

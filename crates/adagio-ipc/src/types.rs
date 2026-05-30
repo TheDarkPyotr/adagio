@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+fn default_vfs_cache_bytes() -> u64 { 20 * 1024 * 1024 * 1024 }
+fn default_vfs_eviction_bytes() -> u64 { 5 * 1024 * 1024 * 1024 }
+
 // ── Request (client → daemon) ─────────────────────────────────────────────────
 
 /// Every RPC method the daemon accepts.
@@ -42,6 +45,12 @@ pub enum DaemonRequest {
         account_id: String,
         local_root: String,
         remote_root: String,
+        #[serde(default)]
+        vfs_enabled: bool,
+        #[serde(default = "default_vfs_cache_bytes")]
+        vfs_cache_max_bytes: u64,
+        #[serde(default = "default_vfs_eviction_bytes")]
+        vfs_eviction_threshold_bytes: u64,
     },
     /// Delete a sync pair, optionally deleting local files.
     DeletePair {

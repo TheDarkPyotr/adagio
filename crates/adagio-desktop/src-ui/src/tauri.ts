@@ -39,12 +39,16 @@ export interface PairDto {
   remote_root: string;
   scan_interval_secs: number;
   selective_paths: string[];
+  vfs_enabled: boolean;
 }
 
 export interface CreatePairRequest {
   account_id: string;
   local_root: string;
   remote_root: string;
+  vfs_enabled?: boolean;
+  vfs_cache_max_bytes?: number;
+  vfs_eviction_threshold_bytes?: number;
 }
 
 export const createPair = (req: CreatePairRequest): Promise<PairDto> =>

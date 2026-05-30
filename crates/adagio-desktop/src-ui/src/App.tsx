@@ -196,7 +196,8 @@ export default function App() {
       }).catch(() => {});
   };
 
-  const firstPair = pairs[0] ?? null;
+  const [activePairId, setActivePairId] = useState<string | null>(null);
+  const activePair = pairs.find(p => p.id === activePairId) ?? pairs[0] ?? null;
   const activeAccount = accounts.find(a => a.id === activeAccountId) ?? accounts[0] ?? null;
   const serverHost = activeAccount ? (() => { try { return new URL(activeAccount.server_url).hostname; } catch { return activeAccount.server_url; } })() : '';
 
@@ -279,12 +280,15 @@ export default function App() {
               onAddAccount={() => setView('add-account')}
               onRemoveAccount={handleRemoveAccount}
               pairs={pairs}
+              activePairId={activePair?.id ?? null}
+              onSelectPair={setActivePairId}
               syncStatus={syncStatus}
             />
             {tab === 'files' ? (
               source === 'all' ? (
                 <FilesScene
-                  pairId={firstPair?.id ?? null}
+                  pairId={activePair?.id ?? null}
+                  isVfsPair={activePair?.vfs_enabled ?? false}
                   serverHost={serverHost}
                   currentPath={filePath}
                   onPathChange={setFilePath}
@@ -297,7 +301,7 @@ export default function App() {
               ) : (
                 <SectionScene
                   section={source}
-                  pairId={firstPair?.id ?? null}
+                  pairId={activePair?.id ?? null}
                   favorites={favorites}
                   allTaggedFiles={allTaggedFiles}
                   pathTags={pathTags}

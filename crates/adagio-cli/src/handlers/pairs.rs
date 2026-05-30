@@ -16,7 +16,9 @@ pub async fn run_pairs(
             local,
             remote,
             account,
-        } => run_pairs_add(client, local, remote, account, json).await,
+            vfs,
+            vfs_cache_bytes,
+        } => run_pairs_add(client, local, remote, account, *vfs, *vfs_cache_bytes, json).await,
         PairsCommand::Remove {
             pair_id,
             delete_local_files,
@@ -53,6 +55,8 @@ async fn run_pairs_add(
     local: &str,
     remote: &str,
     account: &str,
+    vfs_enabled: bool,
+    vfs_cache_max_bytes: u64,
     json: bool,
 ) -> Result<(), CliError> {
     let result = client
@@ -60,6 +64,9 @@ async fn run_pairs_add(
             account_id: account.to_string(),
             local_root: local.to_string(),
             remote_root: remote.to_string(),
+            vfs_enabled,
+            vfs_cache_max_bytes,
+            vfs_eviction_threshold_bytes: vfs_cache_max_bytes / 4,
         })
         .await
         .map_err(|e| CliError::DaemonError(e.to_string()))?;
@@ -67,7 +74,8 @@ async fn run_pairs_add(
         print_json(&result);
     } else {
         let id = result.get("id").and_then(|v| v.as_str()).unwrap_or("?");
-        print_ok(&format!("Pair created: {id}"));
+        let mode = if vfs_enabled { " [VFS on-demand]" } else { "" };
+        print_ok(&format!("Pair created: {id}{mode}"));
     }
     Ok(())
 }
