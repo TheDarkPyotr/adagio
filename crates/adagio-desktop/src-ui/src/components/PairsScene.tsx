@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { Icon } from './shared';
-import type { PairDto, AccountDto } from '../tauri';
-import { createPair, deletePair, triggerSync } from '../tauri';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Icon, SpinDot } from './shared';
+import type { PairDto, AccountDto, SyncStatusDto } from '../tauri';
+import { createPair, deletePair, getStatus, triggerSync } from '../tauri';
 
 export default function PairsScene({ pairs, account, onBack, onPairsChange }: {
   pairs: PairDto[];
@@ -13,16 +13,52 @@ export default function PairsScene({ pairs, account, onBack, onPairsChange }: {
   const [localRoot, setLocalRoot] = useState('');
   const [remoteRoot, setRemoteRoot] = useState('/');
   const [adding, setAdding] = useState(false);
-  const [syncing, setSyncing] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [addError, setAddError] = useState<string | null>(null);
+
+  // Sync state per pair: tracks which pair is currently syncing.
+  const [syncingPair, setSyncingPair] = useState<string | null>(null);
+  // Start timestamp for elapsed-time display.
+  const syncStartRef = useRef<number | null>(null);
+  const [syncElapsed, setSyncElapsed] = useState(0);
+  // Last known duration per pair for ETA estimation.
+  const [lastDuration, setLastDuration] = useState<Record<string, number>>({});
+  // Poll interval handle.
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Elapsed timer handle.
+  const elapsedRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Clear all timers.
+  const clearTimers = useCallback(() => {
+    if (pollRef.current)   { clearInterval(pollRef.current);   pollRef.current   = null; }
+    if (elapsedRef.current){ clearInterval(elapsedRef.current); elapsedRef.current = null; }
+  }, []);
+
+  // Called when a sync cycle finishes: record duration, clear spinners.
+  const onSyncDone = useCallback((pairId: string) => {
+    if (syncStartRef.current !== null) {
+      const duration = (Date.now() - syncStartRef.current) / 1000;
+      setLastDuration(prev => ({ ...prev, [pairId]: Math.max(1, duration) }));
+      syncStartRef.current = null;
+    }
+    setSyncingPair(null);
+    setSyncElapsed(0);
+    clearTimers();
+  }, [clearTimers]);
+
+  // Cleanup on unmount.
+  useEffect(() => () => clearTimers(), [clearTimers]);
 
   const handleAdd = async () => {
     if (!account || !localRoot.trim()) return;
     setAdding(true);
     setAddError(null);
     try {
-      const pair = await createPair({ account_id: account.id, local_root: localRoot.trim(), remote_root: remoteRoot.trim() || '/' });
+      const pair = await createPair({
+        account_id: account.id,
+        local_root: localRoot.trim(),
+        remote_root: remoteRoot.trim() || '/',
+      });
       onPairsChange([...pairs, pair]);
       setShowAdd(false);
       setLocalRoot('');
@@ -43,9 +79,32 @@ export default function PairsScene({ pairs, account, onBack, onPairsChange }: {
   };
 
   const handleSync = async (id: string) => {
-    setSyncing(id);
-    try { await triggerSync(id); } catch {}
-    setSyncing(null);
+    // Trigger the cycle (returns immediately).
+    try { await triggerSync(id); } catch { return; }
+
+    // Start spinner and elapsed counter.
+    syncStartRef.current = Date.now();
+    setSyncingPair(id);
+    setSyncElapsed(0);
+    clearTimers();
+
+    // Elapsed ticker — updates every second.
+    elapsedRef.current = setInterval(() => {
+      setSyncElapsed(s => s + 1);
+    }, 1000);
+
+    // Poll getStatus() every 600ms until the engine returns to idle.
+    // We need fast polling because sync cycles can complete in a few seconds.
+    pollRef.current = setInterval(async () => {
+      try {
+        const status = await getStatus();
+        if (status.status === 'idle' || status.status === 'paused' || status.status === 'error') {
+          onSyncDone(id);
+        }
+      } catch {
+        onSyncDone(id);
+      }
+    }, 600);
   };
 
   return (
@@ -90,7 +149,9 @@ export default function PairsScene({ pairs, account, onBack, onPairsChange }: {
             <PairRow
               key={pair.id}
               pair={pair}
-              syncing={syncing === pair.id}
+              syncing={syncingPair === pair.id}
+              syncElapsed={syncingPair === pair.id ? syncElapsed : 0}
+              lastDuration={lastDuration[pair.id] ?? null}
               deleting={deleting === pair.id}
               onSync={() => handleSync(pair.id)}
               onDelete={() => handleDelete(pair.id)}
@@ -134,14 +195,30 @@ export default function PairsScene({ pairs, account, onBack, onPairsChange }: {
   );
 }
 
-function PairRow({ pair, syncing, deleting, onSync, onDelete }: {
+// ── PairRow ───────────────────────────────────────────────────────────────────
+
+function PairRow({ pair, syncing, syncElapsed, lastDuration, deleting, onSync, onDelete }: {
   pair: PairDto;
   syncing: boolean;
+  syncElapsed: number;
+  lastDuration: number | null;
   deleting: boolean;
   onSync: () => void;
   onDelete: () => void;
 }) {
   const [h, setH] = useState(false);
+
+  // ETA label: time remaining based on last known duration.
+  const etaLabel = (() => {
+    if (!syncing) return null;
+    if (lastDuration !== null && lastDuration > 0) {
+      const remaining = Math.max(0, Math.round(lastDuration - syncElapsed));
+      if (remaining > 0) return `~${remaining}s left`;
+    }
+    // No prior data — just show elapsed.
+    return syncElapsed > 0 ? `${syncElapsed}s` : null;
+  })();
+
   return (
     <div onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
       style={{ padding: '16px 18px', background: h ? 'var(--paper-2)' : 'var(--paper)', border: '1px solid var(--hairline)', borderRadius: 'var(--r-3)', marginBottom: 10, transition: 'background 0.12s' }}>
@@ -156,12 +233,31 @@ function PairRow({ pair, syncing, deleting, onSync, onDelete }: {
             {pair.id.slice(0, 8)}
           </div>
         </div>
+
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          {/* Sync button with spinner + ETA */}
           <button onClick={onSync} disabled={syncing}
-            style={{ background: 'transparent', border: '1px solid var(--hairline)', padding: '6px 12px', borderRadius: 'var(--r-pill)', fontSize: 12, cursor: syncing ? 'wait' : 'pointer', color: 'var(--ink-soft)', fontWeight: 500, opacity: syncing ? 0.5 : 1, display: 'flex', alignItems: 'center', gap: 5, transition: 'opacity 0.12s' }}>
-            <Icon name="refresh" size={12} color="var(--ink-muted)" />
-            {syncing ? 'Syncing…' : 'Sync now'}
+            style={{
+              background: syncing ? 'var(--cream-2)' : 'transparent',
+              border: '1px solid var(--hairline)',
+              padding: '6px 12px',
+              borderRadius: 'var(--r-pill)',
+              fontSize: 12,
+              cursor: syncing ? 'default' : 'pointer',
+              color: syncing ? 'var(--clay)' : 'var(--ink-soft)',
+              fontWeight: 500,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              transition: 'background 0.15s, color 0.15s',
+              minWidth: 88,
+            }}>
+            {syncing
+              ? <><SpinDot color="var(--clay)" /> {etaLabel ?? 'Syncing…'}</>
+              : <><Icon name="refresh" size={12} color="var(--ink-muted)" /> Sync now</>
+            }
           </button>
+
           <button onClick={onDelete} disabled={!!deleting}
             style={{ background: 'transparent', border: '1px solid var(--hairline)', padding: '6px 10px', borderRadius: 'var(--r-pill)', fontSize: 12, cursor: deleting ? 'wait' : 'pointer', color: 'var(--clay)', opacity: deleting ? 0.5 : 1, display: 'flex', alignItems: 'center', transition: 'opacity 0.12s' }}>
             <Icon name="trash" size={13} color="var(--clay)" />
@@ -171,6 +267,8 @@ function PairRow({ pair, syncing, deleting, onSync, onDelete }: {
     </div>
   );
 }
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function PathChip({ label, cloud }: { label: string; cloud?: boolean }) {
   const display = label.replace(/^\/home\/[^/]+/, '~');
