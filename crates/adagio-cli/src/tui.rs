@@ -175,6 +175,15 @@ fn hint(key: &str, label: &str) -> String {
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
+/// Drop guard that restores terminal state even on panic.
+struct TermRestoreGuard;
+impl Drop for TermRestoreGuard {
+    fn drop(&mut self) {
+        let _ = execute!(std::io::stdout(), cursor::Show, cursor::MoveToNextLine(1));
+        let _ = terminal::disable_raw_mode();
+    }
+}
+
 /// Run the interactive live dashboard.
 ///
 /// Falls back to a single status snapshot when stdout is not a TTY (pipe/redirect).
@@ -186,6 +195,9 @@ pub async fn run_dashboard(client: Arc<DaemonClient>) {
 
     terminal::enable_raw_mode().ok();
     execute!(std::io::stdout(), cursor::Hide).ok();
+
+    // Ensure terminal is always restored even on panic.
+    let _guard = TermRestoreGuard;
 
     let mut state = fetch(&client).await;
     let mut refresh = Instant::now()
@@ -262,7 +274,5 @@ pub async fn run_dashboard(client: Arc<DaemonClient>) {
         }
     }
 
-    // Restore terminal.
-    execute!(std::io::stdout(), cursor::Show, cursor::MoveToNextLine(1)).ok();
-    terminal::disable_raw_mode().ok();
+    // _guard drops here and restores terminal.
 }

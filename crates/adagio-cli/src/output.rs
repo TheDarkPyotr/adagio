@@ -64,6 +64,7 @@ pub fn status_label(status: &str, width: usize) -> String {
 // ── Table helpers ─────────────────────────────────────────────────────────────
 
 /// Print a column header row with dimmed underlines.
+/// Both header and underline go to stdout so they stay in sync with data rows.
 pub fn print_table_header(cols: &[&str], widths: &[usize]) {
     // Pad plain text to width, then dim — never dim first then pad.
     let header: String = cols
@@ -71,9 +72,9 @@ pub fn print_table_header(cols: &[&str], widths: &[usize]) {
         .zip(widths)
         .map(|(c, &w)| dim(&format!("{c:<w$}")) + "  ")
         .collect();
-    eprintln!("{header}");
+    println!("{header}");
     let under: String = widths.iter().map(|&w| dim(&"─".repeat(w)) + "  ").collect();
-    eprintln!("{under}");
+    println!("{under}");
 }
 
 /// Print a single table data row with pre-formatted cells.
@@ -92,10 +93,10 @@ pub fn print_ok(msg: &str) {
     println!("  {}  {msg}", green("✓"));
 }
 pub fn print_err(msg: &str) {
-    eprintln!("  {}  {}", red("✗"), red(msg));
+    println!("  {}  {}", red("✗"), red(msg));
 }
 pub fn print_warn(msg: &str) {
-    eprintln!("  {}  {msg}", yellow("⚠"));
+    println!("  {}  {msg}", yellow("⚠"));
 }
 
 // ── JSON output ───────────────────────────────────────────────────────────────
