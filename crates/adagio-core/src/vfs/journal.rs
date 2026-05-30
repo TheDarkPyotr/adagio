@@ -8,7 +8,35 @@ use crate::vfs::types::{VfsCacheEntry, VfsState};
 // ── VfsJournal extension ──────────────────────────────────────────────────────
 
 impl SqliteJournal {
-    /// Insert or update a VFS cache metadata row.
+    /// Sync remote metadata (size, etag, mtime) for a file.
+    ///
+    /// INSERT as cloud_only for new files. For existing files, only updates the
+    /// remote_* columns — never touches state, cached_at, last_accessed_at, or
+    /// cache_bytes. This is the correct call for the metadata-sync loop so that
+    /// locally-available and pinned states are never overwritten by a poll cycle.
+    pub async fn sync_vfs_remote_metadata(&self, entry: &VfsCacheEntry) -> Result<(), JournalError> {
+        sqlx::query(
+            "INSERT INTO vfs_cache_metadata
+             (pair_id, path, remote_size, remote_etag, remote_mtime,
+              state, cached_at, last_accessed_at, cache_bytes)
+             VALUES (?, ?, ?, ?, ?, 'cloud_only', NULL, NULL, 0)
+             ON CONFLICT(pair_id, path) DO UPDATE SET
+               remote_size  = excluded.remote_size,
+               remote_etag  = excluded.remote_etag,
+               remote_mtime = excluded.remote_mtime",
+        )
+        .bind(&entry.pair_id.0)
+        .bind(entry.path.as_str())
+        .bind(entry.remote_size as i64)
+        .bind(&entry.remote_etag)
+        .bind(entry.remote_mtime.to_rfc3339())
+        .execute(self.pool())
+        .await
+        .map_err(|e| JournalError::Db(e.into()))?;
+        Ok(())
+    }
+
+    /// Insert or update a VFS cache metadata row (full update — all fields).
     pub async fn upsert_vfs_entry(&self, entry: &VfsCacheEntry) -> Result<(), JournalError> {
         let (state_str, cached_at, last_accessed_at) = match &entry.state {
             VfsState::CloudOnly => ("cloud_only", None::<String>, None::<String>),

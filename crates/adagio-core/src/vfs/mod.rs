@@ -59,48 +59,38 @@ impl VfsPairRunner {
         // Fetch full remote snapshot.
         let remote_items = fetch_remote_snapshot(&*self.client, &remote_root).await?;
 
-        // Load existing VFS entries to detect deletions and preserve local state.
+        // Load existing paths to detect new files (for placeholder creation).
         let existing = self
             .journal
             .all_vfs_entries(pair_id)
             .await
             .map_err(|e| crate::error::SyncError::Permanent(e.to_string()))?;
-        // Map path → entry so we can look up state without a second query.
-        let existing_by_path: std::collections::HashMap<String, &VfsCacheEntry> = existing
+        let existing_paths: std::collections::HashSet<String> = existing
             .iter()
-            .map(|e| (e.path.as_str().to_string(), e))
+            .map(|e| e.path.as_str().to_string())
             .collect();
 
-        // Upsert new / updated entries, preserving locally-available and pinned states.
+        // Sync remote metadata for every file.
+        // `sync_vfs_remote_metadata` inserts new files as cloud_only and updates
+        // remote_size/etag/mtime for existing files WITHOUT touching their local
+        // state (locally_available / pinned). This is race-free and atomic.
         let mut new_entries: Vec<VfsCacheEntry> = Vec::new();
         for item in &remote_items {
             if item.is_dir {
-                continue; // directories handled implicitly
+                continue;
             }
-            let base = VfsCacheEntry::new_cloud_only(
+            let entry = VfsCacheEntry::new_cloud_only(
                 pair_id.clone(),
                 item.path.clone(),
                 item.size,
                 Some(item.etag.clone()),
                 item.mtime,
             );
-
-            let entry = if let Some(existing_entry) = existing_by_path.get(base.path.as_str()) {
-                // File already known: keep its local state (locally_available / pinned)
-                // but refresh remote metadata in case size or etag changed.
-                VfsCacheEntry {
-                    state: existing_entry.state.clone(),
-                    cache_bytes: existing_entry.cache_bytes,
-                    ..base
-                }
-            } else {
-                // Genuinely new file: start as cloud_only placeholder.
-                new_entries.push(base.clone());
-                base
-            };
-
+            if !existing_paths.contains(entry.path.as_str()) {
+                new_entries.push(entry.clone());
+            }
             self.journal
-                .upsert_vfs_entry(&entry)
+                .sync_vfs_remote_metadata(&entry)
                 .await
                 .map_err(|e| crate::error::SyncError::Permanent(e.to_string()))?;
         }
@@ -267,12 +257,21 @@ pub async fn pin_path(
     let local_root = pair.local_root.clone();
     tokio::spawn(async move {
         for entry in to_pin {
+            // Ensure the local cache directory exists.
             let local_path = crate::types::LocalPath::new(local_root.0.join(entry.path.as_str()));
+            if let Some(parent) = local_path.0.parent() {
+                if let Err(e) = tokio::fs::create_dir_all(parent).await {
+                    warn!(path = %entry.path, error = %e, "pin: failed to create cache dir");
+                    continue;
+                }
+            }
+
             let remote_path = RemotePath::new(&format!(
                 "{}/{}",
                 remote_root.as_str().trim_end_matches('/'),
                 entry.path.as_str()
             ));
+            info!(path = %entry.path, remote = %remote_path.as_str(), "pin: downloading");
             let (tx, _rx) = tokio::sync::mpsc::channel(8);
             let download_result = crate::transfer::download::download_file(
                 &*client,
@@ -289,17 +288,17 @@ pub async fn pin_path(
             let mut updated = entry.clone();
             match download_result {
                 Ok(result) => {
-                    updated.state = VfsState::Pinned {
-                        cached_at: now,
-                        last_accessed: now,
-                    };
+                    updated.state = VfsState::Pinned { cached_at: now, last_accessed: now };
                     updated.cache_bytes = result.size;
-                    let _ = journal.upsert_vfs_entry(&updated).await;
+                    if let Err(e) = journal.upsert_vfs_entry(&updated).await {
+                        warn!(path = %entry.path, error = %e, "pin: failed to update journal");
+                    } else {
+                        info!(path = %entry.path, bytes = result.size, "pin: download complete");
+                    }
                     let _ = provider.set_pinned(&entry.path).await;
-                    debug!(path = %entry.path, "pinned file downloaded");
                 }
                 Err(e) => {
-                    warn!(path = %entry.path, error = %e, "pin download failed");
+                    warn!(path = %entry.path, remote = %remote_path.as_str(), error = %e, "pin: download failed");
                 }
             }
         }
