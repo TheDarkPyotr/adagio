@@ -313,6 +313,13 @@ impl Propagator {
         // Execute ops sequentially for simplicity (bounded concurrency is preserved
         // by the semaphores; full parallel execution is an optimisation for later).
         for op in ops {
+            // NoOp = reconciler decided nothing needs to happen for this path
+            // (e.g. a permanently-errored path that was already parked).
+            // Skip path-compat and all other processing immediately.
+            if matches!(op, SyncOp::NoOp { .. }) {
+                continue;
+            }
+
             // Path compatibility check: reject paths that are unsafe on Windows
             // before attempting any local or remote operation (T095).
             //
