@@ -90,6 +90,16 @@ impl PairRunner {
         }
     }
 
+    /// Construct a `PairRunner` from pre-built parts (used by VFS runner integration).
+    pub fn from_parts(
+        pair_id: PairId,
+        cancel: CancellationToken,
+        trigger_tx: mpsc::Sender<()>,
+        handle: tokio::task::JoinHandle<()>,
+    ) -> Self {
+        Self { pair_id, cancel, trigger_tx, handle }
+    }
+
     /// Send an immediate sync trigger. Fire-and-forget; returns `false` if the
     /// runner's channel is full (a cycle is already queued).
     pub fn trigger(&self) -> bool {

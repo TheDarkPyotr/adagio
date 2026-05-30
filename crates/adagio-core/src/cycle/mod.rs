@@ -407,29 +407,62 @@ impl DefaultSyncEngine {
         provider: Arc<dyn crate::vfs::VfsProvider>,
     ) {
         use crate::vfs::VfsPairRunner;
+        use tokio_util::sync::CancellationToken;
+        use tokio::sync::mpsc;
 
         let pair_id = pair.id.clone();
-        let vfs_runner = Arc::new(VfsPairRunner::new(pair, client, journal, provider));
+        let vfs_runner = Arc::new(VfsPairRunner::new(pair.clone(), client, journal, provider));
         let pair_id_str = pair_id.0.clone();
 
-        tokio::spawn(async move {
-            let mut ticker = tokio::time::interval(std::time::Duration::from_secs(7200));
+        let cancel = CancellationToken::new();
+        let (trigger_tx, mut trigger_rx) = mpsc::channel::<()>(1);
+        let cancel_child = cancel.child_token();
+
+        let handle = tokio::spawn(async move {
+            // Poll every 30 seconds for VFS pairs — lightweight PROPFIND only.
+            let mut ticker = tokio::time::interval(std::time::Duration::from_secs(30));
             ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             ticker.tick().await; // consume immediate first tick
 
-            // Run first metadata sync on startup.
+            // Run first metadata sync immediately on startup.
             if let Err(e) = vfs_runner.run_metadata_sync().await {
                 tracing::warn!(pair_id = %pair_id_str, error = %e, "VFS metadata sync failed");
             }
 
             loop {
-                ticker.tick().await;
-                if let Err(e) = vfs_runner.run_metadata_sync().await {
-                    tracing::warn!(pair_id = %pair_id_str, error = %e, "VFS metadata sync failed");
+                tokio::select! {
+                    biased;
+                    _ = cancel_child.cancelled() => {
+                        tracing::info!(pair_id = %pair_id_str, "VFS runner stopped");
+                        break;
+                    }
+                    _ = ticker.tick() => {
+                        if let Err(e) = vfs_runner.run_metadata_sync().await {
+                            tracing::warn!(pair_id = %pair_id_str, error = %e, "VFS metadata sync failed");
+                        }
+                    }
+                    Some(()) = trigger_rx.recv() => {
+                        while trigger_rx.try_recv().is_ok() {}
+                        tracing::info!(pair_id = %pair_id_str, "VFS metadata sync triggered");
+                        if let Err(e) = vfs_runner.run_metadata_sync().await {
+                            tracing::warn!(pair_id = %pair_id_str, error = %e, "VFS metadata sync failed");
+                        }
+                    }
                 }
             }
         });
-        tracing::info!(pair_id = %pair_id, "VFS pair runner started");
+
+        // Register under runners so trigger_pair / stop_pair work for VFS pairs.
+        let runner = crate::cycle::runner::PairRunner::from_parts(
+            pair_id.clone(), cancel, trigger_tx, handle,
+        );
+        let runners = self.runners.clone();
+        let pair_id_reg = pair_id.clone();
+        tokio::spawn(async move {
+            runners.write().await.insert(pair_id_reg, runner);
+        });
+
+        tracing::info!(pair_id = %pair_id, "VFS pair runner started (30 s interval)");
     }
 
     /// Stop and remove the runner for `pair_id`.
