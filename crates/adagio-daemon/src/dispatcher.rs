@@ -725,7 +725,7 @@ pub async fn dispatch(req: DaemonRequest, state: &DaemonProcess) -> Result<Daemo
 
         DaemonRequest::EvictVfsFile { pair_id, path } => {
             use adagio_core::types::PairId;
-            use adagio_core::vfs::types::{VfsCacheEntry, VfsState};
+            use adagio_core::vfs::types::VfsState;
             let pid = PairId(pair_id);
             // Guard: pinned paths cannot be evicted.
             if state

@@ -148,6 +148,8 @@ dependencies = [
  "chrono",
  "cloud-filter",
  "fuse3",
+ "futures-util",
+ "libc",
  "objc2-file-provider",
  "serde",
  "tempfile",
@@ -493,15 +495,6 @@ dependencies = [
  "num-traits",
  "uom",
  "winapi",
-]
-
-[[package]]
-name = "bincode"
-version = "1.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1f45e9417d87227c7a56d22e471c6206462cba514c7590c09aff4cf6d1ddcad"
-dependencies = [
- "serde",
 ]
 
 [[package]]
@@ -1676,22 +1669,20 @@ dependencies = [
 
 [[package]]
 name = "fuse3"
-version = "0.7.3"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3175b0f85e74bbabc3bbb1135f9c37a429a26a3fb16169ee6d9608138b0697d8"
+checksum = "5c0779ad9d9223794030dd90640b2b50a0c42d4f29434636e23b29fac7d41568"
 dependencies = [
  "async-notify",
- "bincode",
  "bytes",
- "futures-channel",
  "futures-util",
  "libc",
- "nix 0.29.0",
- "serde",
+ "nix 0.31.3",
  "slab",
  "tokio",
  "tracing",
  "trait-make",
+ "zerocopy",
 ]
 
 [[package]]
@@ -3031,6 +3022,18 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "memoffset",
+]
+
+[[package]]
+name = "nix"
+version = "0.31.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf20d2fde8ff38632c426f1165ed7436270b44f199fc55284c38276f9db47c3d"
+dependencies = [
+ "bitflags 2.11.1",
+ "cfg-if",
+ "cfg_aliases",
+ "libc",
 ]
 
 [[package]]

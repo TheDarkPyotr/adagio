@@ -12,7 +12,7 @@ use crate::detection::remote::fetch_remote_snapshot;
 use crate::journal::sqlite::SqliteJournal;
 use crate::journal::Journal as _;
 use crate::remote::RemoteClient;
-use crate::types::{PairId, RelativePath, RemotePath, SyncPair};
+use crate::types::{PairId, RemotePath, SyncPair};
 
 // ── VfsPairRunner ─────────────────────────────────────────────────────────────
 
