@@ -249,7 +249,20 @@ pub fn reconcile(
             // Category 6: local deletion — was synced (journal + remote), now gone locally.
             // If the remote also changed since the journal, this is a delete-vs-change conflict.
             (None, Some(ri), Some(j)) => {
-                if etag_differs(ri.etag.as_str(), j.etag.as_deref()) {
+                // Guard: permanent errors (e.g. path too long) should never trigger
+                // DeleteRemote or Conflict — the path was never actually synced.
+                // Emit NoOp so the remote file is left alone and the propagator
+                // doesn't re-park the same violation every cycle.
+                use crate::types::SyncStatus;
+                if j.status == SyncStatus::Error
+                    && j.error_message
+                        .as_deref()
+                        .map_or(false, |m| m.starts_with("permanent error:"))
+                {
+                    SyncOp::NoOp {
+                        path: ri.path.clone(),
+                    }
+                } else if etag_differs(ri.etag.as_str(), j.etag.as_deref()) {
                     SyncOp::Conflict {
                         path: ri.path.clone(),
                         remote_etag: ri.etag.clone(),
@@ -725,6 +738,29 @@ mod tests {
                 .iter()
                 .any(|op| matches!(op, SyncOp::DeleteLocal { .. })),
             "item excluded by selective_sync filter should produce DeleteLocal"
+        );
+    }
+
+    // Regression: permanent error on remote-only path (Category 6) must produce
+    // NoOp, not Conflict or DeleteRemote.
+    #[test]
+    fn reconcile_permanent_error_category6_produces_noop() {
+        let mut j = journal_entry("remote/path/too/long.pdf", "", "etag1", "aaaa");
+        j.status = SyncStatus::Error;
+        j.etag = Some("etag1".to_string());
+        j.error_message = Some(
+            "permanent error: path too long (300 chars, max 259): remote/path/too/long.pdf"
+                .to_string(),
+        );
+
+        // Remote has the file; local does not (never successfully downloaded).
+        let r = remote_item("remote/path/too/long.pdf", 100, "etag1", "fid1", "aaaa");
+
+        let plan = reconcile(&[], &[r], &[j], ConflictPolicy::NewestWins);
+        assert!(
+            plan.ops.iter().all(|op| matches!(op, SyncOp::NoOp { .. })),
+            "permanently-errored remote path should produce NoOp, not Conflict/DeleteRemote; got: {:?}",
+            plan.ops
         );
     }
 
