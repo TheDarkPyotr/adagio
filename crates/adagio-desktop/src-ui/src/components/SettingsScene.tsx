@@ -42,10 +42,13 @@ export default function SettingsScene({ palette, onPalette, syncStatus, onBack, 
   const [networkSaving, setNetworkSaving] = useState(false);
   const networkPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const [networkSaveError, setNetworkSaveError] = useState<string | null>(null);
+
   // Load daemon + bandwidth + network status when the Sync section is shown.
   useEffect(() => {
     if (section !== 'sync') {
       if (bandwidthPollRef.current) { clearInterval(bandwidthPollRef.current); bandwidthPollRef.current = null; }
+      if (networkPollRef.current) { clearInterval(networkPollRef.current); networkPollRef.current = null; }
       return;
     }
     getDaemonStatus().then(setDaemonStatus).catch(() => {});
@@ -58,14 +61,21 @@ export default function SettingsScene({ palette, onPalette, syncStatus, onBack, 
     refreshBandwidth();
     bandwidthPollRef.current = setInterval(refreshBandwidth, 3000);
 
-    const refreshNetwork = () => getNetworkStatus().then(s => {
+    // Initial load: populate form fields from current daemon policy.
+    const loadNetworkPolicy = () => getNetworkStatus().then(s => {
       setNetworkStatus(s);
       setOnMetered(s.policy.on_metered);
       setOnBattery(s.policy.on_battery);
       setNetworkThrottle(s.policy.throttle_kbps === 0 ? '' : String(s.policy.throttle_kbps));
     }).catch(() => {});
-    refreshNetwork();
-    networkPollRef.current = setInterval(refreshNetwork, 3000);
+    loadNetworkPolicy();
+
+    // Recurring poll: only refresh live status display — NOT form fields.
+    // Form fields are user-controlled until they click Save.
+    const pollNetworkStatus = () => getNetworkStatus().then(s => {
+      setNetworkStatus(s);
+    }).catch(() => {});
+    networkPollRef.current = setInterval(pollNetworkStatus, 3000);
 
     return () => {
       if (bandwidthPollRef.current) { clearInterval(bandwidthPollRef.current); bandwidthPollRef.current = null; }
@@ -380,23 +390,37 @@ export default function SettingsScene({ palette, onPalette, syncStatus, onBack, 
                   )}
                 </div>
 
-                <button
-                  data-testid="network-save-btn"
-                  disabled={networkSaving}
-                  onClick={async () => {
-                    setNetworkSaving(true);
-                    try {
-                      const kbps = parseInt(networkThrottle, 10) || 0;
-                      await setNetworkPolicy(onMetered, onBattery, kbps);
-                      const updated = await getNetworkStatus();
-                      setNetworkStatus(updated);
-                    } catch {}
-                    setNetworkSaving(false);
-                  }}
-                  style={{ background: 'var(--clay)', color: 'var(--cream)', border: 'none', padding: '7px 16px', borderRadius: 'var(--r-pill)', fontSize: 12.5, cursor: 'pointer', fontWeight: 500, opacity: networkSaving ? 0.5 : 1, marginBottom: 16 }}
-                >
-                  {networkSaving ? 'Saving…' : 'Save'}
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                  <button
+                    data-testid="network-save-btn"
+                    disabled={networkSaving}
+                    onClick={async () => {
+                      setNetworkSaving(true);
+                      setNetworkSaveError(null);
+                      try {
+                        const kbps = parseInt(networkThrottle, 10) || 0;
+                        await setNetworkPolicy(onMetered, onBattery, kbps);
+                        const updated = await getNetworkStatus();
+                        setNetworkStatus(updated);
+                        // Reload form fields from confirmed saved state.
+                        setOnMetered(updated.policy.on_metered);
+                        setOnBattery(updated.policy.on_battery);
+                        setNetworkThrottle(updated.policy.throttle_kbps === 0 ? '' : String(updated.policy.throttle_kbps));
+                      } catch (e) {
+                        setNetworkSaveError(e instanceof Error ? e.message : String(e));
+                      }
+                      setNetworkSaving(false);
+                    }}
+                    style={{ background: 'var(--clay)', color: 'var(--cream)', border: 'none', padding: '7px 16px', borderRadius: 'var(--r-pill)', fontSize: 12.5, cursor: 'pointer', fontWeight: 500, opacity: networkSaving ? 0.5 : 1 }}
+                  >
+                    {networkSaving ? 'Saving…' : 'Save'}
+                  </button>
+                  {networkSaveError && (
+                    <span style={{ fontSize: 12, color: '#c0392b', fontFamily: 'var(--mono)' }} data-testid="network-save-error">
+                      {networkSaveError}
+                    </span>
+                  )}
+                </div>
 
                 {/* SSID block list */}
                 <div style={{ marginBottom: 8, fontSize: 12.5, fontWeight: 500, color: 'var(--ink)' }}>Blocked SSIDs</div>
@@ -407,6 +431,16 @@ export default function SettingsScene({ palette, onPalette, syncStatus, onBack, 
                     placeholder="Network name"
                     value={newSsid}
                     onChange={e => setNewSsid(e.target.value)}
+                    onKeyDown={async e => {
+                      if (e.key === 'Enter' && newSsid.trim()) {
+                        try {
+                          await addBlockedSsid(newSsid.trim());
+                          setNewSsid('');
+                          const updated = await getNetworkStatus();
+                          setNetworkStatus(updated);
+                        } catch {}
+                      }
+                    }}
                     style={{ padding: '6px 10px', fontSize: 13, border: '1px solid var(--hairline)', borderRadius: 'var(--r-2)', background: 'var(--paper)', color: 'var(--ink)', flex: 1, maxWidth: 220 }}
                   />
                   <button
@@ -419,7 +453,9 @@ export default function SettingsScene({ palette, onPalette, syncStatus, onBack, 
                         setNewSsid('');
                         const updated = await getNetworkStatus();
                         setNetworkStatus(updated);
-                      } catch {}
+                      } catch (e) {
+                        console.error('add blocked SSID failed:', e);
+                      }
                     }}
                     style={{ background: 'var(--paper-2)', border: '1px solid var(--hairline)', color: 'var(--ink)', padding: '6px 14px', borderRadius: 'var(--r-2)', fontSize: 12.5, cursor: 'pointer' }}
                   >
@@ -437,7 +473,9 @@ export default function SettingsScene({ palette, onPalette, syncStatus, onBack, 
                               await removeBlockedSsid(ssid);
                               const updated = await getNetworkStatus();
                               setNetworkStatus(updated);
-                            } catch {}
+                            } catch (e) {
+                              console.error('remove blocked SSID failed:', e);
+                            }
                           }}
                           style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-muted)', fontSize: 11 }}
                         >

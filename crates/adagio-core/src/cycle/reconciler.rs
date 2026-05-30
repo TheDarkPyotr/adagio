@@ -267,21 +267,37 @@ pub fn reconcile(
             // Category 7: remote deletion — was synced (journal + local), now gone remotely.
             // If the local also changed since the journal, this is a delete-vs-change conflict.
             (Some(li), None, Some(j)) => {
-                // Only flag conflict when we have a checksum baseline confirming local change.
-                // Without one (j.checksum = None), can't tell — DeleteLocal wins.
-                let local_changed =
-                    j.checksum.is_some() && checksum_differs(&li.checksum, j.checksum.as_ref());
-                if local_changed {
-                    SyncOp::Conflict {
+                // Guard: if the journal entry is a permanent error (e.g. path-too-long),
+                // the remote was never actually in sync — emitting DeleteLocal would
+                // incorrectly destroy local data and the propagator would re-park the
+                // path on every cycle. Emit NoOp so the path is quietly skipped until
+                // the user resolves the underlying compat issue.
+                use crate::types::SyncStatus;
+                if j.status == SyncStatus::Error
+                    && j.error_message
+                        .as_deref()
+                        .map_or(false, |m| m.starts_with("permanent error:"))
+                {
+                    SyncOp::NoOp {
                         path: li.path.clone(),
-                        remote_etag: String::new(),
-                        remote_mtime: Utc::now(),
-                        remote_size: 0,
-                        policy: conflict_policy.clone(),
                     }
                 } else {
-                    SyncOp::DeleteLocal {
-                        path: li.path.clone(),
+                    // Only flag conflict when we have a checksum baseline confirming local change.
+                    // Without one (j.checksum = None), can't tell — DeleteLocal wins.
+                    let local_changed =
+                        j.checksum.is_some() && checksum_differs(&li.checksum, j.checksum.as_ref());
+                    if local_changed {
+                        SyncOp::Conflict {
+                            path: li.path.clone(),
+                            remote_etag: String::new(),
+                            remote_mtime: Utc::now(),
+                            remote_size: 0,
+                            policy: conflict_policy.clone(),
+                        }
+                    } else {
+                        SyncOp::DeleteLocal {
+                            path: li.path.clone(),
+                        }
                     }
                 }
             }
@@ -709,6 +725,29 @@ mod tests {
                 .iter()
                 .any(|op| matches!(op, SyncOp::DeleteLocal { .. })),
             "item excluded by selective_sync filter should produce DeleteLocal"
+        );
+    }
+
+    // Regression: permanently-errored paths (e.g. path too long) must produce
+    // NoOp, not DeleteLocal, so they are not re-queued every cycle.
+    #[test]
+    fn reconcile_permanent_error_journal_entry_produces_noop() {
+        // Simulate a path that failed with "permanent error: path too long".
+        let mut j = journal_entry("very/long/path.txt", "", "", "aaaa");
+        j.status = SyncStatus::Error;
+        j.etag = Some("".to_string()); // never uploaded
+        j.error_message = Some(
+            "permanent error: path too long (300 chars, max 259): very/long/path.txt".to_string(),
+        );
+
+        // File still exists locally; remote doesn't have it (upload never succeeded).
+        let l = local_item("very/long/path.txt", 100, "aaaa");
+
+        let plan = reconcile(&[l], &[], &[j], ConflictPolicy::NewestWins);
+        assert!(
+            plan.ops.iter().all(|op| matches!(op, SyncOp::NoOp { .. })),
+            "permanently-errored path should produce NoOp, not DeleteLocal or Upload; got: {:?}",
+            plan.ops
         );
     }
 }

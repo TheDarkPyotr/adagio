@@ -218,7 +218,19 @@ impl<'a> SyncCycle<'a> {
         }
         .emit();
 
-        // Sample RSS for AC-3 memory tracking.
+        // On Linux, ask glibc to return freed pages to the OS before we sample RSS.
+        // Sync cycles allocate large transient heaps (remote item lists, local scan
+        // results, journal entry maps) that glibc would otherwise retain indefinitely.
+        // Trimming first ensures the RSS reading reflects actual live data, not
+        // fragmented free pages — otherwise the first post-cycle baseline captures
+        // the unfragmented heap and every subsequent cycle appears to "grow".
+        #[cfg(target_os = "linux")]
+        {
+            // SAFETY: malloc_trim is a standard glibc extension with no preconditions.
+            unsafe { libc::malloc_trim(0) };
+        }
+
+        // Sample RSS for AC-3 memory tracking (after trim so readings are comparable).
         if let Some(sampler_arc) = &self.memory_sampler {
             let mut sampler = sampler_arc.lock().unwrap();
             if !sampler.has_baseline() {
@@ -228,16 +240,6 @@ impl<'a> SyncCycle<'a> {
             } else {
                 sampler.observe();
             }
-        }
-
-        // On Linux, ask glibc to return freed pages to the OS after every cycle.
-        // Sync cycles allocate large transient heaps (remote item lists, local scan
-        // results, journal entry maps) that glibc would otherwise retain indefinitely,
-        // causing the RSS to grow cycle over cycle even though no data is leaked.
-        #[cfg(target_os = "linux")]
-        {
-            // SAFETY: malloc_trim is a standard glibc extension with no preconditions.
-            unsafe { libc::malloc_trim(0) };
         }
 
         Ok(SyncReport {
