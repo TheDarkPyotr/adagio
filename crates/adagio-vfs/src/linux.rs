@@ -53,19 +53,47 @@ impl VfsProvider for LinuxVfsProvider {
             .await
             .map_err(|e| VfsError::MountFailed(format!("mkdir: {e}")))?;
 
+        // FUSE requires an empty mount point. If there are already files there
+        // (e.g. previously pinned content), move them to the pair's cache dir
+        // so the mount can proceed. The FUSE filesystem serves all content from
+        // the journal; the cache dir holds the actual downloaded bytes.
+        let cache_dir = adagio_core::vfs::vfs_content_dir(&pair.id);
+        tokio::fs::create_dir_all(&cache_dir)
+            .await
+            .map_err(|e| VfsError::MountFailed(format!("mkdir cache: {e}")))?;
+        let mut entries = tokio::fs::read_dir(&mp).await
+            .map_err(|e| VfsError::MountFailed(format!("readdir: {e}")))?;
+        let mut has_entries = false;
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let dest = cache_dir.join(entry.file_name());
+            // Only move regular files/dirs — don't trip over FUSE special files.
+            if let Ok(m) = entry.metadata().await {
+                if m.is_file() || m.is_dir() {
+                    has_entries = true;
+                    let _ = tokio::fs::rename(entry.path(), &dest).await;
+                }
+            }
+        }
+        if has_entries {
+            info!(pair_id = %pair_id, cache = ?cache_dir, "moved existing files to cache dir before FUSE mount");
+        }
+
         let (tx, rx) = tokio::sync::oneshot::channel::<()>();
         let pid_str = pair_id.0.clone();
         let remote_root = pair.remote_root.clone();
-        let local_root = pair.local_root.clone();
+        // Downloaded content is stored in the cache dir, NOT inside the FUSE
+        // mount point (which must remain empty for the mount to succeed).
+        let content_root = cache_dir.clone();
 
         // AdagioFs wraps the journal pointer via a raw-pointer trick to work
         // around the Arc<dyn Journal> → SqliteJournal downcast limitation.
         // This is safe because the daemon guarantees SqliteJournal for all pairs.
-        let fs = AdagioFs::new(pair_id.clone(), remote_root, local_root.0, client, journal);
+        let fs = AdagioFs::new(pair_id.clone(), remote_root, content_root, client, journal);
 
-        tokio::task::spawn_blocking(move || {
-            run_fuse(mp, pid_str, fs, rx);
-        });
+        // Run the FUSE session on the main tokio runtime (NOT spawn_blocking)
+        // so that async SQLx queries inside the FUSE handlers (readdir, read, etc.)
+        // execute on the same runtime the journal pool was created on.
+        tokio::spawn(run_fuse_async(mp, pid_str, fs, rx));
 
         self.active.lock().await.insert(pair_id.0.clone(), tx);
         info!(pair_id = %pair_id, "FUSE3 mount started");
@@ -313,6 +341,10 @@ impl PathFilesystem for AdagioFs {
         Ok(ReplyOpen { fh: 0, flags: 0 })
     }
 
+    async fn opendir(&self, _req: Request, _path: &OsStr, _flags: u32) -> FuseResult<ReplyOpen> {
+        Ok(ReplyOpen { fh: 0, flags: 0 })
+    }
+
     async fn read(
         &self,
         _req: Request,
@@ -369,68 +401,111 @@ impl PathFilesystem for AdagioFs {
 
         Ok(ReplyDirectory { entries: stream::iter(entries) })
     }
+
+    async fn readdirplus<'a>(
+        &'a self,
+        _req: Request,
+        path: &'a OsStr,
+        _fh: u64,
+        offset: u64,
+        _lock_owner: u64,
+    ) -> FuseResult<fuse3::path::reply::ReplyDirectoryPlus<impl futures_util::Stream<Item = FuseResult<fuse3::path::reply::DirectoryEntryPlus>> + Send + 'a>> {
+        use futures_util::stream;
+        use fuse3::FileType;
+        use fuse3::path::reply::{DirectoryEntryPlus, ReplyDirectoryPlus};
+        use std::ffi::OsString;
+
+        let dir_rel = path.to_string_lossy();
+        let rel = dir_rel.trim_start_matches('/').to_string();
+        let children = self.children(&rel).await;
+
+        let ttl = Duration::from_secs(30);
+        let dir_attr = Self::make_dir_attr();
+        let mut entries: Vec<FuseResult<DirectoryEntryPlus>> = Vec::new();
+
+        if offset == 0 {
+            entries.push(Ok(DirectoryEntryPlus { kind: FileType::Directory, name: OsString::from("."),  offset: 1, attr: dir_attr.clone(), entry_ttl: ttl, attr_ttl: ttl }));
+            entries.push(Ok(DirectoryEntryPlus { kind: FileType::Directory, name: OsString::from(".."), offset: 2, attr: dir_attr.clone(), entry_ttl: ttl, attr_ttl: ttl }));
+        }
+
+        for (i, (name, is_dir)) in children.into_iter().enumerate() {
+            let idx = i as u64 + 3;
+            if idx <= offset { continue; }
+            let child_rel = if rel.is_empty() { name.clone() } else { format!("{rel}/{name}") };
+            let attr = if is_dir {
+                dir_attr.clone()
+            } else if let Some(e) = self.entry(&child_rel).await {
+                Self::make_file_attr(&e)
+            } else {
+                dir_attr.clone()
+            };
+            entries.push(Ok(DirectoryEntryPlus {
+                kind: if is_dir { FileType::Directory } else { FileType::RegularFile },
+                name: OsString::from(name),
+                offset: idx as i64,
+                attr,
+                entry_ttl: ttl,
+                attr_ttl: ttl,
+            }));
+        }
+
+        Ok(ReplyDirectoryPlus { entries: stream::iter(entries) })
+    }
 }
 
 // ── Session runner ────────────────────────────────────────────────────────────
 
-fn run_fuse(
+/// Must be called via `tokio::spawn` — runs FUSE on the main daemon runtime so
+/// that async SQLx queries inside FUSE handlers use the correct runtime.
+async fn run_fuse_async(
     mount_point: PathBuf,
     pair_id: String,
     fs: AdagioFs,
     rx: tokio::sync::oneshot::Receiver<()>,
 ) {
-    let rt = match tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    {
-        Ok(r) => r,
+    use fuse3::path::Session;
+    use fuse3::MountOptions;
+
+    let mut opts = MountOptions::default();
+    opts.read_only(true);
+    opts.fs_name("adagio");
+    opts.allow_other(true);
+
+    let handle = match Session::new(opts).mount_with_unprivileged(fs, &mount_point).await {
+        Ok(h) => { info!(pair_id = %pair_id, "FUSE3 unprivileged mount succeeded"); h }
         Err(e) => {
-            warn!(pair_id = %pair_id, error = %e, "failed to build tokio rt for FUSE");
+            warn!(pair_id = %pair_id, error = %e,
+                "FUSE3 unprivileged mount failed — run: echo user_allow_other | sudo tee -a /etc/fuse.conf");
             return;
         }
     };
 
-    let pair_id_log = pair_id.clone();
-    rt.block_on(async move {
-        use fuse3::path::Session;
-        use fuse3::MountOptions;
+    info!(pair_id = %pair_id, mount = ?mount_point, "FUSE3 filesystem mounted");
 
-        let mut opts = MountOptions::default();
-        opts.read_only(true);
-        opts.fs_name("adagio");
-        // allow_other lets the desktop user access the mount even though the
-        // daemon process owns it (requires user_allow_other in /etc/fuse.conf).
-        opts.allow_other(true);
-
-        // Try unprivileged mount first (works after `usermod -aG fuse` +
-        // `user_allow_other` in /etc/fuse.conf). Fall back to privileged mount
-        // for root-run daemons.
-        let handle = match Session::new(opts.clone()).mount_with_unprivileged(fs, &mount_point).await {
-            Ok(h) => {
-                info!(pair_id = %pair_id, "FUSE3 unprivileged mount succeeded");
-                h
-            }
-            Err(unpriv_err) => {
-                warn!(pair_id = %pair_id, error = %unpriv_err, "FUSE3 unprivileged mount failed — check: sudo usermod -aG fuse $USER && echo user_allow_other | sudo tee -a /etc/fuse.conf");
-                return;
-            }
-        };
-
-        info!(pair_id = %pair_id, mount = ?mount_point, "FUSE3 filesystem mounted");
-
-        tokio::select! {
-            _ = rx => {
-                info!(pair_id = %pair_id, "FUSE3 unmount requested");
-            }
-            res = handle => {
-                if let Err(e) = res {
-                    warn!(pair_id = %pair_id, error = %e, "FUSE3 session error");
-                }
-            }
+    tokio::select! {
+        _ = rx => { info!(pair_id = %pair_id, "FUSE3 unmount requested"); }
+        res = handle => {
+            if let Err(e) = res { warn!(pair_id = %pair_id, error = %e, "FUSE3 session error"); }
         }
-    });
+    }
 
-    info!(pair_id = %pair_id_log, "FUSE3 session ended");
+    info!(pair_id = %pair_id, "FUSE3 session ended");
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/// XDG cache directory for a pair's downloaded VFS content.
+/// Separate from the FUSE mount point so the mount point stays empty.
+///
+/// Path: `~/.cache/adagio/vfs/{pair_id}/`
+pub fn dirs_cache_dir(pair: &adagio_core::types::SyncPair) -> PathBuf {
+    let base = std::env::var("XDG_CACHE_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+            PathBuf::from(home).join(".cache")
+        });
+    base.join("adagio").join("vfs").join(&pair.id.0)
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

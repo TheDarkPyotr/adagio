@@ -411,14 +411,28 @@ impl DefaultSyncEngine {
         use tokio::sync::mpsc;
 
         let pair_id = pair.id.clone();
-        let vfs_runner = Arc::new(VfsPairRunner::new(pair.clone(), client, journal, provider));
+        let vfs_runner = Arc::new(VfsPairRunner::new(pair.clone(), client.clone(), journal.clone(), provider.clone()));
         let pair_id_str = pair_id.0.clone();
 
         let cancel = CancellationToken::new();
         let (trigger_tx, mut trigger_rx) = mpsc::channel::<()>(1);
         let cancel_child = cancel.child_token();
 
+        let mount_point = pair.local_root.0.clone();
+
         let handle = tokio::spawn(async move {
+            // Mount the FUSE filesystem before starting the sync loop.
+            let _mount_handle = match provider.mount(&mount_point, &pair, client, journal.clone()).await {
+                Ok(h) => {
+                    tracing::info!(pair_id = %pair_id_str, mount = ?mount_point, "VFS filesystem mounted");
+                    Some(h)
+                }
+                Err(e) => {
+                    tracing::warn!(pair_id = %pair_id_str, error = %e, "VFS mount failed — metadata sync continues without FUSE");
+                    None
+                }
+            };
+
             // Poll every 30 seconds for VFS pairs — lightweight PROPFIND only.
             let mut ticker = tokio::time::interval(std::time::Duration::from_secs(30));
             ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);

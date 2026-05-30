@@ -14,6 +14,22 @@ use crate::journal::Journal as _;
 use crate::remote::RemoteClient;
 use crate::types::{PairId, RemotePath, SyncPair};
 
+// ── Cache directory ───────────────────────────────────────────────────────────
+
+/// Absolute path to the local content cache for a VFS pair.
+///
+/// Stored at `~/.cache/adagio/vfs/{pair_id}/` — separate from the FUSE mount
+/// point so the mount point directory stays empty (FUSE requires this).
+pub fn vfs_content_dir(pair_id: &PairId) -> std::path::PathBuf {
+    let base = std::env::var("XDG_CACHE_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+            std::path::PathBuf::from(home).join(".cache")
+        });
+    base.join("adagio").join("vfs").join(&pair_id.0)
+}
+
 // ── VfsPairRunner ─────────────────────────────────────────────────────────────
 
 /// Runs the metadata-only sync cycle for a VFS-mode pair.
@@ -123,14 +139,13 @@ impl VfsPairRunner {
             }
         }
 
-        // Reconcile disk presence: if a file exists on disk but the journal
-        // still says cloud_only (e.g. after daemon restart), mark it as
-        // locally_available so the UI shows the correct icon.
-        let local_root = &self.pair.local_root.0;
+        // Reconcile disk presence: if a file is on disk in the content cache
+        // but the journal still says cloud_only, mark it locally_available.
+        let local_root = vfs_content_dir(&self.pair.id);
         let now = Utc::now();
         for entry in &existing {
             if entry.state != VfsState::CloudOnly { continue; }
-            let local = local_root.join(entry.path.as_str());
+            let local = local_root.as_path().join(entry.path.as_str());
             if let Ok(meta) = tokio::fs::metadata(&local).await {
                 if meta.is_file() && meta.len() > 0 {
                     let mut updated = entry.clone();
@@ -273,7 +288,9 @@ pub async fn pin_path(
 
     // Spawn background download task.
     let remote_root = RemotePath::new(pair.remote_root.as_str());
-    let local_root = pair.local_root.clone();
+    // Content is stored in the VFS cache dir, separate from the FUSE mount
+    // point so the mount point stays empty (FUSE requires an empty directory).
+    let local_root = crate::types::LocalPath::new(vfs_content_dir(&pair.id));
     tokio::spawn(async move {
         for entry in to_pin {
             // Ensure the local cache directory exists.
