@@ -200,9 +200,10 @@ pub async fn dispatch(req: DaemonRequest, state: &DaemonProcess) -> Result<Daemo
                 "scan_interval_secs": pair.scan_interval_secs,
                 "selective_paths": [],
             });
-            let mut pairs = state.pairs.write().await;
-            pairs.register_full_pair(pair);
-            // Persist to config
+            {
+                let mut pairs = state.pairs.write().await;
+                pairs.register_full_pair(pair);
+            } // release write lock before save_config acquires read lock
             save_config(state).await?;
             Ok(DaemonResponse::Pair(dto))
         }
