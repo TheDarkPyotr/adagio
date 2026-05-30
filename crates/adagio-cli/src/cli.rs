@@ -1,20 +1,23 @@
 use clap::{Parser, Subcommand};
 
-/// Adagio sync client — command-line interface.
+/// Adagio sync client.
 ///
-/// Connects to the running `adagio-daemon` and sends a single command, then exits.
-/// If the daemon is not running, it is started automatically.
+/// Run without arguments for an interactive live dashboard.
+/// Run with a subcommand for a one-shot operation.
 #[derive(Parser, Debug)]
-#[command(name = "adagio", version, about = "Adagio Nextcloud sync client")]
+#[command(
+    name = "adagio",
+    version,
+    about = "Adagio Nextcloud sync client",
+    long_about = "Adagio Nextcloud sync client.\n\nRun without arguments for an interactive dashboard.\nRun with a subcommand for a one-shot operation."
+)]
 pub struct Cli {
     /// Output results as JSON instead of human-readable text.
-    ///
-    /// When set, stdout contains only valid JSON. Errors go to stderr.
     #[arg(long, global = true)]
     pub json: bool,
 
     #[command(subcommand)]
-    pub command: Commands,
+    pub command: Option<Commands>,
 }
 
 /// Top-level subcommands.
@@ -199,7 +202,7 @@ mod tests {
     #[test]
     fn cli_parses_status_command() {
         let cli = Cli::parse_from(["adagio", "status"]);
-        assert!(matches!(cli.command, Commands::Status));
+        assert!(matches!(cli.command, Some(Commands::Status)));
         assert!(!cli.json);
     }
 
@@ -228,7 +231,7 @@ mod tests {
             "--keep",
             "local",
         ]);
-        match cli.command {
+        match cli.command.unwrap() {
             Commands::Conflicts {
                 command: ConflictsCommand::Resolve { conflict_id, keep },
             } => {
@@ -242,7 +245,7 @@ mod tests {
     #[test]
     fn cli_parses_sync_with_pair_id() {
         let cli = Cli::parse_from(["adagio", "sync", "pair-abc"]);
-        match cli.command {
+        match cli.command.unwrap() {
             Commands::Sync { pair_id: Some(id) } => assert_eq!(id, "pair-abc"),
             other => panic!("unexpected: {:?}", other),
         }
@@ -251,7 +254,10 @@ mod tests {
     #[test]
     fn cli_parses_sync_without_pair_id() {
         let cli = Cli::parse_from(["adagio", "sync"]);
-        assert!(matches!(cli.command, Commands::Sync { pair_id: None }));
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Sync { pair_id: None })
+        ));
     }
 
     #[test]
@@ -259,9 +265,9 @@ mod tests {
         let cli = Cli::parse_from(["adagio", "daemon", "start"]);
         assert!(matches!(
             cli.command,
-            Commands::Daemon {
+            Some(Commands::Daemon {
                 command: DaemonCommand::Start
-            }
+            })
         ));
     }
 }

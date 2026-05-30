@@ -157,7 +157,7 @@ mod tests {
             "100",
         ];
         let cli = Cli::try_parse_from(args).expect("should parse");
-        match cli.command {
+        match cli.command.unwrap() {
             Commands::Bandwidth {
                 command:
                     BandwidthCommand::Set {
@@ -179,9 +179,9 @@ mod tests {
         let cli = Cli::try_parse_from(args).expect("should parse");
         assert!(matches!(
             cli.command,
-            Commands::Bandwidth {
+            Some(Commands::Bandwidth {
                 command: BandwidthCommand::Clear
-            }
+            })
         ));
     }
 
@@ -192,9 +192,9 @@ mod tests {
         let cli = Cli::try_parse_from(args).expect("should parse");
         assert!(matches!(
             cli.command,
-            Commands::Bandwidth {
+            Some(Commands::Bandwidth {
                 command: BandwidthCommand::Status
-            }
+            })
         ));
     }
 }

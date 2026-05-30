@@ -225,9 +225,9 @@ mod tests {
         let cli = Cli::try_parse_from(["adagio", "network", "status"]).unwrap();
         assert!(matches!(
             cli.command,
-            Commands::Network {
+            Some(Commands::Network {
                 command: NetworkCommand::Status
-            }
+            })
         ));
     }
 
@@ -235,7 +235,7 @@ mod tests {
     fn cli_parses_network_set_on_metered_pause() {
         let cli =
             Cli::try_parse_from(["adagio", "network", "set", "--on-metered", "pause"]).unwrap();
-        match cli.command {
+        match cli.command.unwrap() {
             Commands::Network {
                 command: NetworkCommand::Set { on_metered, .. },
             } => assert_eq!(on_metered, Some("pause".to_string())),
@@ -255,7 +255,7 @@ mod tests {
             "200",
         ])
         .unwrap();
-        match cli.command {
+        match cli.command.unwrap() {
             Commands::Network {
                 command:
                     NetworkCommand::Set {
@@ -275,7 +275,7 @@ mod tests {
     fn cli_parses_network_block_ssid() {
         let cli =
             Cli::try_parse_from(["adagio", "network", "block-ssid", "CoffeeShop-Guest"]).unwrap();
-        match cli.command {
+        match cli.command.unwrap() {
             Commands::Network {
                 command: NetworkCommand::BlockSsid { ssid },
             } => assert_eq!(ssid, "CoffeeShop-Guest"),
@@ -289,9 +289,9 @@ mod tests {
             Cli::try_parse_from(["adagio", "network", "unblock-ssid", "CoffeeShop-Guest"]).unwrap();
         assert!(matches!(
             cli.command,
-            Commands::Network {
+            Some(Commands::Network {
                 command: NetworkCommand::UnblockSsid { .. }
-            }
+            })
         ));
     }
 
@@ -300,9 +300,9 @@ mod tests {
         let cli = Cli::try_parse_from(["adagio", "network", "list-blocked"]).unwrap();
         assert!(matches!(
             cli.command,
-            Commands::Network {
+            Some(Commands::Network {
                 command: NetworkCommand::ListBlocked
-            }
+            })
         ));
     }
 }
