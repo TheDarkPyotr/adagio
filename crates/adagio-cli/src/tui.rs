@@ -5,71 +5,19 @@ use adagio_ipc::{DaemonClient, DaemonRequest};
 use crossterm::{
     cursor,
     event::{self, Event, KeyCode, KeyModifiers},
-    execute,
-    terminal::{self},
+    execute, terminal,
 };
 
-use crate::output::{format_uptime, shorten_path};
+use crate::output::{bold, cyan, dim, format_uptime, green, shorten_path, status_icon_colored, status_label};
 
 const REFRESH_MS: u64 = 2000;
-const W: usize = 70;
 
-// ── Color helpers ─────────────────────────────────────────────────────────────
-
-fn green(s: &str) -> String {
-    format!("\x1b[32m{s}\x1b[0m")
-}
-fn cyan(s: &str) -> String {
-    format!("\x1b[36m{s}\x1b[0m")
-}
-fn yellow(s: &str) -> String {
-    format!("\x1b[33m{s}\x1b[0m")
-}
-fn red(s: &str) -> String {
-    format!("\x1b[31m{s}\x1b[0m")
-}
-fn dim(s: &str) -> String {
-    format!("\x1b[2m{s}\x1b[0m")
-}
-fn bold(s: &str) -> String {
-    format!("\x1b[1m{s}\x1b[0m")
-}
-fn rule(n: usize) -> String {
-    dim(&"─".repeat(n))
-}
-
-fn status_icon(s: &str) -> String {
-    match s {
-        "syncing" => cyan("⟳"),
-        "paused" => yellow("⏸"),
-        "error" => red("✗"),
-        _ => green("✓"),
-    }
-}
-
-fn status_label(s: &str) -> String {
-    match s {
-        "syncing" => cyan("syncing"),
-        "paused" => yellow("paused"),
-        "error" => red("error"),
-        _ => dim("idle"),
-    }
-}
-
-fn relative_time(unix_ms: i64) -> String {
-    let now = chrono::Utc::now().timestamp_millis();
-    let secs = ((now - unix_ms) / 1000).max(0);
-    let s = if secs < 60 {
-        "just now".to_string()
-    } else if secs < 3600 {
-        format!("{} min ago", secs / 60)
-    } else if secs < 86400 {
-        format!("{} hr ago", secs / 3600)
-    } else {
-        format!("{} d ago", secs / 86400)
-    };
-    dim(&s)
-}
+// Column widths for the pairs table — all VISUAL widths (plain text only).
+const COL_FOLDER: usize = 36;
+const COL_STATUS: usize = 10;
+const COL_LAST: usize = 12;
+// Total rule width.
+const RULE_W: usize = COL_FOLDER + COL_STATUS + COL_LAST + 8; // 8 = spacing
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -85,8 +33,6 @@ struct State {
 #[derive(Default)]
 struct Pair {
     local_root: String,
-    remote_root: String,
-    last_sync_ms: Option<i64>,
 }
 
 async fn fetch(client: &Arc<DaemonClient>) -> State {
@@ -100,7 +46,7 @@ async fn fetch(client: &Arc<DaemonClient>) -> State {
         s.uptime_secs = v["uptime_secs"].as_u64().unwrap_or(0);
     }
     if let Ok(v) = client.request(DaemonRequest::ListAccounts).await {
-        if let Some(a) = v.as_array().and_then(|a| a.first()) {
+        if let Some(a) = v.as_array().and_then(|arr| arr.first()) {
             let name = a["display_name"].as_str().unwrap_or("");
             let url = a["server_url"]
                 .as_str()
@@ -115,8 +61,6 @@ async fn fetch(client: &Arc<DaemonClient>) -> State {
             for p in arr {
                 s.pairs.push(Pair {
                     local_root: p["local_root"].as_str().unwrap_or("?").to_string(),
-                    remote_root: p["remote_root"].as_str().unwrap_or("/").to_string(),
-                    last_sync_ms: None,
                 });
             }
         }
@@ -125,15 +69,22 @@ async fn fetch(client: &Arc<DaemonClient>) -> State {
 }
 
 // ── Rendering ─────────────────────────────────────────────────────────────────
+// Rule: pad plain text to the desired column width FIRST, then apply ANSI color.
+// Never do format!("{:<N}", colored_string) — ANSI bytes inflate the count.
+
+fn rule() -> String {
+    dim(&"─".repeat(RULE_W))
+}
 
 fn render(s: &State, flash: Option<&str>) {
     use std::io::Write as _;
     let mut o = String::new();
 
-    // Clear screen and move to origin.
+    // Home + clear.
     o.push_str("\x1b[H\x1b[2J");
 
     // ── Header ────────────────────────────────────────────────────────────────
+    // Plain text fields, spaces between them, no padding needed here.
     let up = if s.uptime_secs > 0 {
         dim(&format!("up {}", format_uptime(s.uptime_secs)))
     } else {
@@ -143,63 +94,73 @@ fn render(s: &State, flash: Option<&str>) {
     o.push_str(&format!(
         "\n  {}  {dot}  {}  {dot}  {up}\n\n",
         bold("adagio"),
-        dim(&s.account)
+        dim(&s.account),
     ));
-    o.push_str(&format!("  {}\n\n", rule(W)));
+    o.push_str(&format!("  {}\n\n", rule()));
+
+    // ── Column headers ────────────────────────────────────────────────────────
+    // Pad plain text then dim — this produces correct visual alignment.
+    o.push_str(&format!(
+        "   {folder_h}  {status_h}  {last_h}\n",
+        folder_h = dim(&format!("{:<COL_FOLDER$}", "local folder")),
+        status_h = dim(&format!("{:<COL_STATUS$}", "status")),
+        last_h = dim("last sync"),
+    ));
+    o.push_str(&format!(
+        "   {folder_u}  {status_u}  {last_u}\n",
+        folder_u = dim(&"─".repeat(COL_FOLDER)),
+        status_u = dim(&"─".repeat(COL_STATUS)),
+        last_u = dim(&"─".repeat(COL_LAST)),
+    ));
 
     // ── Pairs ─────────────────────────────────────────────────────────────────
-    o.push_str(&format!(
-        "  {} {:<34} {:<14} {}\n",
-        dim(" "),
-        dim("folder"),
-        dim("status"),
-        dim("last sync")
-    ));
-    o.push_str(&format!(
-        "  {} {}  {}  {}\n",
-        dim(" "),
-        dim(&"─".repeat(34)),
-        dim(&"─".repeat(14)),
-        dim(&"─".repeat(12))
-    ));
-
     if s.pairs.is_empty() {
         o.push_str(&format!(
             "\n  {}\n  {}\n",
             dim("No sync pairs configured."),
-            dim("Add one via the desktop app or  adagio pairs add  .")
+            dim("Add a pair via the desktop app or  adagio pairs add"),
         ));
     } else {
         for pair in &s.pairs {
-            let icon = status_icon(&s.engine_status);
-            let root = shorten_path(&pair.local_root, 34);
-            let label = status_label(&s.engine_status);
-            let last = pair
-                .last_sync_ms
-                .map(relative_time)
-                .unwrap_or_else(|| dim("never"));
-            o.push_str(&format!("  {icon} {root:<34}  {label:<14}  {last}\n"));
+            // Step 1: get plain-text versions padded to exact column widths.
+            let root_plain = shorten_path(&pair.local_root, COL_FOLDER);
+            let root_padded = format!("{root_plain:<COL_FOLDER$}");
+
+            // status_label already pads internally (see output.rs).
+            let label = status_label(&s.engine_status, COL_STATUS);
+
+            // last sync: plain text padded, then dimmed.
+            let last = dim(&format!("{:<COL_LAST$}", "—"));
+
+            // Step 2: color the icon (1 visual char, no padding involved).
+            let icon = status_icon_colored(&s.engine_status);
+
+            o.push_str(&format!("  {icon} {root_padded}  {label}  {last}\n"));
         }
     }
 
-    // Active file count during sync.
+    // Active transfer count while syncing.
     if s.engine_status == "syncing" && s.active_files > 0 {
-        o.push_str(&format!("\n  {}  {} active\n", cyan("⟳"), s.active_files));
+        o.push_str(&format!(
+            "\n  {}  {} file(s) active\n",
+            cyan("⟳"),
+            s.active_files
+        ));
     }
 
-    o.push_str(&format!("\n  {}\n", rule(W)));
+    o.push_str(&format!("\n  {}\n", rule()));
 
-    // ── Flash message or hints ────────────────────────────────────────────────
+    // ── Flash or hints ────────────────────────────────────────────────────────
     if let Some(msg) = flash {
         o.push_str(&format!("\n  {}\n\n", green(msg)));
     } else {
         o.push_str(&format!(
-            "\n  {}   {}   {}   {}   {}\n\n",
+            "\n  {}  {}  {}  {}  {}\n\n",
             hint("s", "sync"),
             hint("p", "pause"),
             hint("r", "resume"),
             hint("a", "activity"),
-            hint("q", "quit")
+            hint("q", "quit"),
         ));
     }
 
@@ -207,14 +168,16 @@ fn render(s: &State, flash: Option<&str>) {
     std::io::stdout().flush().ok();
 }
 
-fn hint(k: &str, label: &str) -> String {
-    format!("{}{}{}", dim("["), bold(k), dim(&format!("] {label}")))
+/// Keyboard hint: `[key] label` — bold key, dim brackets and label.
+fn hint(key: &str, label: &str) -> String {
+    format!("{}{}{}", dim("["), bold(key), dim(&format!("] {label}")))
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-/// Run the interactive dashboard. Falls back to a one-shot status print if
-/// stdout is not a TTY (e.g. when piped).
+/// Run the interactive live dashboard.
+///
+/// Falls back to a single status snapshot when stdout is not a TTY (pipe/redirect).
 pub async fn run_dashboard(client: Arc<DaemonClient>) {
     if !crossterm::tty::IsTty::is_tty(&std::io::stdout()) {
         let _ = crate::handlers::status::run_status(&client, false).await;
@@ -225,10 +188,13 @@ pub async fn run_dashboard(client: Arc<DaemonClient>) {
     execute!(std::io::stdout(), cursor::Hide).ok();
 
     let mut state = fetch(&client).await;
-    let mut refresh = Instant::now() - Duration::from_secs(10);
+    let mut refresh = Instant::now()
+        .checked_sub(Duration::from_secs(10))
+        .unwrap_or_else(Instant::now);
     let mut flash: Option<(String, Instant)> = None;
 
     loop {
+        // Refresh data on first paint and every REFRESH_MS thereafter.
         if refresh.elapsed() >= Duration::from_millis(REFRESH_MS) {
             state = fetch(&client).await;
             refresh = Instant::now();
@@ -239,6 +205,7 @@ pub async fn run_dashboard(client: Arc<DaemonClient>) {
             .filter(|(_, t)| t.elapsed() < Duration::from_secs(3))
             .map(|(m, _)| m.as_str());
         render(&state, msg);
+
         if flash
             .as_ref()
             .map_or(false, |(_, t)| t.elapsed() >= Duration::from_secs(3))
@@ -246,10 +213,12 @@ pub async fn run_dashboard(client: Arc<DaemonClient>) {
             flash = None;
         }
 
+        // Poll for keypress with short timeout so the refresh loop can fire.
         if event::poll(Duration::from_millis(100)).unwrap_or(false) {
             if let Ok(Event::Key(key)) = event::read() {
                 match (key.code, key.modifiers) {
                     (KeyCode::Char('q'), _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => break,
+
                     (KeyCode::Char('s'), _) => {
                         let _ = client
                             .request(DaemonRequest::TriggerSync {
@@ -258,7 +227,7 @@ pub async fn run_dashboard(client: Arc<DaemonClient>) {
                             .await;
                         state = fetch(&client).await;
                         refresh = Instant::now();
-                        flash = Some(("Sync triggered for all pairs".to_string(), Instant::now()));
+                        flash = Some(("Sync triggered".to_string(), Instant::now()));
                     }
                     (KeyCode::Char('p'), _) => {
                         let _ = client.request(DaemonRequest::PauseSyncAll).await;
@@ -273,16 +242,19 @@ pub async fn run_dashboard(client: Arc<DaemonClient>) {
                         flash = Some(("Sync resumed".to_string(), Instant::now()));
                     }
                     (KeyCode::Char('a'), _) => {
-                        // Drop raw mode briefly to show activity log.
+                        // Temporarily restore normal terminal to print activity.
                         terminal::disable_raw_mode().ok();
                         execute!(std::io::stdout(), cursor::Show, cursor::MoveToNextLine(1)).ok();
                         let _ =
                             crate::handlers::activity::run_activity(&client, 20, None, false).await;
-                        println!("\n  Press any key to return…");
+                        println!("\n  {}", dim("Press any key to return…"));
                         terminal::enable_raw_mode().ok();
                         execute!(std::io::stdout(), cursor::Hide).ok();
-                        event::read().ok(); // wait for keypress
-                        refresh = Instant::now() - Duration::from_secs(10); // force redraw
+                        event::read().ok();
+                        // Force immediate redraw.
+                        refresh = Instant::now()
+                            .checked_sub(Duration::from_secs(10))
+                            .unwrap_or_else(Instant::now);
                     }
                     _ => {}
                 }
@@ -290,6 +262,7 @@ pub async fn run_dashboard(client: Arc<DaemonClient>) {
         }
     }
 
+    // Restore terminal.
     execute!(std::io::stdout(), cursor::Show, cursor::MoveToNextLine(1)).ok();
     terminal::disable_raw_mode().ok();
 }

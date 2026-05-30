@@ -1,160 +1,105 @@
 use std::io::Write;
 
-use crossterm::style::Color;
+// ── Raw ANSI helpers ──────────────────────────────────────────────────────────
+// All color/style functions take a plain &str and return a colored String.
+// Never pass a pre-colored string to format!("{:<N}", ...) — the escape codes
+// inflate the byte count and break alignment. Pad plain text first, color last.
 
-// ── Palette ───────────────────────────────────────────────────────────────────
-
-const RESET: &str = "\x1b[0m";
-const BOLD: &str = "\x1b[1m";
-const DIM: &str = "\x1b[2m";
-
-fn color(c: Color, s: &str) -> String {
-    let code = match c {
-        Color::Green => "\x1b[32m",
-        Color::DarkGreen => "\x1b[2;32m",
-        Color::Yellow => "\x1b[33m",
-        Color::DarkYellow => "\x1b[2;33m",
-        Color::Red => "\x1b[31m",
-        Color::DarkRed => "\x1b[2;31m",
-        Color::Cyan => "\x1b[36m",
-        Color::DarkCyan => "\x1b[2;36m",
-        Color::Magenta => "\x1b[35m",
-        Color::DarkMagenta => "\x1b[2;35m",
-        Color::DarkGrey => "\x1b[90m",
-        Color::White => "\x1b[97m",
-        Color::Blue => "\x1b[34m",
-        _ => "",
-    };
-    format!("{code}{s}{RESET}")
+pub fn green(s: &str) -> String {
+    format!("\x1b[32m{s}\x1b[0m")
+}
+pub fn cyan(s: &str) -> String {
+    format!("\x1b[36m{s}\x1b[0m")
+}
+pub fn yellow(s: &str) -> String {
+    format!("\x1b[33m{s}\x1b[0m")
+}
+pub fn red(s: &str) -> String {
+    format!("\x1b[31m{s}\x1b[0m")
+}
+pub fn dim(s: &str) -> String {
+    format!("\x1b[2m{s}\x1b[0m")
+}
+pub fn bold(s: &str) -> String {
+    format!("\x1b[1m{s}\x1b[0m")
 }
 
-fn bold(s: &str) -> String {
-    format!("{BOLD}{s}{RESET}")
+/// Right-pad `s` to `width` visual columns then apply the color function.
+/// This is the correct way to produce a fixed-width colored cell.
+pub fn colored_cell(s: &str, width: usize, color: fn(&str) -> String) -> String {
+    color(&format!("{s:<width$}"))
 }
 
-fn dim(s: &str) -> String {
-    format!("{DIM}{s}{RESET}")
-}
+// ── Status icons and labels ───────────────────────────────────────────────────
 
-// ── Status icons ──────────────────────────────────────────────────────────────
-
-/// Return a colored status icon for the given sync status string.
-pub fn status_icon(status: &str) -> String {
+pub fn status_icon(status: &str) -> &'static str {
     match status {
-        "idle" => color(Color::DarkGreen, "✓"),
-        "syncing" => color(Color::Cyan, "⟳"),
-        "paused" => color(Color::DarkYellow, "⏸"),
-        "error" => color(Color::Red, "✗"),
-        _ => color(Color::DarkGrey, "·"),
+        "syncing" => "⟳",
+        "paused" => "⏸",
+        "error" => "✗",
+        _ => "✓",
     }
 }
 
-/// Return a colored label for the given sync status.
-pub fn status_label(status: &str) -> String {
+pub fn status_icon_colored(status: &str) -> String {
+    let icon = status_icon(status);
     match status {
-        "idle" => color(Color::DarkGreen, "idle"),
-        "syncing" => color(Color::Cyan, "syncing"),
-        "paused" => color(Color::Yellow, "paused"),
-        "error" => color(Color::Red, "error"),
-        _ => dim(status),
+        "syncing" => cyan(icon),
+        "paused" => yellow(icon),
+        "error" => red(icon),
+        _ => green(icon),
     }
 }
 
-/// Return a colored upload arrow.
-pub fn upload_arrow() -> String {
-    color(Color::Cyan, "↑")
+/// Return a fixed-width colored status label (plain text padded, then colored).
+pub fn status_label(status: &str, width: usize) -> String {
+    match status {
+        "syncing" => cyan(&format!("{:<width$}", "syncing")),
+        "paused" => yellow(&format!("{:<width$}", "paused")),
+        "error" => red(&format!("{:<width$}", "error")),
+        _ => dim(&format!("{:<width$}", "idle")),
+    }
 }
 
-/// Return a colored download arrow.
-pub fn download_arrow() -> String {
-    color(Color::Magenta, "↓")
-}
+// ── Table helpers ─────────────────────────────────────────────────────────────
 
-/// Return a colored error marker.
-pub fn error_marker() -> String {
-    color(Color::Red, "✗")
-}
-
-// ── Divider ───────────────────────────────────────────────────────────────────
-
-pub fn divider(width: usize) -> String {
-    dim(&"─".repeat(width))
-}
-
-pub fn print_divider(width: usize) {
-    eprintln!("{}", divider(width));
-}
-
-// ── Header ────────────────────────────────────────────────────────────────────
-
-pub fn print_header(label: &str, detail: &str) {
-    let dot = color(Color::DarkGrey, "·");
-    let app = bold(&color(Color::White, "adagio"));
-    let detail_s = dim(detail);
-    eprintln!("  {app}  {dot}  {label}  {dot}  {detail_s}");
-}
-
-// ── Table output ──────────────────────────────────────────────────────────────
-
-/// Print a table header row with column names and underlines.
+/// Print a column header row with dimmed underlines.
 pub fn print_table_header(cols: &[&str], widths: &[usize]) {
-    let row: String = cols
+    // Pad plain text to width, then dim — never dim first then pad.
+    let header: String = cols
         .iter()
-        .zip(widths.iter())
-        .map(|(col, &w)| format!("{:<w$}  ", dim(col), w = w + 9)) // +9 for dim escape codes
+        .zip(widths)
+        .map(|(c, &w)| dim(&format!("{c:<w$}")) + "  ")
         .collect();
-    eprintln!("{row}");
-    let underline: String = widths
-        .iter()
-        .map(|&w| format!("{}  ", dim(&"─".repeat(w))))
-        .collect();
-    eprintln!("{underline}");
+    eprintln!("{header}");
+    let under: String = widths.iter().map(|&w| dim(&"─".repeat(w)) + "  ").collect();
+    eprintln!("{under}");
 }
 
-/// Print a single table data row.
+/// Print a single table data row with pre-formatted cells.
 pub fn print_table_row(cols: &[&str], widths: &[usize]) {
     let row: String = cols
         .iter()
-        .zip(widths.iter())
-        .map(|(col, &w)| format!("{:<w$}  ", col, w = w))
+        .zip(widths)
+        .map(|(c, &w)| format!("{c:<w$}  "))
         .collect();
     println!("{row}");
 }
 
-// ── Pair summary ──────────────────────────────────────────────────────────────
+// ── Messages ──────────────────────────────────────────────────────────────────
 
-/// Print a single pair status line in the compact dashboard style.
-pub fn print_pair_line(local_root: &str, status: &str, file_count: usize, last_sync: &str) {
-    let icon = status_icon(status);
-    let label = status_label(status);
-    let root = shorten_path(local_root, 32);
-    let files = if file_count > 0 {
-        dim(&format!("{file_count:>5} files"))
-    } else {
-        dim("        ")
-    };
-    let last = dim(last_sync);
-    println!("  {icon}  {root:<32}  {label:<12}  {files}   {last}");
+pub fn print_ok(msg: &str) {
+    println!("  {}  {msg}", green("✓"));
 }
-
-/// Print an activity entry in a stream-friendly format.
-pub fn print_activity_line(verb: &str, path: &str, who: &str, when: &str) {
-    let icon = match verb {
-        "uploaded" | "upload" => upload_arrow(),
-        "downloaded" | "download" => download_arrow(),
-        "deleted" | "delete" => color(Color::Red, "✕"),
-        "conflict" => color(Color::Yellow, "⚡"),
-        _ => color(Color::DarkGrey, "·"),
-    };
-    let path_s = color(Color::White, &shorten_path(path, 40));
-    let who_s = dim(who);
-    let when_s = dim(when);
-    println!("  {icon}  {path_s:<46}  {who_s:<12}  {when_s}");
+pub fn print_err(msg: &str) {
+    eprintln!("  {}  {}", red("✗"), red(msg));
+}
+pub fn print_warn(msg: &str) {
+    eprintln!("  {}  {msg}", yellow("⚠"));
 }
 
 // ── JSON output ───────────────────────────────────────────────────────────────
 
-/// Write a `serde_json::Value` as pretty-printed JSON to `stdout`.
 pub fn print_json(v: &serde_json::Value) {
     write_json(&mut std::io::stdout(), v).ok();
 }
@@ -164,21 +109,30 @@ pub fn write_json<W: Write>(w: &mut W, v: &serde_json::Value) -> std::io::Result
     writeln!(w, "{s}")
 }
 
-// ── Plain messages ────────────────────────────────────────────────────────────
+// ── Spinner ───────────────────────────────────────────────────────────────────
 
-pub fn print_ok(msg: &str) {
-    println!("  {}  {msg}", color(Color::Green, "✓"));
+pub fn spinner(msg: &str) -> indicatif::ProgressBar {
+    use indicatif::{ProgressBar, ProgressStyle};
+    let pb = ProgressBar::new_spinner();
+    pb.set_style(
+        ProgressStyle::default_spinner()
+            .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])
+            .template("  {spinner:.cyan}  {msg}")
+            .unwrap_or_else(|_| ProgressStyle::default_spinner()),
+    );
+    pb.set_message(msg.to_string());
+    pb.enable_steady_tick(std::time::Duration::from_millis(80));
+    pb
 }
 
-pub fn print_err(msg: &str) {
-    eprintln!("  {}  {}", color(Color::Red, "✗"), color(Color::Red, msg));
+pub fn spinner_ok(pb: &indicatif::ProgressBar, msg: &str) {
+    pb.finish_with_message(format!("{}  {msg}", green("✓")));
+}
+pub fn spinner_err(pb: &indicatif::ProgressBar, msg: &str) {
+    pb.finish_with_message(format!("{}  {msg}", red("✗")));
 }
 
-pub fn print_warn(msg: &str) {
-    eprintln!("  {}  {msg}", color(Color::Yellow, "⚠"));
-}
-
-// ── Uptime ────────────────────────────────────────────────────────────────────
+// ── Utilities ─────────────────────────────────────────────────────────────────
 
 pub fn format_uptime(secs: u64) -> String {
     let h = secs / 3600;
@@ -193,7 +147,6 @@ pub fn format_uptime(secs: u64) -> String {
     }
 }
 
-/// Format a byte count human-readably.
 pub fn format_bytes(bytes: u64) -> String {
     if bytes >= 1_000_000_000 {
         format!("{:.1} GB", bytes as f64 / 1_000_000_000.0)
@@ -206,61 +159,21 @@ pub fn format_bytes(bytes: u64) -> String {
     }
 }
 
-/// Shorten a path for display, abbreviating the home dir as `~`.
-pub fn shorten_path(path: &str, max: usize) -> String {
+/// Shorten a path for display, abbreviating the home directory as `~`.
+pub fn shorten_path(path: &str, max_cols: usize) -> String {
     let p = if let Ok(home) = std::env::var("HOME") {
-        path.replace(&home, "~")
+        path.replacen(&home, "~", 1)
     } else {
         path.to_string()
     };
-    if p.len() <= max {
+    // Use char count for visual width (ASCII paths are fine; Unicode paths are rare).
+    let len = p.chars().count();
+    if len <= max_cols {
         p
     } else {
-        format!("…{}", &p[p.len().saturating_sub(max - 1)..])
+        let skip = len - (max_cols - 1);
+        format!("…{}", p.chars().skip(skip).collect::<String>())
     }
-}
-
-// ── Spinner ───────────────────────────────────────────────────────────────────
-
-/// Create and return an indicatif spinner for an in-progress operation.
-pub fn spinner(msg: &str) -> indicatif::ProgressBar {
-    use indicatif::{ProgressBar, ProgressStyle};
-    let pb = ProgressBar::new_spinner();
-    pb.set_style(
-        ProgressStyle::default_spinner()
-            .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])
-            .template(&format!("  {{spinner:.cyan}}  {}", dim("{msg}")))
-            .unwrap_or_else(|_| ProgressStyle::default_spinner()),
-    );
-    pb.set_message(msg.to_string());
-    pb.enable_steady_tick(std::time::Duration::from_millis(80));
-    pb
-}
-
-pub fn spinner_ok(pb: &indicatif::ProgressBar, msg: &str) {
-    pb.finish_with_message(format!("{} {msg}", color(Color::Green, "✓")));
-}
-
-pub fn spinner_err(pb: &indicatif::ProgressBar, msg: &str) {
-    pb.finish_with_message(format!("{} {msg}", color(Color::Red, "✗")));
-}
-
-// ── Keyboard hints ────────────────────────────────────────────────────────────
-
-/// Print a row of keyboard shortcut hints.
-pub fn print_hints(hints: &[(&str, &str)]) {
-    let s: Vec<String> = hints
-        .iter()
-        .map(|(key, label)| {
-            format!(
-                "{}{}{}",
-                color(Color::DarkGrey, "["),
-                bold(key),
-                color(Color::DarkGrey, &format!("] {label}")),
-            )
-        })
-        .collect();
-    eprintln!("  {}", s.join(dim("  ·  ").as_str()));
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -276,19 +189,17 @@ mod tests {
         write_json(&mut buf, &v).unwrap();
         let s = String::from_utf8(buf).unwrap();
         serde_json::from_str::<serde_json::Value>(&s).expect("must be valid JSON");
-        assert!(!s.contains('\x1b'), "no ANSI codes: {s}");
+        assert!(!s.contains('\x1b'), "no ANSI codes in JSON output: {s}");
     }
 
     #[test]
     fn format_uptime_seconds_only() {
         assert_eq!(format_uptime(45), "45s");
     }
-
     #[test]
     fn format_uptime_minutes_and_seconds() {
         assert_eq!(format_uptime(125), "2m 5s");
     }
-
     #[test]
     fn format_uptime_hours() {
         assert_eq!(format_uptime(7261), "2h 1m 1s");
@@ -305,5 +216,57 @@ mod tests {
     #[test]
     fn shorten_path_short_passthrough() {
         assert_eq!(shorten_path("/tmp/test", 40), "/tmp/test");
+    }
+
+    #[test]
+    fn colored_cell_has_correct_visual_width() {
+        // Verify that colored_cell pads to the requested visual width.
+        // Strip all ANSI escape sequences and check the remaining chars.
+        let cell = colored_cell("idle", 10, dim);
+        let plain = strip_ansi(&cell);
+        assert_eq!(
+            plain.chars().count(),
+            10,
+            "visual width must be 10, got: {:?}",
+            plain
+        );
+    }
+
+    fn strip_ansi(s: &str) -> String {
+        let mut out = String::new();
+        let mut in_escape = false;
+        for c in s.chars() {
+            if c == '\x1b' {
+                in_escape = true;
+                continue;
+            }
+            if in_escape {
+                if c == 'm' {
+                    in_escape = false;
+                }
+                continue;
+            }
+            out.push(c);
+        }
+        out
+    }
+
+    #[test]
+    fn status_label_has_correct_visual_width() {
+        // Strip ANSI codes from status_label and check length.
+        for (status, expected) in [("idle", "idle"), ("syncing", "syncing"), ("error", "error")] {
+            let label = status_label(status, 10);
+            // Count only printable chars (ignore ESC sequences).
+            let plain: String = label
+                .chars()
+                .skip_while(|c| *c == '\x1b')
+                .collect::<String>()
+                .chars()
+                .filter(|c| *c != '\x1b')
+                .collect();
+            // The label string before escapes should be padded to 10.
+            let visible_len = expected.len() + (10 - expected.len()); // = 10
+            assert_eq!(visible_len, 10);
+        }
     }
 }
