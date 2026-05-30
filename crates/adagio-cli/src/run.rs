@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use adagio_ipc::DaemonClient;
 
-use crate::cli::{BandwidthCommand, Cli, Commands, NetworkCommand};
+use crate::cli::{Cli, Commands};
 use crate::error::CliError;
 
 /// Dispatch the parsed CLI command to the appropriate handler.
