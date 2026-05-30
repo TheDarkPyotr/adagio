@@ -1,12 +1,12 @@
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan at
-`specs/009-bandwidth-throttling/plan.md`.
+`specs/010-network-awareness/plan.md`.
 
 Key artifacts for this feature:
-- Spec: `specs/009-bandwidth-throttling/spec.md`
-- Research & decisions: `specs/009-bandwidth-throttling/research.md`
-- Data model: `specs/009-bandwidth-throttling/data-model.md`
-- IPC contract: `specs/009-bandwidth-throttling/contracts/bandwidth-ipc.md`
-- Dev setup: `specs/009-bandwidth-throttling/quickstart.md`
+- Spec: `specs/010-network-awareness/spec.md`
+- Research & decisions: `specs/010-network-awareness/research.md`
+- Data model: `specs/010-network-awareness/data-model.md`
+- IPC contract: `specs/010-network-awareness/contracts/network-ipc.md`
+- Dev setup: `specs/010-network-awareness/quickstart.md`
 <!-- SPECKIT END -->

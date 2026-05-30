@@ -3,6 +3,7 @@ pub mod activity;
 pub mod bandwidth;
 pub mod conflicts;
 pub mod daemon;
+pub mod network;
 pub mod pairs;
 pub mod pause_resume;
 pub mod status;

@@ -113,6 +113,24 @@ pub enum DaemonRequest {
 
     /// Remove all bandwidth limits for an account (equivalent to set both to 0).
     ClearBandwidthLimits { account_id: Option<String> },
+
+    // ── Network awareness ─────────────────────────────────────────────────────
+    /// Return current network state (metered, battery, SSID) and effective policy action.
+    GetNetworkStatus,
+
+    /// Update the global network policy. Omitted fields keep their current value.
+    SetNetworkPolicy {
+        on_metered: Option<String>,
+        on_battery: Option<String>,
+        throttle_kbps: Option<u64>,
+    },
+
+    /// Add, remove, or list blocked SSIDs.
+    /// `action`: `"add"` | `"remove"` | `"list"`. `ssid` required for add/remove.
+    ManageBlockedSsid {
+        action: String,
+        ssid: Option<String>,
+    },
 }
 
 // ── Response (daemon → client) ────────────────────────────────────────────────

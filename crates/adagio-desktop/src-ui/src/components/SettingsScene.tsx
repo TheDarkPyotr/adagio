@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Icon, SpinDot } from './shared';
-import type { SyncStatusDto, DaemonStatusDto, BandwidthStatusDto } from '../tauri';
-import { setPalette as ipcSetPalette, pauseSync, resumeSync, getDaemonStatus, startDaemon, stopDaemon, setStartAtLogin, getBandwidthStatus, setBandwidthLimits, clearBandwidthLimits } from '../tauri';
+import type { SyncStatusDto, DaemonStatusDto, BandwidthStatusDto, NetworkStatusDto, NetworkAction } from '../tauri';
+import { setPalette as ipcSetPalette, pauseSync, resumeSync, getDaemonStatus, startDaemon, stopDaemon, setStartAtLogin, getBandwidthStatus, setBandwidthLimits, clearBandwidthLimits, getNetworkStatus, setNetworkPolicy, addBlockedSsid, removeBlockedSsid } from '../tauri';
 
 type Section = 'appearance' | 'sync' | 'about';
 
@@ -33,7 +33,16 @@ export default function SettingsScene({ palette, onPalette, syncStatus, onBack, 
   const [bandwidthSaving, setBandwidthSaving] = useState(false);
   const bandwidthPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Load daemon + bandwidth status when the Sync section is shown.
+  // Network awareness state
+  const [networkStatus, setNetworkStatus] = useState<NetworkStatusDto | null>(null);
+  const [onMetered, setOnMetered] = useState<NetworkAction>('allow');
+  const [onBattery, setOnBattery] = useState<NetworkAction>('allow');
+  const [networkThrottle, setNetworkThrottle] = useState('');
+  const [newSsid, setNewSsid] = useState('');
+  const [networkSaving, setNetworkSaving] = useState(false);
+  const networkPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Load daemon + bandwidth + network status when the Sync section is shown.
   useEffect(() => {
     if (section !== 'sync') {
       if (bandwidthPollRef.current) { clearInterval(bandwidthPollRef.current); bandwidthPollRef.current = null; }
@@ -48,7 +57,20 @@ export default function SettingsScene({ palette, onPalette, syncStatus, onBack, 
     }).catch(() => {});
     refreshBandwidth();
     bandwidthPollRef.current = setInterval(refreshBandwidth, 3000);
-    return () => { if (bandwidthPollRef.current) { clearInterval(bandwidthPollRef.current); bandwidthPollRef.current = null; } };
+
+    const refreshNetwork = () => getNetworkStatus().then(s => {
+      setNetworkStatus(s);
+      setOnMetered(s.policy.on_metered);
+      setOnBattery(s.policy.on_battery);
+      setNetworkThrottle(s.policy.throttle_kbps === 0 ? '' : String(s.policy.throttle_kbps));
+    }).catch(() => {});
+    refreshNetwork();
+    networkPollRef.current = setInterval(refreshNetwork, 3000);
+
+    return () => {
+      if (bandwidthPollRef.current) { clearInterval(bandwidthPollRef.current); bandwidthPollRef.current = null; }
+      if (networkPollRef.current) { clearInterval(networkPollRef.current); networkPollRef.current = null; }
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [section]);
 
@@ -302,6 +324,139 @@ export default function SettingsScene({ palette, onPalette, syncStatus, onBack, 
                   <div style={{ marginTop: 14, fontSize: 12, color: 'var(--ink-muted)', fontFamily: 'var(--mono)', display: 'flex', gap: 24 }}>
                     <span data-testid="live-upload-rate">Upload: {bandwidthStatus.upload_rate_kbps} Kbps</span>
                     <span data-testid="live-download-rate">Download: {bandwidthStatus.download_rate_kbps} Kbps</span>
+                  </div>
+                )}
+              </div>
+
+              <Divider />
+
+              {/* Network awareness */}
+              <div style={{ padding: '14px 0' }}>
+                <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)', marginBottom: 4 }}>Network</div>
+                <div style={{ fontSize: 12.5, color: 'var(--ink-muted)', lineHeight: 1.5, marginBottom: 14 }}>
+                  Automatically pause or throttle sync based on connection type or power state.
+                </div>
+
+                <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 14 }}>
+                  <div>
+                    <div style={FIELD_LABEL}>On metered connection</div>
+                    <select
+                      data-testid="network-on-metered-select"
+                      value={onMetered}
+                      onChange={e => setOnMetered(e.target.value as NetworkAction)}
+                      style={{ marginTop: 6, padding: '6px 10px', fontSize: 13, border: '1px solid var(--hairline)', borderRadius: 'var(--r-2)', background: 'var(--paper)', color: 'var(--ink)' }}
+                    >
+                      <option value="allow">Allow</option>
+                      <option value="throttle">Throttle</option>
+                      <option value="pause">Pause</option>
+                    </select>
+                  </div>
+                  <div>
+                    <div style={FIELD_LABEL}>On battery</div>
+                    <select
+                      data-testid="network-on-battery-select"
+                      value={onBattery}
+                      onChange={e => setOnBattery(e.target.value as NetworkAction)}
+                      style={{ marginTop: 6, padding: '6px 10px', fontSize: 13, border: '1px solid var(--hairline)', borderRadius: 'var(--r-2)', background: 'var(--paper)', color: 'var(--ink)' }}
+                    >
+                      <option value="allow">Allow</option>
+                      <option value="throttle">Throttle</option>
+                      <option value="pause">Pause</option>
+                    </select>
+                  </div>
+                  {(onMetered === 'throttle' || onBattery === 'throttle') && (
+                    <div>
+                      <div style={FIELD_LABEL}>Throttle limit (Kbps)</div>
+                      <input
+                        data-testid="network-throttle-input"
+                        type="number"
+                        min={1}
+                        placeholder="e.g. 200"
+                        value={networkThrottle}
+                        onChange={e => setNetworkThrottle(e.target.value)}
+                        style={{ marginTop: 6, padding: '6px 10px', fontSize: 13, border: '1px solid var(--hairline)', borderRadius: 'var(--r-2)', background: 'var(--paper)', color: 'var(--ink)', width: 120 }}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  data-testid="network-save-btn"
+                  disabled={networkSaving}
+                  onClick={async () => {
+                    setNetworkSaving(true);
+                    try {
+                      const kbps = parseInt(networkThrottle, 10) || 0;
+                      await setNetworkPolicy(onMetered, onBattery, kbps);
+                      const updated = await getNetworkStatus();
+                      setNetworkStatus(updated);
+                    } catch {}
+                    setNetworkSaving(false);
+                  }}
+                  style={{ background: 'var(--clay)', color: 'var(--cream)', border: 'none', padding: '7px 16px', borderRadius: 'var(--r-pill)', fontSize: 12.5, cursor: 'pointer', fontWeight: 500, opacity: networkSaving ? 0.5 : 1, marginBottom: 16 }}
+                >
+                  {networkSaving ? 'Saving…' : 'Save'}
+                </button>
+
+                {/* SSID block list */}
+                <div style={{ marginBottom: 8, fontSize: 12.5, fontWeight: 500, color: 'var(--ink)' }}>Blocked SSIDs</div>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                  <input
+                    data-testid="network-ssid-input"
+                    type="text"
+                    placeholder="Network name"
+                    value={newSsid}
+                    onChange={e => setNewSsid(e.target.value)}
+                    style={{ padding: '6px 10px', fontSize: 13, border: '1px solid var(--hairline)', borderRadius: 'var(--r-2)', background: 'var(--paper)', color: 'var(--ink)', flex: 1, maxWidth: 220 }}
+                  />
+                  <button
+                    data-testid="network-add-ssid-btn"
+                    disabled={!newSsid.trim()}
+                    onClick={async () => {
+                      if (!newSsid.trim()) return;
+                      try {
+                        await addBlockedSsid(newSsid.trim());
+                        setNewSsid('');
+                        const updated = await getNetworkStatus();
+                        setNetworkStatus(updated);
+                      } catch {}
+                    }}
+                    style={{ background: 'var(--paper-2)', border: '1px solid var(--hairline)', color: 'var(--ink)', padding: '6px 14px', borderRadius: 'var(--r-2)', fontSize: 12.5, cursor: 'pointer' }}
+                  >
+                    Block
+                  </button>
+                </div>
+                {networkStatus && networkStatus.policy.blocked_ssids.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {networkStatus.policy.blocked_ssids.map(ssid => (
+                      <div key={ssid} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--ink)' }}>{ssid}</span>
+                        <button
+                          onClick={async () => {
+                            try {
+                              await removeBlockedSsid(ssid);
+                              const updated = await getNetworkStatus();
+                              setNetworkStatus(updated);
+                            } catch {}
+                          }}
+                          style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-muted)', fontSize: 11 }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Live network status */}
+                {networkStatus && (
+                  <div style={{ marginTop: 14, fontSize: 12, color: 'var(--ink-muted)', fontFamily: 'var(--mono)', display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                    <span data-testid="network-metered-state">Metered: {networkStatus.metered ? 'Yes' : 'No'}</span>
+                    <span data-testid="network-battery-state">Battery: {networkStatus.on_battery ? 'Yes' : 'No'}</span>
+                    <span data-testid="network-ssid-state">SSID: {networkStatus.ssid ?? 'Unknown'}</span>
+                    <span data-testid="network-effective-action">
+                      {networkStatus.effective_action}{networkStatus.reason ? ` (${networkStatus.reason})` : ''}
+                    </span>
                   </div>
                 )}
               </div>

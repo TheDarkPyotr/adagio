@@ -1,3 +1,4 @@
+use adagio_core::network::NetworkPolicy;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -23,6 +24,9 @@ pub struct SavedConfig {
     /// (sienna, or ink if OS dark-mode is active). Never store credentials here.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub palette: Option<String>,
+    /// Network awareness policy (metered/battery/SSID rules). Default = all Allow.
+    #[serde(default)]
+    pub network_policy: NetworkPolicy,
 }
 
 /// A Nextcloud account as persisted on disk.
@@ -192,6 +196,7 @@ mod tests {
             accounts: vec![make_account("acc-1"), make_account("acc-2")],
             pairs: vec![make_pair("pair-1", "acc-1")],
             palette: None,
+            network_policy: Default::default(),
         };
         save_config(&path, &cfg).unwrap();
         let loaded = load_config(&path);
@@ -242,6 +247,7 @@ mod tests {
             accounts: vec![make_account("acc-1")],
             pairs: vec![],
             palette: None,
+            network_policy: Default::default(),
         };
         save_config(&path, &cfg).unwrap();
         let raw = fs::read_to_string(&path).unwrap();

@@ -65,6 +65,42 @@ pub enum Commands {
         #[command(subcommand)]
         command: BandwidthCommand,
     },
+    /// Manage network-awareness policy (metered, battery, SSID blocking).
+    Network {
+        #[command(subcommand)]
+        command: NetworkCommand,
+    },
+}
+
+/// Subcommands for `adagio network`.
+#[derive(Subcommand, Debug)]
+pub enum NetworkCommand {
+    /// Show current network state and active policy.
+    Status,
+    /// Configure network-awareness policy.
+    Set {
+        /// Action when on a metered connection: allow, throttle, or pause.
+        #[arg(long, value_parser = ["allow", "throttle", "pause"])]
+        on_metered: Option<String>,
+        /// Action when on battery power: allow, throttle, or pause.
+        #[arg(long, value_parser = ["allow", "throttle", "pause"])]
+        on_battery: Option<String>,
+        /// Shared throttle limit in Kbps (used when on-metered or on-battery is throttle).
+        #[arg(long)]
+        throttle_kbps: Option<u64>,
+    },
+    /// Add an SSID to the block list (sync pauses when connected to it).
+    BlockSsid {
+        /// The exact Wi-Fi network name to block (case-sensitive).
+        ssid: String,
+    },
+    /// Remove an SSID from the block list.
+    UnblockSsid {
+        /// The SSID to unblock.
+        ssid: String,
+    },
+    /// List all blocked SSIDs.
+    ListBlocked,
 }
 
 /// Subcommands for `adagio bandwidth`.

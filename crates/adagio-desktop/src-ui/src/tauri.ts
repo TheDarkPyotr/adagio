@@ -259,6 +259,50 @@ export const setBandwidthLimits = (uploadKbps: number, downloadKbps: number): Pr
 export const clearBandwidthLimits = (): Promise<void> =>
   invoke('clear_bandwidth_limits');
 
+// ── Network awareness ─────────────────────────────────────────────────────────
+
+export type NetworkAction = 'allow' | 'throttle' | 'pause';
+
+export interface NetworkPolicyDto {
+  on_metered: NetworkAction;
+  on_battery: NetworkAction;
+  throttle_kbps: number;
+  blocked_ssids: string[];
+}
+
+export interface NetworkStatusDto {
+  metered: boolean;
+  on_battery: boolean;
+  ssid: string | null;
+  effective_action: NetworkAction;
+  throttle_kbps: number;
+  reason: string;
+  policy: NetworkPolicyDto;
+}
+
+export const getNetworkStatus = (): Promise<NetworkStatusDto> =>
+  invoke('get_network_status');
+
+export const setNetworkPolicy = (
+  onMetered?: NetworkAction,
+  onBattery?: NetworkAction,
+  throttleKbps?: number,
+): Promise<void> =>
+  invoke('set_network_policy', {
+    onMetered: onMetered ?? null,
+    onBattery: onBattery ?? null,
+    throttleKbps: throttleKbps ?? null,
+  });
+
+export const addBlockedSsid = (ssid: string): Promise<void> =>
+  invoke('add_blocked_ssid', { ssid });
+
+export const removeBlockedSsid = (ssid: string): Promise<void> =>
+  invoke('remove_blocked_ssid', { ssid });
+
+export const listBlockedSsids = (): Promise<string[]> =>
+  invoke('list_blocked_ssids');
+
 /** Listen for daemon connection state changes. */
 export const listenDaemonConnectionState = (
   cb: (payload: { state: 'connected' | 'reconnecting' | 'stopped' | 'failed'; attempt?: number }) => void,

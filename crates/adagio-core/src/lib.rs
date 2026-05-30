@@ -6,6 +6,7 @@ pub mod cycle;
 pub mod detection;
 pub mod error;
 pub mod journal;
+pub mod network;
 pub mod observability;
 pub mod path_compat;
 pub mod remote;

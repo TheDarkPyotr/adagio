@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use adagio_ipc::DaemonClient;
 
-use crate::cli::{BandwidthCommand, Cli, Commands};
+use crate::cli::{BandwidthCommand, Cli, Commands, NetworkCommand};
 use crate::error::CliError;
 
 /// Dispatch the parsed CLI command to the appropriate handler.
@@ -30,6 +30,9 @@ pub async fn run(cli: &Cli, client: Arc<DaemonClient>) -> Result<(), CliError> {
         Commands::Daemon { command } => handlers::daemon::run_daemon(command, cli.json).await,
         Commands::Bandwidth { command } => {
             handlers::bandwidth::run_bandwidth(&client, command, cli.json).await
+        }
+        Commands::Network { command } => {
+            handlers::network::run_network(&client, command, cli.json).await
         }
     }
 }

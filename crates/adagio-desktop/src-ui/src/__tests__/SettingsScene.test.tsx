@@ -57,7 +57,8 @@ describe('SettingsScene', () => {
   it('shows Pause button when not paused', () => {
     render(<SettingsScene {...defaultProps} syncStatus={{ status: 'idle', active_file_count: 0, total_bytes: 0, transferred_bytes: 0, eta_seconds: null, last_sync_at: null }} />);
     fireEvent.click(screen.getAllByText('Sync')[0]);
-    expect(screen.getByText('Pause')).toBeInTheDocument();
+    // Use getAllByText since "Pause" also appears as a dropdown option in Network section
+    expect(screen.getAllByText('Pause').length).toBeGreaterThan(0);
   });
 
   it('shows Resume button when paused', () => {
@@ -140,6 +141,43 @@ describe('SettingsScene', () => {
     await waitFor(() => {
       expect(screen.getByTestId('live-upload-rate')).toHaveTextContent('123 Kbps');
       expect(screen.getByTestId('live-download-rate')).toHaveTextContent('456 Kbps');
+    });
+  });
+
+  // T043 — Network section renders with metered and battery selectors.
+  it('renders network section with metered and battery selectors', async () => {
+    render(<SettingsScene {...defaultProps} />);
+    fireEvent.click(screen.getAllByText('Sync')[0]);
+    await waitFor(() => {
+      expect(screen.getByText('Network')).toBeInTheDocument();
+      expect(screen.getByTestId('network-on-metered-select')).toBeInTheDocument();
+      expect(screen.getByTestId('network-on-battery-select')).toBeInTheDocument();
+    });
+  });
+
+  // T044 — Save calls setNetworkPolicy with correct values.
+  it('network save calls setNetworkPolicy with correct values', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    render(<SettingsScene {...defaultProps} />);
+    fireEvent.click(screen.getAllByText('Sync')[0]);
+    await waitFor(() => expect(screen.getByTestId('network-on-metered-select')).toBeInTheDocument());
+    fireEvent.change(screen.getByTestId('network-on-metered-select'), { target: { value: 'pause' } });
+    fireEvent.click(screen.getByTestId('network-save-btn'));
+    await waitFor(() => {
+      expect(vi.mocked(invoke)).toHaveBeenCalledWith('set_network_policy', expect.objectContaining({ onMetered: 'pause' }));
+    });
+  });
+
+  // T045 — Block SSID button calls addBlockedSsid.
+  it('network block ssid button calls addBlockedSsid', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    render(<SettingsScene {...defaultProps} />);
+    fireEvent.click(screen.getAllByText('Sync')[0]);
+    await waitFor(() => expect(screen.getByTestId('network-ssid-input')).toBeInTheDocument());
+    fireEvent.change(screen.getByTestId('network-ssid-input'), { target: { value: 'TestWifi' } });
+    fireEvent.click(screen.getByTestId('network-add-ssid-btn'));
+    await waitFor(() => {
+      expect(vi.mocked(invoke)).toHaveBeenCalledWith('add_blocked_ssid', { ssid: 'TestWifi' });
     });
   });
 });

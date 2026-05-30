@@ -176,6 +176,11 @@ pub fn run() {
             commands::bandwidth::get_bandwidth_status,
             commands::bandwidth::set_bandwidth_limits,
             commands::bandwidth::clear_bandwidth_limits,
+            commands::network::get_network_status,
+            commands::network::set_network_policy,
+            commands::network::add_blocked_ssid,
+            commands::network::remove_blocked_ssid,
+            commands::network::list_blocked_ssids,
         ])
         .run(tauri::generate_context!())
         .expect("error running Tauri application");

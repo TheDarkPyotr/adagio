@@ -1,6 +1,7 @@
 mod autostart;
 mod dispatcher;
 mod events;
+mod network_monitor;
 mod server;
 mod shutdown;
 
@@ -8,6 +9,7 @@ use adagio_core::account_manager::AccountManager;
 use adagio_core::config::SyncPairManager;
 use adagio_core::cycle::DefaultSyncEngine;
 use adagio_core::journal::sqlite::SqliteJournal;
+use adagio_core::network::NetworkPolicy;
 use adagio_ipc::transport::{daemon_socket_path, ensure_socket_dir};
 use dispatcher::DaemonProcess;
 use events::EventBroadcaster;
@@ -89,6 +91,12 @@ async fn main() -> anyhow::Result<()> {
     let engine = Arc::new(DefaultSyncEngine::new());
     let events = EventBroadcaster::new(256);
 
+    // ── Network policy (loaded from config or defaulted) ──────────────────────
+    let network_policy_val: NetworkPolicy =
+        serde_json::from_value(saved.get("network_policy").cloned().unwrap_or_default())
+            .unwrap_or_default();
+    let network_policy = Arc::new(RwLock::new(network_policy_val));
+
     // ── Spawn pair runners ────────────────────────────────────────────────────
     let cancel = CancellationToken::new();
     let tracker = TaskTracker::new();
@@ -113,6 +121,14 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
+    // ── Network monitor ───────────────────────────────────────────────────────
+    let network_monitor = network_monitor::spawn_network_monitor(
+        engine.clone(),
+        network_policy.clone(),
+        &tracker,
+        cancel.clone(),
+    );
+
     // ── IPC server ────────────────────────────────────────────────────────────
     let state = Arc::new(DaemonProcess {
         engine: engine.clone(),
@@ -122,6 +138,8 @@ async fn main() -> anyhow::Result<()> {
         events: events.clone(),
         started_at: Instant::now(),
         config_path,
+        network_policy,
+        network_monitor,
     });
 
     #[cfg(unix)]

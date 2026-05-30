@@ -30,6 +30,24 @@ const defaultInvoke = (cmd: string): Promise<unknown> => {
     });
     case 'set_bandwidth_limits': return Promise.resolve();
     case 'clear_bandwidth_limits': return Promise.resolve();
+    case 'get_network_status': return Promise.resolve({
+      metered: false,
+      on_battery: false,
+      ssid: null,
+      effective_action: 'allow',
+      throttle_kbps: 0,
+      reason: '',
+      policy: {
+        on_metered: 'allow',
+        on_battery: 'allow',
+        throttle_kbps: 0,
+        blocked_ssids: [],
+      },
+    });
+    case 'set_network_policy': return Promise.resolve();
+    case 'add_blocked_ssid': return Promise.resolve();
+    case 'remove_blocked_ssid': return Promise.resolve();
+    case 'list_blocked_ssids': return Promise.resolve([]);
     default: return Promise.resolve(null);
   }
 };

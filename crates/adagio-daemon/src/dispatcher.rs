@@ -9,6 +9,7 @@ use adagio_core::config::SyncPairManager;
 use adagio_core::cycle::{DefaultSyncEngine, SyncEngine};
 use adagio_core::journal::sqlite::SqliteJournal;
 use adagio_core::journal::Journal;
+use adagio_core::network::{NetworkMonitor, NetworkPolicy};
 
 use crate::events::EventBroadcaster;
 
@@ -22,6 +23,10 @@ pub struct DaemonProcess {
     pub started_at: Instant,
     /// Path to the config file on disk (for commands that mutate config).
     pub config_path: std::path::PathBuf,
+    /// Shared network policy — updated by IPC, read by the NetworkMonitor.
+    pub network_policy: Arc<RwLock<NetworkPolicy>>,
+    /// Live network state — updated by the NetworkMonitor poll loop.
+    pub network_monitor: Arc<NetworkMonitor>,
 }
 
 /// Route a `DaemonRequest` to the appropriate engine/journal call and return
@@ -583,6 +588,85 @@ pub async fn dispatch(req: DaemonRequest, state: &DaemonProcess) -> Result<Daemo
             save_config(state).await?;
             Ok(DaemonResponse::Unit {})
         }
+
+        // ── Network awareness ─────────────────────────────────────────────────
+        DaemonRequest::GetNetworkStatus => {
+            let ns = state.network_monitor.state.lock().await;
+            let policy = state.network_policy.read().await;
+            let ea = adagio_core::network::derive_effective_action(&policy, &ns);
+            let json = serde_json::json!({
+                "metered": ns.metered,
+                "on_battery": ns.on_battery,
+                "ssid": ns.ssid,
+                "effective_action": format!("{:?}", ea.action).to_lowercase(),
+                "throttle_kbps": ea.throttle_kbps,
+                "reason": ea.reason,
+                "policy": {
+                    "on_metered": format!("{:?}", policy.on_metered).to_lowercase(),
+                    "on_battery": format!("{:?}", policy.on_battery).to_lowercase(),
+                    "throttle_kbps": policy.throttle_kbps,
+                    "blocked_ssids": policy.blocked_ssids,
+                }
+            });
+            Ok(DaemonResponse::Status(json))
+        }
+
+        DaemonRequest::SetNetworkPolicy {
+            on_metered,
+            on_battery,
+            throttle_kbps,
+        } => {
+            use adagio_core::network::NetworkAction;
+            let parse_action = |s: &str| match s {
+                "allow" => Ok(NetworkAction::Allow),
+                "throttle" => Ok(NetworkAction::Throttle),
+                "pause" => Ok(NetworkAction::Pause),
+                other => Err(format!("invalid action: {other}")),
+            };
+            let mut policy = state.network_policy.write().await;
+            if let Some(ref s) = on_metered {
+                policy.on_metered = parse_action(s)?;
+            }
+            if let Some(ref s) = on_battery {
+                policy.on_battery = parse_action(s)?;
+            }
+            if let Some(kbps) = throttle_kbps {
+                policy.throttle_kbps = kbps;
+            }
+            drop(policy);
+            save_config(state).await?;
+            Ok(DaemonResponse::Unit {})
+        }
+
+        DaemonRequest::ManageBlockedSsid { action, ssid } => {
+            let mut policy = state.network_policy.write().await;
+            match action.as_str() {
+                "add" => {
+                    let s = ssid.ok_or_else(|| "ssid required for add".to_string())?;
+                    let trimmed = s.trim().to_string();
+                    if !policy.blocked_ssids.contains(&trimmed) {
+                        policy.blocked_ssids.push(trimmed);
+                    }
+                    drop(policy);
+                    save_config(state).await?;
+                    Ok(DaemonResponse::Unit {})
+                }
+                "remove" => {
+                    let s = ssid.ok_or_else(|| "ssid required for remove".to_string())?;
+                    let trimmed = s.trim().to_string();
+                    policy.blocked_ssids.retain(|b| b != &trimmed);
+                    drop(policy);
+                    save_config(state).await?;
+                    Ok(DaemonResponse::Unit {})
+                }
+                "list" => {
+                    let list = policy.blocked_ssids.clone();
+                    drop(policy);
+                    Ok(DaemonResponse::Strings(list))
+                }
+                other => Err(format!("unknown action: {other}")),
+            }
+        }
     }
 }
 
@@ -617,11 +701,11 @@ async fn count_pending_conflicts(state: &DaemonProcess) -> usize {
 }
 
 async fn save_config(state: &DaemonProcess) -> Result<(), String> {
-    // Re-use the desktop config serialisation helpers
     let accounts = state.accounts.list().map_err(|e| e.to_string())?;
     let pairs = state.pairs.read().await;
-    // Build SavedConfig and write to disk — mirrors adagio-desktop/src/config.rs
-    let saved = build_saved_config(&accounts, &pairs);
+    let policy = state.network_policy.read().await.clone();
+    let mut saved = build_saved_config(&accounts, &pairs);
+    saved["network_policy"] = serde_json::to_value(&policy).unwrap_or_default();
     let json = serde_json::to_string_pretty(&saved).map_err(|e| e.to_string())?;
     std::fs::write(&state.config_path, json).map_err(|e| e.to_string())?;
     Ok(())
@@ -639,6 +723,8 @@ fn build_saved_config(
             "server_url": a.server_url,
             "username": a.username,
             "keychain_service_key": a.keychain_service_key,
+            "upload_limit_kbps": a.upload_limit_kbps,
+            "download_limit_kbps": a.download_limit_kbps,
         })).collect::<Vec<_>>(),
         "pairs": pairs.all_pairs().iter().map(|p| serde_json::json!({
             "id": p.id.to_string(),
@@ -676,15 +762,24 @@ impl MockDaemonState {
         let journal = SqliteJournal::open(&db_url).await.unwrap();
         let config_path = dir.path().join("config.json");
 
+        let engine = Arc::new(DefaultSyncEngine::new());
+        let policy = Arc::new(RwLock::new(NetworkPolicy::default()));
+        let monitor = Arc::new(NetworkMonitor::new(
+            Arc::new(adagio_core::network::detector::MockNetworkDetector::default()),
+            policy.clone(),
+            engine.clone(),
+        ));
         let state = Self {
             inner: DaemonProcess {
-                engine: Arc::new(DefaultSyncEngine::new()),
+                engine,
                 journal: Arc::new(journal),
                 accounts: Arc::new(AccountManager::new()),
                 pairs: Arc::new(RwLock::new(SyncPairManager::new())),
                 events: EventBroadcaster::new(16),
                 started_at: Instant::now(),
                 config_path,
+                network_policy: policy,
+                network_monitor: monitor,
             },
         };
         (state, dir)
