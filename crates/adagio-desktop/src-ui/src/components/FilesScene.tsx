@@ -24,9 +24,10 @@ interface ContextMenuState {
   file: FileStatusDto & { kind: string };
 }
 
-export default function FilesScene({ pairId, isVfsPair, serverHost, currentPath, onPathChange, onShare, onNew, syncStatus, favorites, onToggleFavorite }: {
+export default function FilesScene({ pairId, isVfsPair, localRoot, serverHost, currentPath, onPathChange, onShare, onNew, syncStatus, favorites, onToggleFavorite }: {
   pairId: string | null;
   isVfsPair?: boolean;
+  localRoot?: string;
   serverHost: string;
   currentPath: string;
   onPathChange: (path: string) => void;
@@ -222,6 +223,7 @@ export default function FilesScene({ pairId, isVfsPair, serverHost, currentPath,
           file={ctxMenu.file}
           starred={favorites?.has(ctxMenu.file.path) ?? false}
           serverUrl={serverHost ? `https://${serverHost}` : ''}
+          localRoot={localRoot}
           isVfsPair={isVfsPair}
           onShare={() => { setCtxMenu(null); onShare(ctxMenu.file.path); }}
           onToggleStar={onToggleFavorite ? () => { setCtxMenu(null); onToggleFavorite(ctxMenu.file); } : undefined}
@@ -286,12 +288,13 @@ function FileRowItem({ file, selected, starred, onClick, onDblClick, onShare, on
 
 // ── Context Menu ──────────────────────────────────────────────────────────────
 
-function ContextMenu({ x, y, file, starred, serverUrl, isVfsPair, onShare, onToggleStar, onPin, onUnpin, onEvict, onClose }: {
+function ContextMenu({ x, y, file, starred, serverUrl, localRoot, isVfsPair, onShare, onToggleStar, onPin, onUnpin, onEvict, onClose }: {
   x: number;
   y: number;
   file: FileStatusDto & { kind: string };
   starred: boolean;
   serverUrl: string;
+  localRoot?: string;
   isVfsPair?: boolean;
   onShare: () => void;
   onToggleStar?: () => void;
@@ -314,7 +317,14 @@ function ContextMenu({ x, y, file, starred, serverUrl, isVfsPair, onShare, onTog
   const items: MenuItem[] = [
     {
       kind: 'item', icon: 'folder-plus', label: 'Open',
-      onClick: () => { shellOpen(file.path).catch(() => {}); onClose(); },
+      onClick: () => {
+        // file.path is relative (e.g. "/Documents/file.pdf"); prepend localRoot for absolute path.
+        const abs = localRoot
+          ? `${localRoot.replace(/\/$/, '')}/${file.path.replace(/^\//, '')}`
+          : file.path;
+        shellOpen(abs).catch(() => {});
+        onClose();
+      },
     },
     {
       kind: 'item', icon: 'globe', label: 'View on server',

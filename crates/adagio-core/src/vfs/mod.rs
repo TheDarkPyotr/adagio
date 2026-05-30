@@ -59,34 +59,46 @@ impl VfsPairRunner {
         // Fetch full remote snapshot.
         let remote_items = fetch_remote_snapshot(&*self.client, &remote_root).await?;
 
-        // Load existing VFS entries to detect deletions.
+        // Load existing VFS entries to detect deletions and preserve local state.
         let existing = self
             .journal
             .all_vfs_entries(pair_id)
             .await
             .map_err(|e| crate::error::SyncError::Permanent(e.to_string()))?;
-        let existing_paths: std::collections::HashSet<String> = existing
+        // Map path → entry so we can look up state without a second query.
+        let existing_by_path: std::collections::HashMap<String, &VfsCacheEntry> = existing
             .iter()
-            .map(|e| e.path.as_str().to_string())
+            .map(|e| (e.path.as_str().to_string(), e))
             .collect();
 
-        // Upsert new / updated entries.
+        // Upsert new / updated entries, preserving locally-available and pinned states.
         let mut new_entries: Vec<VfsCacheEntry> = Vec::new();
         for item in &remote_items {
             if item.is_dir {
                 continue; // directories handled implicitly
             }
-            let entry = VfsCacheEntry::new_cloud_only(
+            let base = VfsCacheEntry::new_cloud_only(
                 pair_id.clone(),
                 item.path.clone(),
                 item.size,
                 Some(item.etag.clone()),
                 item.mtime,
             );
-            // Only insert as cloud_only if not already locally available / pinned.
-            if !existing_paths.contains(entry.path.as_str()) {
-                new_entries.push(entry.clone());
-            }
+
+            let entry = if let Some(existing_entry) = existing_by_path.get(base.path.as_str()) {
+                // File already known: keep its local state (locally_available / pinned)
+                // but refresh remote metadata in case size or etag changed.
+                VfsCacheEntry {
+                    state: existing_entry.state.clone(),
+                    cache_bytes: existing_entry.cache_bytes,
+                    ..base
+                }
+            } else {
+                // Genuinely new file: start as cloud_only placeholder.
+                new_entries.push(base.clone());
+                base
+            };
+
             self.journal
                 .upsert_vfs_entry(&entry)
                 .await
@@ -590,5 +602,52 @@ mod tests {
 
         let entries = journal.all_vfs_entries(&pair_id).await.unwrap();
         assert_eq!(entries.len(), 3, "deleted files should be removed");
+    }
+
+    // T014: Metadata sync does NOT overwrite LocallyAvailable / Pinned state.
+    #[tokio::test]
+    async fn metadata_sync_preserves_locally_available_state() {
+        use crate::remote::mock::MockRemoteClient;
+        use crate::vfs::types::{VfsState, VfsCacheEntry};
+        use chrono::Utc;
+
+        let journal = make_journal().await;
+        let pair_id = PairId::new();
+        let pair = default_vfs_pair(pair_id.clone());
+        register_pair_in_journal(&journal, &pair).await;
+
+        let client = Arc::new(MockRemoteClient::new());
+        client.seed("report.pdf", b"pdf content").await;
+        client.seed("notes.txt", b"hello").await;
+
+        let provider = Arc::new(MockVfsProvider::new());
+        let runner = VfsPairRunner::new(pair.clone(), client.clone(), journal.clone(), provider.clone());
+
+        // First sync: both files arrive as CloudOnly.
+        runner.run_metadata_sync().await.unwrap();
+
+        // Simulate the user downloading report.pdf — set it to LocallyAvailable.
+        let mut entries = journal.all_vfs_entries(&pair_id).await.unwrap();
+        let report = entries.iter_mut().find(|e| e.path.as_str() == "report.pdf").unwrap();
+        let now = Utc::now();
+        report.state = VfsState::LocallyAvailable { cached_at: now, last_accessed: now };
+        report.cache_bytes = 11;
+        journal.upsert_vfs_entry(&*report).await.unwrap();
+
+        // Second sync: remote unchanged — LocallyAvailable state must be preserved.
+        runner.run_metadata_sync().await.unwrap();
+
+        let after = journal.all_vfs_entries(&pair_id).await.unwrap();
+        let report_after = after.iter().find(|e| e.path.as_str() == "report.pdf").unwrap();
+        assert!(
+            matches!(report_after.state, VfsState::LocallyAvailable { .. }),
+            "LocallyAvailable state must survive a metadata sync cycle, got {:?}",
+            report_after.state
+        );
+        assert_eq!(report_after.cache_bytes, 11, "cache_bytes must be preserved");
+
+        // notes.txt was never downloaded — still CloudOnly.
+        let notes = after.iter().find(|e| e.path.as_str() == "notes.txt").unwrap();
+        assert_eq!(notes.state, VfsState::CloudOnly);
     }
 }

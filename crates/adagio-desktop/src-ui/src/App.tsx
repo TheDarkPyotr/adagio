@@ -289,6 +289,7 @@ export default function App() {
                 <FilesScene
                   pairId={activePair?.id ?? null}
                   isVfsPair={activePair?.vfs_enabled ?? false}
+                  localRoot={activePair?.local_root}
                   serverHost={serverHost}
                   currentPath={filePath}
                   onPathChange={setFilePath}
