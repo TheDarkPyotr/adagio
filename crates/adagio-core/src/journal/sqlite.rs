@@ -1,8 +1,8 @@
 use super::Journal;
 use crate::error::JournalError;
 use crate::types::{
-    Checksum, ChecksumAlgorithm, ConflictPolicy, ConflictRecord, ConflictResolution, JournalEntry,
-    PairId, RelativePath, SyncStatus,
+    Checksum, ChecksumAlgorithm, ConflictKind, ConflictPolicy, ConflictRecord, ConflictResolution,
+    JournalEntry, PairId, RelativePath, SyncStatus,
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -45,6 +45,24 @@ impl SqliteJournal {
             .await
             .map_err(|e| JournalError::Db(e.into()))?;
         Ok(())
+    }
+
+    /// Return a reference to the underlying connection pool.
+    ///
+    /// Used by the daemon for `PRAGMA wal_checkpoint(RESTART)` before process exit.
+    pub fn pool(&self) -> &SqlitePool {
+        &self.pool
+    }
+
+    /// Flush the WAL to the main database file (`PRAGMA wal_checkpoint(RESTART)`).
+    ///
+    /// Called by `adagio-daemon` before process exit to ensure all data is durable.
+    pub async fn checkpoint(&self) -> Result<(), JournalError> {
+        sqlx::query("PRAGMA wal_checkpoint(RESTART)")
+            .execute(&self.pool)
+            .await
+            .map(|_| ())
+            .map_err(JournalError::Db)
     }
 
     /// Run `PRAGMA integrity_check` and return `Corruption` if the database is damaged.
@@ -229,6 +247,14 @@ fn row_to_conflict(row: &sqlx::sqlite::SqliteRow) -> Result<ConflictRecord, Jour
         .transpose()
         .map_err(|e| JournalError::Corruption(format!("deserialize resolution: {e}")))?;
 
+    let is_dir: bool = row.try_get::<i64, _>("is_dir").unwrap_or(0) != 0;
+    let conflict_kind: ConflictKind = row
+        .try_get::<Option<String>, _>("conflict_kind")
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str(&format!(r#""{s}""#)).ok())
+        .unwrap_or_default();
+
     Ok(ConflictRecord {
         id: row.try_get("id")?,
         pair_id: PairId(row.try_get("pair_id")?),
@@ -254,6 +280,8 @@ fn row_to_conflict(row: &sqlx::sqlite::SqliteRow) -> Result<ConflictRecord, Jour
             .map(|s| s.parse())
             .transpose()
             .map_err(|e| JournalError::Corruption(format!("bad resolved_at: {e}")))?,
+        is_dir,
+        conflict_kind,
     })
 }
 
@@ -467,16 +495,22 @@ impl Journal for SqliteJournal {
             .resolution
             .as_ref()
             .map(|r| serde_json::to_string(r).unwrap_or_default());
+        let conflict_kind_str = serde_json::to_string(&record.conflict_kind)
+            .unwrap_or_else(|_| "\"content_modified\"".to_string())
+            .trim_matches('"')
+            .to_string();
 
         sqlx::query(
             r#"
             INSERT INTO conflict_records
                 (id, pair_id, path, local_mtime, remote_mtime, local_size, remote_size,
-                 policy, resolution, detected_at, resolved_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 policy, resolution, detected_at, resolved_at, is_dir, conflict_kind)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
-                resolution  = excluded.resolution,
-                resolved_at = excluded.resolved_at
+                resolution    = excluded.resolution,
+                resolved_at   = excluded.resolved_at,
+                is_dir        = excluded.is_dir,
+                conflict_kind = excluded.conflict_kind
             "#,
         )
         .bind(&record.id)
@@ -490,6 +524,8 @@ impl Journal for SqliteJournal {
         .bind(resolution_json)
         .bind(record.detected_at.to_rfc3339())
         .bind(record.resolved_at.map(|d| d.to_rfc3339()))
+        .bind(record.is_dir as i64)
+        .bind(conflict_kind_str)
         .execute(&self.pool)
         .await?;
 

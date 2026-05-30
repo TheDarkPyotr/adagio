@@ -19,6 +19,10 @@ pub struct SavedConfig {
     /// All configured sync pairs.
     #[serde(default)]
     pub pairs: Vec<SavedPair>,
+    /// Active color palette name. `None` means the frontend applies its default
+    /// (sienna, or ink if OS dark-mode is active). Never store credentials here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub palette: Option<String>,
 }
 
 /// A Nextcloud account as persisted on disk.
@@ -33,6 +37,12 @@ pub struct SavedAccount {
     pub username: String,
     /// Key used to retrieve credentials from the OS keychain.
     pub keychain_service_key: String,
+    /// Maximum upload speed in Kbps. 0 = unlimited.
+    #[serde(default)]
+    pub upload_limit_kbps: u64,
+    /// Maximum download speed in Kbps. 0 = unlimited.
+    #[serde(default)]
+    pub download_limit_kbps: u64,
 }
 
 /// A sync pair as persisted on disk.
@@ -140,6 +150,8 @@ mod tests {
             server_url: "https://cloud.example.com".to_string(),
             username: "testuser".to_string(),
             keychain_service_key: format!("adagio/{id}"),
+            upload_limit_kbps: 0,
+            download_limit_kbps: 0,
         }
     }
 
@@ -179,6 +191,7 @@ mod tests {
             version: 1,
             accounts: vec![make_account("acc-1"), make_account("acc-2")],
             pairs: vec![make_pair("pair-1", "acc-1")],
+            palette: None,
         };
         save_config(&path, &cfg).unwrap();
         let loaded = load_config(&path);
@@ -228,6 +241,7 @@ mod tests {
             version: 1,
             accounts: vec![make_account("acc-1")],
             pairs: vec![],
+            palette: None,
         };
         save_config(&path, &cfg).unwrap();
         let raw = fs::read_to_string(&path).unwrap();

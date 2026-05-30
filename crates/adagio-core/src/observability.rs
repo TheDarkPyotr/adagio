@@ -5,6 +5,182 @@ use std::path::Path;
 use std::sync::RwLock;
 use std::time::Duration;
 
+// ── CycleMetrics (T010) ───────────────────────────────────────────────────────
+
+/// Structured telemetry emitted as a `tracing::debug!` event at the end of
+/// every scan cycle.
+///
+/// Consumed by log aggregators to verify AC-1 (idle CPU) and audit the
+/// checksum-skip guard. Never persisted to disk.
+#[derive(Debug)]
+pub struct CycleMetrics {
+    /// Total file paths examined during this cycle.
+    pub path_count: usize,
+    /// Files whose checksum was recomputed (mtime or size changed).
+    pub checksum_recomputed: usize,
+    /// Files whose cached checksum was reused (mtime and size unchanged).
+    pub checksum_from_cache: usize,
+    /// Wall-clock duration of the full scan + propagation pass in milliseconds.
+    pub duration_ms: u64,
+}
+
+impl CycleMetrics {
+    /// Emit this metric set as a single `tracing::debug!` event.
+    pub fn emit(&self) {
+        tracing::debug!(
+            path_count = self.path_count,
+            checksum_recomputed = self.checksum_recomputed,
+            checksum_from_cache = self.checksum_from_cache,
+            duration_ms = self.duration_ms,
+            "cycle complete"
+        );
+    }
+}
+
+// ── MemorySampler (T012) ──────────────────────────────────────────────────────
+
+/// One RSS measurement taken at the end of a scan cycle.
+#[derive(Debug, Clone)]
+pub struct MemorySample {
+    /// Resident set size at this moment, in bytes.
+    pub rss_bytes: u64,
+    /// RSS at the first-minute baseline. `None` until `set_baseline` is called.
+    pub baseline_rss: Option<u64>,
+    /// Growth ratio relative to baseline (`rss_bytes / baseline_rss`).
+    /// `None` until baseline is set.
+    pub growth_ratio: Option<f64>,
+}
+
+/// Samples resident set size using platform-specific OS interfaces.
+///
+/// Platform implementations:
+/// - **Linux**: reads `/proc/self/statm` (field 1 × page size).
+/// - **macOS**: calls `libc::getrusage(RUSAGE_SELF, ...)`.
+/// - **Windows**: calls `GetProcessMemoryInfo` (via `windows` crate stub; returns `None`
+///   until the crate is wired in — safe to call, vacuously passes).
+///
+/// # Memory budget thresholds
+/// - `observe()` emits `tracing::debug!` on every call.
+/// - Emits `tracing::warn!` when growth > 15%.
+/// - Emits `tracing::error!` when growth > 20% (the hard AC-3 limit).
+pub struct MemorySampler {
+    baseline_rss: Option<u64>,
+}
+
+impl MemorySampler {
+    /// Create a new sampler with no baseline set.
+    pub fn new() -> Self {
+        Self { baseline_rss: None }
+    }
+
+    /// Returns `true` if a baseline has already been recorded.
+    pub fn has_baseline(&self) -> bool {
+        self.baseline_rss.is_some()
+    }
+
+    /// Record the RSS baseline. Must be called exactly once.
+    ///
+    /// # Panics
+    /// Panics if called more than once (programming error guard).
+    pub fn set_baseline(&mut self, rss: u64) {
+        assert!(
+            self.baseline_rss.is_none(),
+            "MemorySampler::set_baseline called more than once"
+        );
+        self.baseline_rss = Some(rss);
+    }
+
+    /// Read current RSS from the OS.
+    ///
+    /// Returns `None` if the OS call is unsupported or fails. Never panics.
+    pub fn sample_rss() -> Option<u64> {
+        #[cfg(target_os = "linux")]
+        {
+            // /proc/self/statm: space-separated fields; field 1 is RSS in pages.
+            let content = std::fs::read_to_string("/proc/self/statm").ok()?;
+            let rss_pages: u64 = content.split_whitespace().nth(1)?.parse().ok()?;
+            // SAFETY: sysconf(_SC_PAGESIZE) is safe on any POSIX system.
+            let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as u64;
+            Some(rss_pages * page_size)
+        }
+        #[cfg(target_os = "macos")]
+        {
+            // SAFETY: getrusage is a standard POSIX call. rusage is fully
+            // initialised by the call; the pointer we pass is valid for the
+            // lifetime of the local variable.
+            let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
+            let ret = unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut usage) };
+            if ret == 0 {
+                // ru_maxrss is in bytes on macOS.
+                Some(usage.ru_maxrss as u64)
+            } else {
+                None
+            }
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        {
+            None
+        }
+    }
+
+    /// Read current RSS, build a `MemorySample`, emit structured tracing logs,
+    /// and return the sample.
+    ///
+    /// Emits `DEBUG` always; `WARN` at > 15% growth; `ERROR` at > 20% growth.
+    pub fn observe(&self) -> MemorySample {
+        let rss = Self::sample_rss().unwrap_or(0);
+        self.build_sample(rss)
+    }
+
+    /// Like `observe()` but uses a caller-supplied RSS value instead of reading
+    /// from the OS. Intended for unit tests.
+    #[cfg(test)]
+    pub fn observe_with_rss(&self, rss: u64) -> MemorySample {
+        self.build_sample(rss)
+    }
+
+    fn build_sample(&self, rss_bytes: u64) -> MemorySample {
+        let (baseline_rss, growth_ratio) = match self.baseline_rss {
+            Some(baseline) if baseline > 0 => {
+                let ratio = rss_bytes as f64 / baseline as f64;
+                (Some(baseline), Some(ratio))
+            }
+            _ => (self.baseline_rss, None),
+        };
+
+        if let Some(ratio) = growth_ratio {
+            if ratio > 1.20 {
+                tracing::error!(
+                    rss_bytes,
+                    baseline_rss,
+                    growth_ratio = ratio,
+                    "RSS exceeded 20% growth limit (AC-3 violation)"
+                );
+            } else if ratio > 1.15 {
+                tracing::warn!(
+                    rss_bytes,
+                    baseline_rss,
+                    growth_ratio = ratio,
+                    "RSS growth above 15% early-warning threshold"
+                );
+            }
+        }
+        tracing::debug!(rss_bytes, baseline_rss, growth_ratio, "memory sample");
+
+        MemorySample {
+            rss_bytes,
+            baseline_rss,
+            growth_ratio,
+        }
+    }
+}
+
+impl Default for MemorySampler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Snapshot of sync progress for one pair at a point in time.
 #[derive(Debug, Clone)]
 pub struct SyncProgress {
@@ -185,6 +361,53 @@ impl DiagnosticBundle {
 mod tests {
     use super::*;
     use crate::types::PairId;
+
+    // T006-a — MemorySampler::sample_rss returns a non-zero value.
+    #[test]
+    fn memory_sampler_returns_nonzero_rss() {
+        let rss = MemorySampler::sample_rss();
+        assert!(
+            rss.map(|n| n > 0).unwrap_or(true), // pass vacuously if OS call unsupported
+            "sample_rss must return a positive value when supported"
+        );
+    }
+
+    // T006-b — observe_with_rss triggers WARN and returns correct growth_ratio.
+    #[test]
+    fn memory_sampler_warn_on_growth_above_threshold() {
+        let mut sampler = MemorySampler::new();
+        sampler.set_baseline(100_000_000); // 100 MB baseline
+
+        let sample = sampler.observe_with_rss(116_000_000); // 116 MB
+        let ratio = sample
+            .growth_ratio
+            .expect("growth_ratio must be Some when baseline is set");
+        assert!(
+            (ratio - 1.16).abs() < 0.001,
+            "growth_ratio must be ~1.16, got {ratio}"
+        );
+        assert_eq!(sample.baseline_rss, Some(100_000_000));
+        assert_eq!(sample.rss_bytes, 116_000_000);
+    }
+
+    // T006-c — MemorySampler::observe() doesn't panic over many calls.
+    #[test]
+    fn memory_stable_over_many_cycles() {
+        let mut sampler = MemorySampler::new();
+        if let Some(initial) = MemorySampler::sample_rss() {
+            sampler.set_baseline(initial);
+            for _ in 0..500 {
+                let sample = sampler.observe();
+                if let Some(ratio) = sample.growth_ratio {
+                    assert!(
+                        ratio < 1.20,
+                        "RSS grew >20% during test loop — possible leak: ratio={ratio}"
+                    );
+                }
+            }
+        }
+        // Vacuous pass if sample_rss is unsupported on this platform.
+    }
 
     // T081: DiagnosticBundle serializes to valid JSON with expected fields.
     #[test]

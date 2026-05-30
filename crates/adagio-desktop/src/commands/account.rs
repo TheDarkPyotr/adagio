@@ -1,7 +1,6 @@
-use crate::config::{load_config, save_config, SavedAccount};
 use crate::state::AppState;
 use adagio_core::types::{Account, AccountId};
-use chrono::Utc;
+use adagio_ipc::DaemonRequest;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 use tracing::{error, info, instrument};
@@ -38,6 +37,7 @@ pub struct AddAccountRequest {
 ///
 /// Trims trailing slashes and lowercases scheme + host so that
 /// `https://Cloud.Example.com/` and `https://cloud.example.com` compare equal.
+#[cfg_attr(not(test), allow(dead_code))]
 fn normalise_server_url(url: &str) -> String {
     let trimmed = url.trim_end_matches('/');
     // Find the end of scheme://host[:port] — the first '/' after the authority
@@ -50,6 +50,7 @@ fn normalise_server_url(url: &str) -> String {
 }
 
 /// Check whether an account with the given server URL + username already exists.
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn is_duplicate_account(
     accounts: &adagio_core::account_manager::AccountManager,
     server_url: &str,
@@ -132,12 +133,7 @@ pub async fn connect_account_oauth2(
             .await
             .map_err(|e| e.to_string())?;
 
-    // Step 7: Duplicate check
-    if is_duplicate_account(&state.accounts, &server_url, &username) {
-        return Err("Account already connected for this server and username".to_string());
-    }
-
-    // Step 8: Store token in keychain
+    // Step 7: Store token in keychain locally, then register with daemon.
     let id = AccountId::new();
     let token_json = serde_json::to_string(&token_pair)
         .map_err(|e| format!("Credential serialization failed: {e}"))?;
@@ -151,116 +147,76 @@ pub async fn connect_account_oauth2(
     .map_err(|e| e.to_string())?
     .map_err(|e| format!("Credential storage failed: {e}"))?;
 
-    // Step 9: Persist account metadata (no credentials)
-    let account = Account {
-        id: id.clone(),
-        display_name,
-        server_url,
-        username,
-        keychain_service_key: id.0.clone(),
-        created_at: Utc::now(),
-    };
-
-    state
-        .accounts
-        .add(account.clone())
+    // Step 8: Notify the daemon so it can start the runner for the new account.
+    let resp = state
+        .daemon
+        .request(DaemonRequest::AddAccount {
+            server_url: server_url.clone(),
+            username: username.clone(),
+            display_name: display_name.clone(),
+            secret: token_json,
+        })
+        .await
         .map_err(|e| e.to_string())?;
 
-    let mut cfg = load_config(&state.config_path);
-    cfg.accounts.push(SavedAccount {
-        id: account.id.0.clone(),
-        display_name: account.display_name.clone(),
-        server_url: account.server_url.clone(),
-        username: account.username.clone(),
-        keychain_service_key: account.keychain_service_key.clone(),
-    });
-    save_config(&state.config_path, &cfg).map_err(|e| e.to_string())?;
-
-    info!(account_id = %account.id, "OAuth2 account connected successfully");
-    Ok(AccountDto::from(account))
+    info!("OAuth2 account connected successfully");
+    Ok(AccountDto {
+        id: resp["id"].as_str().unwrap_or(&id.0).to_string(),
+        display_name: resp["display_name"]
+            .as_str()
+            .unwrap_or(&display_name)
+            .to_string(),
+        server_url: resp["server_url"]
+            .as_str()
+            .unwrap_or(&server_url)
+            .to_string(),
+        username: resp["username"].as_str().unwrap_or(&username).to_string(),
+    })
 }
 
 /// Add a new Nextcloud account using an app-password or pre-obtained token.
 ///
 /// Stores credentials in the OS keychain, registers the account in memory,
 /// and persists account metadata (no credentials) to config.json.
+/// Add an account via the daemon (stores credentials in daemon-side keychain).
 #[tauri::command]
 #[instrument(skip(state, req), fields(server_url = %req.server_url))]
 pub async fn add_account(
     state: State<'_, AppState>,
     req: AddAccountRequest,
-) -> Result<AccountDto, String> {
-    if is_duplicate_account(&state.accounts, &req.server_url, &req.username) {
-        return Err("Account already connected for this server and username".to_string());
-    }
-
-    let id = AccountId::new();
-    let account_id_str = id.0.clone();
-    let secret = req.secret.clone();
-    tokio::task::spawn_blocking(move || {
-        adagio_nextcloud::auth::store_credentials(&account_id_str, &secret)
-    })
-    .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| e.to_string())?;
-
-    let account = Account {
-        id: id.clone(),
-        display_name: req.display_name,
-        server_url: req.server_url,
-        username: req.username,
-        keychain_service_key: id.0.clone(),
-        created_at: Utc::now(),
-    };
-
+) -> Result<serde_json::Value, String> {
     state
-        .accounts
-        .add(account.clone())
-        .map_err(|e| e.to_string())?;
-
-    let mut cfg = load_config(&state.config_path);
-    cfg.accounts.push(SavedAccount {
-        id: account.id.0.clone(),
-        display_name: account.display_name.clone(),
-        server_url: account.server_url.clone(),
-        username: account.username.clone(),
-        keychain_service_key: account.keychain_service_key.clone(),
-    });
-    save_config(&state.config_path, &cfg).map_err(|e| e.to_string())?;
-
-    info!(account_id = %account.id, "account added via app-password");
-    Ok(AccountDto::from(account))
+        .daemon
+        .request(DaemonRequest::AddAccount {
+            server_url: req.server_url,
+            username: req.username,
+            display_name: req.display_name,
+            secret: req.secret,
+        })
+        .await
+        .map_err(|e| e.to_string())
 }
 
-/// Remove an account by ID, delete its keychain credentials, and update config.json.
+/// Remove an account via the daemon.
 #[tauri::command]
 #[instrument(skip(state), fields(account_id))]
 pub async fn remove_account(state: State<'_, AppState>, account_id: String) -> Result<(), String> {
-    let id = AccountId(account_id.clone());
-    let removed = state.accounts.remove(&id).map_err(|e| e.to_string())?;
-
-    if let Some(account) = removed {
-        let key = account.keychain_service_key.clone();
-        tokio::task::spawn_blocking(move || adagio_nextcloud::auth::delete_credentials(&key))
-            .await
-            .map_err(|e| e.to_string())?
-            .map_err(|e| e.to_string())?;
-    }
-
-    let mut cfg = load_config(&state.config_path);
-    cfg.accounts.retain(|a| a.id != account_id);
-    cfg.pairs.retain(|p| p.account_id != account_id);
-    save_config(&state.config_path, &cfg).map_err(|e| e.to_string())?;
-
-    info!(account_id, "account removed");
-    Ok(())
+    state
+        .daemon
+        .request(DaemonRequest::RemoveAccount { account_id })
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
 
 /// List all registered accounts.
 #[tauri::command]
-pub async fn list_accounts(state: State<'_, AppState>) -> Result<Vec<AccountDto>, String> {
-    let accounts = state.accounts.list().map_err(|e| e.to_string())?;
-    Ok(accounts.into_iter().map(AccountDto::from).collect())
+pub async fn list_accounts(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    state
+        .daemon
+        .request(DaemonRequest::ListAccounts)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -268,8 +224,10 @@ pub async fn list_accounts(state: State<'_, AppState>) -> Result<Vec<AccountDto>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{save_config, SavedConfig};
+    use crate::config::{save_config, SavedAccount, SavedConfig};
     use adagio_core::account_manager::AccountManager;
+    use adagio_core::types::{Account, AccountId};
+    use chrono::Utc;
     use tempfile::TempDir;
 
     fn make_manager_with_account(server_url: &str, username: &str) -> AccountManager {
@@ -282,6 +240,8 @@ mod tests {
                 username: username.to_string(),
                 keychain_service_key: "test-key".to_string(),
                 created_at: Utc::now(),
+                upload_limit_kbps: 0,
+                download_limit_kbps: 0,
             })
             .unwrap();
         manager
@@ -377,6 +337,8 @@ mod tests {
                 username: user.to_string(),
                 keychain_service_key: url.to_string(),
                 created_at: Utc::now(),
+                upload_limit_kbps: 0,
+                download_limit_kbps: 0,
             })
             .unwrap();
         }
@@ -397,6 +359,8 @@ mod tests {
             server_url: "https://cloud.example.com".to_string(),
             username: "alice".to_string(),
             keychain_service_key: "acc-1".to_string(),
+            upload_limit_kbps: 0,
+            download_limit_kbps: 0,
         });
         cfg.pairs.push(crate::config::SavedPair {
             id: "pair-1".to_string(),
@@ -448,6 +412,8 @@ mod tests {
             server_url: "https://cloud.example.com".to_string(),
             username: "alice".to_string(),
             keychain_service_key: "acc-1".to_string(),
+            upload_limit_kbps: 0,
+            download_limit_kbps: 0,
         });
         save_config(&config_path, &cfg).unwrap();
 

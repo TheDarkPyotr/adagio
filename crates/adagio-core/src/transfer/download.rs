@@ -1,9 +1,11 @@
+use crate::bandwidth::TokenBucket;
 use crate::error::TransferError;
 use crate::remote::RemoteClient;
 use crate::types::{ByteRange, Checksum, ChecksumAlgorithm, LocalPath, RemotePath};
 use futures::StreamExt;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tracing::instrument;
 
@@ -32,7 +34,7 @@ pub fn temp_path_for(remote_path: &RemotePath, dest_dir: &Path) -> PathBuf {
 ///
 /// On checksum mismatch the temp file is deleted and `TransferError::Transient` is returned.
 /// On disk-full (`StorageFull`) the temp file is deleted and `TransferError::Permanent` is returned.
-#[instrument(skip(client, progress), fields(remote_path = %remote_path))]
+#[instrument(skip(client, progress, throttle), fields(remote_path = %remote_path))]
 pub async fn download_file(
     client: &dyn RemoteClient,
     remote_path: &RemotePath,
@@ -40,6 +42,7 @@ pub async fn download_file(
     expected_checksum: Option<Checksum>,
     _opts: &TransferOptions,
     progress: tokio::sync::mpsc::Sender<TransferProgress>,
+    throttle: Option<Arc<TokenBucket>>,
 ) -> Result<DownloadResult, TransferError> {
     let dest: PathBuf = local_path.0.clone();
     let parent = dest.parent().unwrap_or(Path::new(".")).to_path_buf();
@@ -104,6 +107,14 @@ pub async fn download_file(
             let _ = std::fs::remove_file(&tmp_path);
             TransferError::Transient(e.to_string())
         })?;
+
+        // Throttle: sleep before writing each chunk.
+        if let Some(ref tb) = throttle {
+            let delay = tb.acquire(chunk.len() as u64).await;
+            if delay.as_nanos() > 0 {
+                tokio::time::sleep(delay).await;
+            }
+        }
 
         hasher.update(&chunk);
         total_bytes += chunk.len() as u64;
@@ -178,6 +189,41 @@ mod tests {
     use tempfile::TempDir;
     use tokio::sync::mpsc;
 
+    // T008 — download_file with throttle enforces rate limit.
+    #[tokio::test]
+    async fn download_file_with_throttle_slows_transfer() {
+        let dir = TempDir::new().unwrap();
+        let client = MockRemoteClient::new();
+        // 50 KB content; 25 KB/s, 100-byte burst → ≥ ~2 s
+        let content = vec![42u8; 50_000];
+        client.seed("throttled.bin", &content).await;
+
+        let remote = RemotePath::new("throttled.bin");
+        let local = LocalPath::new(dir.path().join("throttled.bin"));
+        let (tx, _rx) = mpsc::channel(8);
+        let bucket = Arc::new(TokenBucket::new(25_000, 100)); // 25 KB/s, tiny burst
+
+        let start = std::time::Instant::now();
+        download_file(
+            &client,
+            &remote,
+            &local,
+            None,
+            &Default::default(),
+            tx,
+            Some(bucket),
+        )
+        .await
+        .expect("download should succeed");
+        let elapsed = start.elapsed();
+
+        assert!(
+            elapsed.as_millis() >= 1800,
+            "throttled download took only {}ms, expected ≥1800ms",
+            elapsed.as_millis()
+        );
+    }
+
     // T045-1: Download creates local file with correct content.
     #[tokio::test]
     async fn download_creates_local_file() {
@@ -189,9 +235,17 @@ mod tests {
         let local = LocalPath::new(dir.path().join("doc.txt"));
         let (tx, _rx) = mpsc::channel(8);
 
-        let result = download_file(&client, &remote, &local, None, &Default::default(), tx)
-            .await
-            .expect("download should succeed");
+        let result = download_file(
+            &client,
+            &remote,
+            &local,
+            None,
+            &Default::default(),
+            tx,
+            None,
+        )
+        .await
+        .expect("download should succeed");
 
         assert_eq!(result.size, 14);
         let content = std::fs::read(dir.path().join("doc.txt")).unwrap();
@@ -210,9 +264,17 @@ mod tests {
         let local = LocalPath::new(dir.path().join("ck.txt"));
         let (tx, _rx) = mpsc::channel(8);
 
-        let result = download_file(&client, &remote, &local, None, &Default::default(), tx)
-            .await
-            .unwrap();
+        let result = download_file(
+            &client,
+            &remote,
+            &local,
+            None,
+            &Default::default(),
+            tx,
+            None,
+        )
+        .await
+        .unwrap();
 
         let expected_hash = hex::encode(Sha256::digest(content));
         assert_eq!(result.checksum.value, expected_hash);
@@ -240,6 +302,7 @@ mod tests {
             Some(wrong_checksum),
             &Default::default(),
             tx,
+            None,
         )
         .await
         .expect_err("should fail on checksum mismatch");
@@ -276,9 +339,17 @@ mod tests {
         let local = LocalPath::new(dir.path().join("clean.txt"));
         let (tx, _rx) = mpsc::channel(8);
 
-        download_file(&client, &remote, &local, None, &Default::default(), tx)
-            .await
-            .unwrap();
+        download_file(
+            &client,
+            &remote,
+            &local,
+            None,
+            &Default::default(),
+            tx,
+            None,
+        )
+        .await
+        .unwrap();
 
         // No .adagio_tmp_* files should remain.
         let tmp_count = std::fs::read_dir(dir.path())

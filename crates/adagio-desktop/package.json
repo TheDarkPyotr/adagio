@@ -1,0 +1,10 @@
+{
+  "name": "adagio-desktop",
+  "private": true,
+  "scripts": {
+    "dev": "cd src-ui && npm run dev",
+    "build": "cd src-ui && npm run build",
+    "tauri:dev": "src-ui/node_modules/.bin/tauri dev",
+    "tauri:build": "src-ui/node_modules/.bin/tauri build"
+  }
+}

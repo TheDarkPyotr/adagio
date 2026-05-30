@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Adagio · Prototype Index</title>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+    padding: 20px 40px;
+    color: #15171a;
+  }
+  h1 {
+    font-size: 32px;
+    letter-spacing: -0.04em;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  ul {
+    list-style: none;
+    padding: 0;
+  }
+  li {
+    margin-bottom: 12px;
+  }
+  a {
+    display: block;
+    padding: 16px 20px;
+    background: #fff;
+    border: 1px solid rgba(0,0,0,0.1);
+    border-radius: 8px;
+    text-decoration: none;
+    color: #15171a;
+    font-weight: 500;
+    transition: all 0.2s;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  }
+  a:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    border-color: #c8542a;
+  }
+  .desc {
+    font-size: 14px;
+    color: #7a7c80;
+    margin-top: 4px;
+    font-weight: normal;
+  }
+</style>
+</head>
+<body>
+  <h1>
+    <svg width="32" height="32" viewBox="0 0 60 60" fill="none" aria-hidden="true">
+      <path d="M8 42 C 18 14, 42 14, 52 42" stroke="currentColor" stroke-width="3" stroke-linecap="round" fill="none"/>
+      <circle cx="8" cy="42" r="5" fill="currentColor"/>
+      <circle cx="52" cy="42" r="5" fill="#c8542a"/>
+    </svg>
+    Adagio · Prototype
+  </h1>
+  <p>Select a scene to view the standalone prototype:</p>
+  <ul>
+    <li>
+      <a href="files.html">
+        Files
+        <div class="desc">Main file manager interface with sidebar and sync status.</div>
+      </a>
+    </li>
+    <li>
+      <a href="activity.html">
+        Activity
+        <div class="desc">Historical log of file changes, shares, and sync events.</div>
+      </a>
+    </li>
+    <li>
+      <a href="share.html">
+        Share
+        <div class="desc">The file sharing dialog with permissions and link settings.</div>
+      </a>
+    </li>
+    <li>
+      <a href="onboard.html">
+        Onboard
+        <div class="desc">First-run experience: server connection and initial setup.</div>
+      </a>
+    </li>
+    <li>
+      <a href="tray.html">
+        Tray
+        <div class="desc">Menu bar / system tray component with quick actions.</div>
+      </a>
+    </li>
+  </ul>
+</body>
+</html>

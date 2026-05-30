@@ -151,6 +151,12 @@ pub struct Account {
     /// reference, never the plaintext secret.
     pub keychain_service_key: String,
     pub created_at: DateTime<Utc>,
+    /// Maximum upload speed in Kbps. 0 = unlimited.
+    #[serde(default)]
+    pub upload_limit_kbps: u64,
+    /// Maximum download speed in Kbps. 0 = unlimited.
+    #[serde(default)]
+    pub download_limit_kbps: u64,
 }
 
 /// A sync pair: local directory ↔ remote directory.
@@ -179,6 +185,13 @@ pub struct SyncPair {
     /// Maximum simultaneous downloads for this pair (default: 3, T113).
     #[serde(default = "default_download_concurrency")]
     pub max_download_concurrency: u8,
+    /// How to resolve sync conflicts for this pair (default: Ask).
+    #[serde(default = "default_conflict_policy")]
+    pub conflict_policy: ConflictPolicy,
+}
+
+fn default_conflict_policy() -> ConflictPolicy {
+    ConflictPolicy::Ask
 }
 
 fn default_scan_interval_secs() -> u64 {
@@ -265,6 +278,19 @@ impl AsRef<RelativePath> for RemoteItem {
     }
 }
 
+/// Sub-type of a conflict, describing how the two sides diverged.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ConflictKind {
+    /// Both sides modified the file content (classic file conflict).
+    #[default]
+    ContentModified,
+    /// The folder was renamed to different names on each side.
+    RenamedBothSides,
+    /// Item deleted on one side while the other side added new content or children.
+    DeletedWithContent,
+}
+
 /// A recorded conflict between local and remote versions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConflictRecord {
@@ -279,6 +305,12 @@ pub struct ConflictRecord {
     pub resolution: Option<ConflictResolution>,
     pub detected_at: DateTime<Utc>,
     pub resolved_at: Option<DateTime<Utc>>,
+    /// `true` if this conflict is on a directory (folder conflict).
+    #[serde(default)]
+    pub is_dir: bool,
+    /// Sub-type of conflict describing how the divergence occurred.
+    #[serde(default)]
+    pub conflict_kind: ConflictKind,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -307,8 +339,12 @@ pub enum ConflictResolution {
 /// Which side the user chose in an Ask-policy conflict.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConflictSide {
+    /// Keep the local version.
     Local,
+    /// Keep the remote version.
     Remote,
+    /// Keep both versions by creating a conflict copy alongside the remote version.
+    Both,
 }
 
 /// A byte range for partial (resume) downloads.
@@ -325,4 +361,67 @@ pub struct ServerCapabilities {
     pub supports_chunked_upload: bool,
     pub supports_dav_checksum: bool,
     pub server_version: String,
+}
+
+#[cfg(test)]
+mod conflict_type_tests {
+    use super::*;
+
+    // T002 — ConflictKind must exist with three snake_case-serialised variants.
+    #[test]
+    fn conflict_kind_serializes_snake_case() {
+        let content: ConflictKind = serde_json::from_str(r#""content_modified""#).unwrap();
+        assert!(matches!(content, ConflictKind::ContentModified));
+        let renamed: ConflictKind = serde_json::from_str(r#""renamed_both_sides""#).unwrap();
+        assert!(matches!(renamed, ConflictKind::RenamedBothSides));
+        let deleted: ConflictKind = serde_json::from_str(r#""deleted_with_content""#).unwrap();
+        assert!(matches!(deleted, ConflictKind::DeletedWithContent));
+        assert_eq!(
+            serde_json::to_string(&ConflictKind::ContentModified).unwrap(),
+            r#""content_modified""#
+        );
+    }
+
+    // T003 — ConflictRecord gains is_dir (default false) and conflict_kind.
+    #[test]
+    fn conflict_record_has_is_dir_defaults_false() {
+        use crate::types::{ConflictPolicy, PairId, RelativePath};
+        use chrono::Utc;
+        let record = ConflictRecord {
+            id: "test-id".to_string(),
+            pair_id: PairId::new(),
+            path: RelativePath::new("file.txt"),
+            local_mtime: Utc::now(),
+            remote_mtime: Utc::now(),
+            local_size: 0,
+            remote_size: 0,
+            policy: ConflictPolicy::Ask,
+            resolution: None,
+            detected_at: Utc::now(),
+            resolved_at: None,
+            is_dir: false,
+            conflict_kind: ConflictKind::ContentModified,
+        };
+        assert!(!record.is_dir);
+        assert!(matches!(
+            record.conflict_kind,
+            ConflictKind::ContentModified
+        ));
+
+        // Round-trip through serde — is_dir and conflict_kind survive.
+        let json = serde_json::to_string(&record).unwrap();
+        let back: ConflictRecord = serde_json::from_str(&json).unwrap();
+        assert!(!back.is_dir);
+    }
+
+    // T004 — ConflictSide must have a Both variant distinct from Local/Remote.
+    #[test]
+    fn conflict_side_has_both_variant() {
+        let local = ConflictSide::Local;
+        let remote = ConflictSide::Remote;
+        let both = ConflictSide::Both;
+        assert_ne!(local, remote);
+        assert_ne!(local, both);
+        assert_ne!(remote, both);
+    }
 }

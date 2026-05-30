@@ -1,0 +1,701 @@
+<!doctype html>
+<html lang="en" data-theme="sienna">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Adagio · New Item</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
+<style>
+:root,
+[data-theme="sienna"] {
+  --cream: #f5f1ea; --cream-2: #ece6da; --cream-3: #ddd5c4;
+  --paper: #fbf8f1; --paper-2: #efe9da; --sand: #d3c8b1;
+  --ink: #15171a; --ink-2: #22252a; --ink-soft: #4a4d52; --ink-muted: #7a7c80;
+  --hairline: rgba(21,23,26,0.10); --hairline-2: rgba(21,23,26,0.05);
+  --forest: #2a3d2e; --forest-soft: #506e54;
+  --clay: #c8542a; --clay-2: #b04420; --clay-soft: #db7b54;
+  --good: #4f8a4b; --warn: #b8862a; --danger: #a83a22;
+}
+
+[data-theme="slate"] {
+  --cream: #e9ecef; --cream-2: #dde0e4; --cream-3: #c9cfd5;
+  --paper: #f3f4f6; --paper-2: #dde2e7; --sand: #b9c0c7;
+  --ink: #0e1116; --ink-2: #1a1f26; --ink-soft: #3d434b; --ink-muted: #6a7079;
+  --hairline: rgba(14,17,22,0.10); --hairline-2: rgba(14,17,22,0.05);
+  --forest: #1f3a4d; --forest-soft: #3c5a70;
+  --clay: #b76b35; --clay-2: #9a5524; --clay-soft: #d18e5e;
+  --good: #3a7a5b; --warn: #a87526; --danger: #a83a22;
+}
+
+[data-theme="bone"] {
+  --cream: #ece4d4; --cream-2: #e3d9c1; --cream-3: #d1c4a5;
+  --paper: #f3ecda; --paper-2: #e6dcc3; --sand: #c8b793;
+  --ink: #1c1815; --ink-2: #2a241f; --ink-soft: #4d4640; --ink-muted: #7d756c;
+  --hairline: rgba(28,24,21,0.12); --hairline-2: rgba(28,24,21,0.06);
+  --forest: #3d3a30; --forest-soft: #5d5a4d;
+  --clay: #a4452f; --clay-2: #8b3623; --clay-soft: #c46d56;
+  --good: #5d7a3a; --warn: #a87526; --danger: #a83a22;
+}
+
+[data-theme="ink"] {
+  --cream: #15181c; --cream-2: #1e2227; --cream-3: #2a3037;
+  --paper: #1a1d22; --paper-2: #23272d; --sand: #3a4049;
+  --ink: #f0ece4; --ink-2: #e0dccc; --ink-soft: #b8b3a8; --ink-muted: #797872;
+  --hairline: rgba(240,236,228,0.10); --hairline-2: rgba(240,236,228,0.05);
+  --forest: #6a8f6e; --forest-soft: #88a98a;
+  --clay: #e07a4d; --clay-2: #c8633a; --clay-soft: #e89770;
+  --good: #7aa86a; --warn: #d4a04a; --danger: #d96650;
+}
+
+[data-theme="plum"] {
+  --cream: #efe5e3; --cream-2: #e3d4d1; --cream-3: #d2bab5;
+  --paper: #f5eceb; --paper-2: #e8dbd8; --sand: #caa7a1;
+  --ink: #2a1422; --ink-2: #3d2335; --ink-soft: #56404f; --ink-muted: #80707a;
+  --hairline: rgba(42,20,34,0.12); --hairline-2: rgba(42,20,34,0.06);
+  --forest: #4d2a45; --forest-soft: #7a4f70;
+  --clay: #c66648; --clay-2: #a84e33; --clay-soft: #dc8970;
+  --good: #5a7a4f; --warn: #b8862a; --danger: #a83a22;
+}
+
+[data-theme="azure"] {
+  --cream: #e8edf3; --cream-2: #dae1eb; --cream-3: #c2cdda;
+  --paper: #f1f4f8; --paper-2: #dde4ef; --sand: #b6c2d2;
+  --ink: #0d1a2e; --ink-2: #18253d; --ink-soft: #3a485e; --ink-muted: #6b7689;
+  --hairline: rgba(13,26,46,0.10); --hairline-2: rgba(13,26,46,0.05);
+  --forest: #1a3a5f; --forest-soft: #4a6f9e;
+  --clay: #2f6fcf; --clay-2: #2659a8; --clay-soft: #5e93d9;
+  --good: #3a7a5b; --warn: #b8862a; --danger: #a83a22;
+}
+
+[data-theme="iris"] {
+  --cream: #ebe3ef; --cream-2: #ddd0e3; --cream-3: #c6b6d0;
+  --paper: #f2eaf5; --paper-2: #e2d6e8; --sand: #b6a3c3;
+  --ink: #1f1729; --ink-2: #2c2238; --ink-soft: #4d4257; --ink-muted: #7a7180;
+  --hairline: rgba(31,23,41,0.12); --hairline-2: rgba(31,23,41,0.06);
+  --forest: #4a2e6e; --forest-soft: #7251a0;
+  --clay: #9550b8; --clay-2: #793f99; --clay-soft: #b67ad4;
+  --good: #5a7a4f; --warn: #b8862a; --danger: #a83a22;
+}
+
+[data-theme="citron"] {
+  --cream: #f1ecd2; --cream-2: #e8debe; --cream-3: #d4c895;
+  --paper: #f7f1d8; --paper-2: #ebe2c0; --sand: #c5b585;
+  --ink: #1c1810; --ink-2: #2a2418; --ink-soft: #4d4534; --ink-muted: #7d735c;
+  --hairline: rgba(28,24,16,0.12); --hairline-2: rgba(28,24,16,0.06);
+  --forest: #4a5520; --forest-soft: #6d7a3a;
+  --clay: #c89020; --clay-2: #a87618; --clay-soft: #deb045;
+  --good: #5a7a35; --warn: #b8862a; --danger: #a83a22;
+}
+
+:root {
+  --display: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
+  --body:    'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
+  --mono:    'Geist Mono', ui-monospace, monospace;
+  --serif:   'Instrument Serif', Georgia, serif;
+
+  --r-1: 3px; --r-2: 6px; --r-3: 10px; --r-pill: 999px;
+
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.05), 0 2px 6px rgba(0,0,0,0.04);
+  --shadow-md: 0 2px 4px rgba(0,0,0,0.05), 0 12px 28px rgba(0,0,0,0.08);
+  --shadow-lg: 0 24px 72px rgba(0,0,0,0.18), 0 4px 14px rgba(0,0,0,0.06);
+}
+</style>
+<style>
+  html, body { margin: 0; font-family: var(--body); color: var(--ink); -webkit-font-smoothing: antialiased; }
+  .stage {
+    display: flex;
+    min-height: 100vh;
+  }
+  .frame {
+    width: 100%; min-height: 100vh; overflow: hidden;
+    background: var(--cream); flex-shrink: 0;
+  }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div id="frame" class="frame"><div id="root"></div></div>
+</div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
+
+<script type="text/babel">
+/* logos.jsx */
+function LogoFermata() {
+  return (
+    <div style={{
+      width: '100%', height: '100%', background: 'var(--cream)',
+      display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+      padding: '28px 32px', position: 'relative',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span className="eyebrow">01 / wordmark</span>
+        <span className="eyebrow">fermata</span>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+        <svg width="36" height="18" viewBox="0 0 36 18" fill="none" style={{ color: 'var(--clay)' }}>
+          <path d="M2 15 C 2 4, 34 4, 34 15" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" fill="none"/>
+          <circle cx="18" cy="12" r="1.7" fill="currentColor"/>
+        </svg>
+        <div style={{ fontFamily: 'var(--body)', fontWeight: 400, fontSize: 124, lineHeight: 1, color: 'var(--ink)', letterSpacing: '-0.055em' }}>
+          adagio
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
+          <span style={{ width: 18, height: 1, background: 'var(--ink-muted)' }}/>
+          <span style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', fontSize: 18, color: 'var(--ink-soft)', letterSpacing: '-0.01em' }}>files, at a graceful tempo</span>
+          <span style={{ width: 18, height: 1, background: 'var(--ink-muted)' }}/>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+        <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink-muted)', lineHeight: 1.6 }}>
+          Geist · 400 · 124 / 100<br/>tracking −5.5%
+        </div>
+        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+          <Swatch color="var(--ink)" />
+          <Swatch color="var(--clay)" />
+          <Swatch color="var(--cream)" border />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MarkSlur({ size = 24, fill = 'currentColor', accent = '#c8542a', strokeOpacity = 1, modern = true }) {
+  const s = size;
+  if (modern) {
+    return (
+      <svg width={s} height={s} viewBox="0 0 60 60" fill="none" style={{ display: 'block' }}>
+        <path d="M8 42 C 18 14, 42 14, 52 42" stroke={fill} strokeWidth="3" strokeLinecap="round" fill="none" opacity={strokeOpacity}/>
+        <circle cx="8" cy="42" r="5" fill={fill}/>
+        <circle cx="52" cy="42" r="5" fill={accent}/>
+      </svg>
+    );
+  }
+  return (
+    <svg width={s} height={s} viewBox="0 0 60 60" fill="none" style={{ display: 'block' }}>
+      <circle cx="11" cy="42" r="7" fill={fill}/>
+      <circle cx="49" cy="42" r="7" fill={accent}/>
+      <path d="M7 32 C 16 7, 44 7, 53 32" stroke={fill} strokeWidth="2" strokeLinecap="round" fill="none" opacity={strokeOpacity}/>
+      <line x1="17.5" y1="42" x2="17.5" y2="14" stroke={fill} strokeWidth="1.6" strokeLinecap="round" opacity="0.55"/>
+      <line x1="55.5" y1="42" x2="55.5" y2="14" stroke={accent} strokeWidth="1.6" strokeLinecap="round" opacity="0.7"/>
+    </svg>
+  );
+}
+
+function Swatch({ color, border }) {
+  return <div style={{ width: 12, height: 12, borderRadius: 2, background: color, boxShadow: border ? 'inset 0 0 0 1px var(--hairline)' : 'none' }}/>;
+}
+
+function AdagioWord({ size = 32, color = 'var(--ink)', weight = 500 }) {
+  return (
+    <span style={{ fontFamily: 'var(--body)', fontWeight: weight, fontSize: size, lineHeight: 1, letterSpacing: '-0.05em', color }}>
+      adagio
+    </span>
+  );
+}
+
+Object.assign(window, { MarkSlur, AdagioWord });
+
+/* desktop-app.jsx */
+const { useState, useEffect, useMemo } = React;
+
+const ACCOUNTS = [
+  { id: 'work', name: 'Work · Sound GmbH', host: 'cloud.sound.studio', initial: 'S', color: 'var(--forest)' },
+  { id: 'home', name: 'Personal', host: 'nc.lena-h.de', initial: 'L', color: 'var(--clay)' },
+];
+
+const FILE_TREE = {
+  '/Sound': [
+    { name: 'Brand · Adagio',           kind: 'folder', size: '—',        mtime: 'today, 11:42',     status: 'sync',  share: 3, items: 84 },
+    { name: 'Sync Engine — Whitepaper.pdf', kind: 'pdf',  size: '1.2 MB',  mtime: 'today, 09:18',     status: 'ok' },
+    { name: 'Investor update Q2.md',    kind: 'md',     size: '14 KB',    mtime: 'yesterday',        status: 'ok',    share: 1 },
+    { name: 'Engineering',              kind: 'folder', size: '—',        mtime: 'yesterday',        status: 'pin',   items: 312 },
+    { name: 'Hiring · 2026',            kind: 'folder', size: '—',        mtime: '3 days ago',       status: 'ok',    items: 27 },
+    { name: 'Composition.fig',          kind: 'fig',    size: '46.8 MB',  mtime: '3 days ago',       status: 'cloud' },
+    { name: 'allegretto-press-kit.zip', kind: 'zip',    size: '128 MB',   mtime: 'last week',        status: 'cloud' },
+    { name: 'Logo · construction.svg',  kind: 'svg',    size: '32 KB',    mtime: 'last week',        status: 'ok',    share: 2 },
+    { name: 'Tempo — recording.wav',    kind: 'wav',    size: '212 MB',   mtime: 'last week',        status: 'cloud' },
+    { name: 'Manifesto — draft.txt',    kind: 'txt',    size: '6 KB',     mtime: 'two weeks ago',    status: 'conflict' },
+    { name: 'Old — archive',            kind: 'folder', size: '—',        mtime: 'a month ago',      status: 'ok',    items: 1241 },
+  ],
+};
+
+const ACTIVITY = [
+  { who: 'Mira Olsson',  what: 'edited', target: 'Investor update Q2.md',         where: '/Sound',  when: '4 min ago',  bullet: 'edit' },
+  { who: 'You',          what: 'shared', target: 'Logo · construction.svg',       where: '/Brand', when: '12 min ago', bullet: 'share', to: 'Yui Tanaka' },
+  { who: 'Auto-sync',    what: 'pulled', target: '7 files in Engineering/',       where: '/Sound',  when: '32 min ago', bullet: 'sync' },
+  { who: 'Conflict',     what: 'flagged', target: 'Manifesto — draft.txt',        where: '/Sound', when: '1 hr ago',   bullet: 'conflict' },
+  { who: 'You',          what: 'pinned', target: 'Engineering',                   where: '/Sound',  when: '2 hr ago',   bullet: 'pin' },
+  { who: 'Felix Krüger', what: 'added',  target: 'Composition.fig',               where: '/Brand', when: '3 hr ago',  bullet: 'add' },
+  { who: 'Mira Olsson',  what: 'edited', target: 'Adagio · style.css',             where: '/Brand', when: 'yesterday', bullet: 'edit' },
+  { who: 'You',          what: 'declined', target: 'a share from external user',  where: '—',      when: 'yesterday',  bullet: 'block' },
+  { who: 'Auto-sync',    what: 'pulled', target: '142 files',                     where: 'Hiring 2026', when: 'yesterday', bullet: 'sync' },
+];
+
+const Icon = ({ name, size = 16, color = 'currentColor', strokeWidth = 1.6 }) => {
+  const s = size;
+  const common = { width: s, height: s, viewBox: '0 0 24 24', fill: 'none', stroke: color, strokeWidth, strokeLinecap: 'round', strokeLinejoin: 'round', style: { display: 'block', flexShrink: 0 } };
+  switch (name) {
+    case 'folder':    return (<svg {...common}><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></svg>);
+    case 'file':      return (<svg {...common}><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6Z"/><path d="M14 3v6h6"/></svg>);
+    case 'search':    return (<svg {...common}><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>);
+    case 'plus':      return (<svg {...common}><path d="M12 5v14M5 12h14"/></svg>);
+    case 'chevron':   return (<svg {...common}><path d="m9 6 6 6-6 6"/></svg>);
+    case 'caret-down':return (<svg {...common}><path d="m6 9 6 6 6-6"/></svg>);
+    case 'check':     return (<svg {...common}><path d="M5 13l4 4L19 7"/></svg>);
+    case 'cloud':     return (<svg {...common}><path d="M17 18a4 4 0 0 0 0-8 6 6 0 0 0-11.5 1.5A3.5 3.5 0 0 0 6.5 18H17Z"/></svg>);
+    case 'cloud-dl':  return (<svg {...common}><path d="M17 18a4 4 0 0 0 0-8 6 6 0 0 0-11.5 1.5A3.5 3.5 0 0 0 6.5 18H17Z"/><path d="M12 12v6m0 0-2-2m2 2 2-2"/></svg>);
+    case 'pin':       return (<svg {...common}><path d="M12 17v5"/><path d="M9 3h6l1 8h2v3H6v-3h2l1-8Z"/></svg>);
+    case 'share':     return (<svg {...common}><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.5 11 16 7M8.5 13 16 17"/></svg>);
+    case 'link':      return (<svg {...common}><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>);
+    case 'star':      return (<svg {...common}><path d="m12 3 2.6 5.5 6 .9-4.4 4.2 1 6.1L12 16.8 6.8 19.7l1-6.1L3.4 9.4l6-.9L12 3Z"/></svg>);
+    case 'clock':     return (<svg {...common}><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>);
+    case 'people':    return (<svg {...common}><circle cx="9" cy="9" r="3.5"/><path d="M3 19a6 6 0 0 1 12 0"/><circle cx="17" cy="9" r="2.5"/><path d="M16 19a5 5 0 0 1 5-5"/></svg>);
+    case 'tag':       return (<svg {...common}><path d="M3 13V4h9l9 9-9 9-9-9Z"/><circle cx="8" cy="8" r="1.5" fill={color}/></svg>);
+    case 'bell':      return (<svg {...common}><path d="M6 17V11a6 6 0 1 1 12 0v6l2 2H4l2-2Z"/><path d="M10 21a2 2 0 0 0 4 0"/></svg>);
+    case 'settings':  return (<svg {...common}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h.1A1.7 1.7 0 0 0 10 3.1V3a2 2 0 1 1 4 0v-.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>);
+    case 'menu':      return (<svg {...common}><path d="M5 7h14M5 12h14M5 17h14"/></svg>);
+    case 'sync':      return (<svg {...common}><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 4v4h-4"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 20v-4h4"/></svg>);
+    case 'check-circ':return (<svg {...common}><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg>);
+    case 'warn':      return (<svg {...common}><path d="M12 3 2 21h20L12 3Z"/><path d="M12 10v5"/><circle cx="12" cy="18" r="0.8" fill={color}/></svg>);
+    case 'globe':     return (<svg {...common}><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>);
+    case 'min':       return (<svg {...common} viewBox="0 0 12 12"><path d="M2 6h8"/></svg>);
+    case 'max':       return (<svg {...common} viewBox="0 0 12 12"><rect x="2" y="2" width="8" height="8"/></svg>);
+    case 'close':     return (<svg {...common} viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8"/></svg>);
+    case 'x':         return (<svg {...common}><path d="M5 5l14 14M19 5 5 19"/></svg>);
+    case 'eye':       return (<svg {...common}><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>);
+    case 'pencil':    return (<svg {...common}><path d="M4 20h4l10-10-4-4L4 16v4Z"/></svg>);
+    case 'mail':      return (<svg {...common}><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>);
+    case 'shield':    return (<svg {...common}><path d="M12 3 4 6v6c0 4.5 3.5 8 8 9 4.5-1 8-4.5 8-9V6l-8-3Z"/></svg>);
+    case 'copy':      return (<svg {...common}><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>);
+    case 'arrow-r':   return (<svg {...common}><path d="M5 12h14m-6-6 6 6-6 6"/></svg>);
+    case 'upload':    return (<svg {...common}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>);
+    case 'file-plus': return (<svg {...common}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>);
+    case 'folder-plus':return (<svg {...common}><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v11z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>);
+    default: return null;
+  }
+};
+
+const KIND_COLOR = {
+  folder: 'var(--forest)', pdf: '#a8443a', md: 'var(--ink-soft)', fig: '#7a4b8a',
+  zip: '#7d6b5b', svg: 'var(--clay)', wav: '#3a6e8a', txt: 'var(--ink-soft)',
+};
+
+function FileGlyph({ kind, status }) {
+  if (kind === 'folder') {
+    return (
+      <div style={{ position: 'relative', width: 28, height: 22 }}>
+        <svg width="28" height="22" viewBox="0 0 28 22" fill="none">
+          <path d="M1 4a2 2 0 0 1 2-2h6l2 2h14a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V4Z" stroke="var(--forest)" strokeWidth="1.4" fill="var(--paper-2)"/>
+        </svg>
+      </div>
+    );
+  }
+  return (
+    <div style={{ position: 'relative', width: 26, height: 30, background: 'var(--paper-2)', border: '1px solid var(--hairline)', borderRadius: 3, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '3px 0' }}>
+      <div style={{ position: 'absolute', top: 0, right: 0, width: 8, height: 8, background: 'var(--cream-2)', borderLeft: '1px solid var(--hairline)', borderBottom: '1px solid var(--hairline)' }}/>
+      <div style={{ flex: 1 }}/>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: 7, letterSpacing: '0.05em', textAlign: 'center', color: KIND_COLOR[kind] || 'var(--ink-soft)', fontWeight: 600, textTransform: 'uppercase' }}>{kind}</div>
+    </div>
+  );
+}
+
+function StatusDot({ status, share }) {
+  if (status === 'sync') return <SpinDot color="var(--clay)" />;
+  if (status === 'ok') return <div title="In sync" style={{ width: 14, height: 14, borderRadius: 7, background: 'var(--good)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="check" size={9} color="white" strokeWidth={2.5}/></div>;
+  if (status === 'cloud') return <Icon name="cloud" size={16} color="var(--ink-muted)"/>;
+  if (status === 'pin') return <div title="Pinned offline" style={{ width: 14, height: 14, borderRadius: 7, background: 'var(--ink)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="check" size={9} color="var(--cream)" strokeWidth={2.5}/></div>;
+  if (status === 'conflict') return <Icon name="warn" size={16} color="var(--danger)" strokeWidth={1.8}/>;
+  return null;
+}
+
+function SpinDot({ color }) {
+  return (
+    <div style={{ width: 14, height: 14, position: 'relative' }} title="Syncing">
+      <svg width="14" height="14" viewBox="0 0 14 14" style={{ animation: 'adagio-spin 1.4s linear infinite' }}>
+        <circle cx="7" cy="7" r="5.5" stroke={color} strokeOpacity="0.25" strokeWidth="1.6" fill="none"/>
+        <path d="M7 1.5a5.5 5.5 0 0 1 5.5 5.5" stroke={color} strokeWidth="1.6" strokeLinecap="round" fill="none"/>
+      </svg>
+      <style>{`@keyframes adagio-spin{to{transform:rotate(360deg)}}`}</style>
+    </div>
+  );
+}
+
+function Chrome({ children, title = '', tab, onTab }) {
+  return (
+    <div style={{
+      width: '100%', height: '100%', background: 'var(--cream)', display: 'flex', flexDirection: 'column',
+      fontFamily: 'var(--body)', color: 'var(--ink)', borderRadius: 'inherit', overflow: 'hidden',
+    }}>
+      <div style={{
+        height: 44, flexShrink: 0, display: 'flex', alignItems: 'center', padding: '0 14px 0 18px',
+        borderBottom: '1px solid var(--hairline)', background: 'var(--paper)', gap: 14,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <MarkSlur size={18} fill="var(--ink)" accent="var(--clay)" />
+          <span style={{ fontFamily: 'var(--body)', fontWeight: 500, fontSize: 16, letterSpacing: '-0.05em' }}>adagio</span>
+        </div>
+        {tab && (
+          <div style={{ display: 'flex', gap: 0, marginLeft: 18, padding: 3, background: 'var(--cream-2)', borderRadius: 'var(--r-pill)' }}>
+            {[['files', 'Files'], ['activity', 'Activity']].map(([id, lbl]) => (
+              <button key={id} onClick={() => onTab && onTab(id)}
+                style={{
+                  background: tab === id ? 'var(--cream)' : 'transparent',
+                  color: tab === id ? 'var(--ink)' : 'var(--ink-muted)',
+                  border: 'none', padding: '5px 14px', borderRadius: 'var(--r-pill)', fontSize: 12.5,
+                  cursor: 'pointer', fontWeight: 500, boxShadow: tab === id ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+                }}>{lbl}</button>
+            ))}
+          </div>
+        )}
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 14px', background: 'var(--cream-2)',
+            borderRadius: 'var(--r-pill)', width: 320, color: 'var(--ink-muted)', fontSize: 13 }}>
+            <Icon name="search" size={14} color="var(--ink-muted)" />
+            <span>Search files, people, activity…</span>
+            <span style={{ marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: 10, background: 'var(--cream)', padding: '2px 5px', borderRadius: 3 }}>⌘K</span>
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--ink-soft)' }}>
+          <ChromeBtn><Icon name="bell" size={15} /></ChromeBtn>
+          <ChromeBtn onClick={() => window.location.href = 'settings.html'}><Icon name="settings" size={15} /></ChromeBtn>
+          <div style={{ width: 26, height: 26, borderRadius: 13, background: 'var(--forest)', color: 'var(--cream)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, marginLeft: 4 }}>S</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 0, marginLeft: 10, paddingLeft: 10, borderLeft: '1px solid var(--hairline)' }}>
+            <ChromeBtn><Icon name="min" size={11} strokeWidth={1.8} /></ChromeBtn>
+            <ChromeBtn><Icon name="max" size={11} strokeWidth={1.8} /></ChromeBtn>
+            <ChromeBtn><Icon name="close" size={11} strokeWidth={1.8} /></ChromeBtn>
+          </div>
+        </div>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function ChromeBtn({ children, onClick }) {
+  const [h, setH] = useState(false);
+  return (
+    <button onClick={onClick}
+      onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
+      style={{
+        width: 28, height: 28, background: h ? 'var(--cream-2)' : 'transparent',
+        border: 'none', borderRadius: 6, cursor: 'pointer', color: 'var(--ink-soft)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>{children}</button>
+  );
+}
+
+function Sidebar({ selected, onSelect, account, onAccount }) {
+  return (
+    <div style={{ width: 248, flexShrink: 0, background: 'var(--paper)', borderRight: '1px solid var(--hairline)',
+      display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ padding: '14px 14px 12px' }}>
+        <button onClick={() => onAccount && onAccount()} style={{ width: '100%', background: 'var(--cream-2)', border: '1px solid var(--hairline)', borderRadius: 'var(--r-2)', padding: 10, display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', textAlign: 'left' }}>
+          <div style={{ width: 30, height: 30, borderRadius: 8, background: account.color, color: 'var(--cream)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--body)', fontWeight: 600, fontSize: 14, letterSpacing: '-0.04em' }}>{account.initial}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{account.name}</div>
+            <div style={{ fontSize: 11, color: 'var(--ink-muted)', fontFamily: 'var(--mono)', letterSpacing: '0.02em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{account.host}</div>
+          </div>
+          <Icon name="caret-down" size={13} color="var(--ink-muted)" />
+        </button>
+      </div>
+
+      <SidebarSection label="Library">
+        <SidebarItem icon="folder" label="All files" badge="3.2k" id="all" selected={selected} onSelect={onSelect} />
+        <SidebarItem icon="star" label="Favorites" badge="14" id="fav" selected={selected} onSelect={onSelect} />
+        <SidebarItem icon="clock" label="Recent" id="recent" selected={selected} onSelect={onSelect} />
+        <SidebarItem icon="people" label="Shared" badge="8" id="shared" selected={selected} onSelect={onSelect} />
+        <SidebarItem icon="tag" label="Tagged" id="tags" selected={selected} onSelect={onSelect} />
+      </SidebarSection>
+
+      <SidebarSection label="Pinned folders">
+        <PinnedFolder name="Brand · Adagio" status="ok" />
+        <PinnedFolder name="Engineering" status="ok" />
+        <PinnedFolder name="Hiring · 2026" status="sync" />
+      </SidebarSection>
+
+      <div style={{ flex: 1 }}/>
+
+      <SyncFooter />
+    </div>
+  );
+}
+
+function SidebarSection({ label, children }) {
+  return (
+    <div style={{ padding: '4px 10px 8px' }}>
+      <div style={{ padding: '6px 8px 8px', fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'var(--ink-muted)' }}>{label}</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>{children}</div>
+    </div>
+  );
+}
+
+function SidebarItem({ icon, label, badge, id, selected, onSelect }) {
+  const active = selected === id;
+  const [h, setH] = useState(false);
+  return (
+    <button onClick={() => onSelect && onSelect(id)}
+      onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
+      style={{
+        background: active ? 'var(--cream-2)' : h ? 'color-mix(in srgb, var(--ink) 5%, transparent)' : 'transparent',
+        border: 'none', borderRadius: 'var(--r-2)', padding: '7px 9px', display: 'flex', alignItems: 'center',
+        gap: 10, fontSize: 13, color: active ? 'var(--ink)' : 'var(--ink-soft)', cursor: 'pointer',
+        fontWeight: active ? 500 : 400, textAlign: 'left',
+      }}>
+      <Icon name={icon} size={15} color={active ? 'var(--clay)' : 'var(--ink-muted)'} />
+      <span style={{ flex: 1 }}>{label}</span>
+      {badge && <span style={{ fontSize: 10.5, color: 'var(--ink-muted)', fontFamily: 'var(--mono)' }}>{badge}</span>}
+    </button>
+  );
+}
+
+function PinnedFolder({ name, status }) {
+  return (
+    <div style={{ padding: '6px 9px', display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: 'var(--ink-soft)' }}>
+      <div style={{ width: 4, height: 4, borderRadius: 2, background: status === 'sync' ? 'var(--clay)' : 'var(--good)' }}/>
+      <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</span>
+      {status === 'sync' && <SpinDot color="var(--clay)" />}
+    </div>
+  );
+}
+
+function SyncFooter() {
+  return (
+    <div style={{ padding: '12px 14px', borderTop: '1px solid var(--hairline)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <SpinDot color="var(--clay)" />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 500 }}>Syncing 7 files</div>
+          <div style={{ fontSize: 11, color: 'var(--ink-muted)', fontFamily: 'var(--mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>~ 2.1 MB / 14.6 MB · 38s</div>
+        </div>
+      </div>
+      <div style={{ height: 3, background: 'var(--cream-2)', borderRadius: 2, overflow: 'hidden' }}>
+        <div style={{ width: '38%', height: '100%', background: 'var(--clay)' }}/>
+      </div>
+    </div>
+  );
+}
+
+const { useState: useS } = React;
+
+function FilesScene({ files, onShare, sourceFilter, miniature }) {
+  const [selected, setSel] = useS(2);
+  const visible = files;
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--cream)' }}>
+      <div style={{ height: 52, flexShrink: 0, padding: '0 22px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--hairline)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+          <span style={{ color: 'var(--ink-muted)' }}>cloud.sound.studio</span>
+          <Icon name="chevron" size={11} color="var(--ink-muted)" />
+          <span style={{ color: 'var(--ink-muted)' }}>Sound</span>
+          <Icon name="chevron" size={11} color="var(--ink-muted)" />
+          <span style={{ color: 'var(--ink)', fontWeight: 600, fontFamily: 'var(--body)', fontSize: 14, letterSpacing: '-0.02em', marginLeft: 4 }}>{sourceFilter === 'fav' ? 'Favorites' : sourceFilter === 'shared' ? 'Shared with me' : 'Sound'}</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <FlatBtn icon="plus" label="New" primary />
+          <FlatBtn icon="cloud-dl" label="Make available offline" />
+          <FlatBtn icon="share" label="Share" onClick={() => onShare && onShare()} />
+        </div>
+      </div>
+
+      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '38px 1fr 110px 110px 160px 80px', padding: '12px 22px 12px',
+          fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-muted)',
+          borderBottom: '1px solid var(--hairline)' }}>
+          <span/>
+          <span>Name</span>
+          <span>Size</span>
+          <span>Items</span>
+          <span>Modified</span>
+          <span style={{ textAlign: 'right' }}>Status</span>
+        </div>
+
+        <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0 12px' }}>
+          {visible.map((f, i) => (
+            <FileRow key={i} file={f} selected={selected === i} onClick={() => setSel(i)} onShare={onShare} />
+          ))}
+        </div>
+      </div>
+
+      <div style={{ height: 32, flexShrink: 0, borderTop: '1px solid var(--hairline)', background: 'var(--paper)',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px',
+        fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-muted)', letterSpacing: '0.04em' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+          <span>{visible.length} items · {selected !== null ? '1 selected' : 'nothing selected'}</span>
+          <span>·</span>
+          <span>2.1 GB local · 84.6 GB on cloud</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 6, height: 6, borderRadius: 3, background: 'var(--clay)' }}/>
+            syncing · ETA 38s
+          </span>
+          <span>·</span>
+          <span>last full sync 11:42</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FileRow({ file, selected, onClick, onShare }) {
+  const [h, setH] = useS(false);
+  return (
+    <div onClick={onClick}
+      onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
+      style={{
+        display: 'grid', gridTemplateColumns: '38px 1fr 110px 110px 160px 80px',
+        padding: '11px 22px', alignItems: 'center',
+        background: selected ? 'var(--paper-2)' : h ? 'color-mix(in srgb, var(--ink) 4%, transparent)' : 'transparent',
+        cursor: 'pointer',
+        boxShadow: selected ? 'inset 2px 0 0 var(--clay)' : 'none',
+        fontSize: 13.5,
+      }}>
+      <FileGlyph kind={file.kind} status={file.status} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+        <span style={{ color: 'var(--ink)', fontWeight: file.kind === 'folder' ? 500 : 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{file.name}</span>
+        {file.share && (
+          <span title={`Shared with ${file.share}`} style={{ display: 'flex', alignItems: 'center', gap: 3, color: 'var(--ink-muted)', fontSize: 11, fontFamily: 'var(--mono)' }}>
+            <Icon name="people" size={12} color="var(--ink-muted)" />
+            <span>{file.share}</span>
+          </span>
+        )}
+      </div>
+      <span style={{ color: 'var(--ink-muted)', fontSize: 12, fontFamily: 'var(--mono)' }}>{file.size}</span>
+      <span style={{ color: 'var(--ink-muted)', fontSize: 12, fontFamily: 'var(--mono)' }}>{file.items ? `${file.items}` : '—'}</span>
+      <span style={{ color: 'var(--ink-muted)', fontSize: 12 }}>{file.mtime}</span>
+      <span style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8 }}>
+        <StatusDot status={file.status} />
+        {(h || selected) && (
+          <button onClick={(e) => { e.stopPropagation(); onShare && onShare(); }}
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, color: 'var(--ink-muted)', display: 'flex' }}>
+            <Icon name="share" size={14} />
+          </button>
+        )}
+      </span>
+    </div>
+  );
+}
+
+function FlatBtn({ icon, label, primary, onClick }) {
+  const [h, setH] = useS(false);
+  const style = primary ? {
+    background: h ? 'var(--ink-2)' : 'var(--ink)', color: 'var(--cream)', border: 'none',
+  } : {
+    background: h ? 'var(--paper-2)' : 'transparent', color: 'var(--ink-soft)',
+    border: '1px solid var(--hairline)',
+  };
+  return (
+    <button onClick={onClick} onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
+      style={{ ...style, padding: '7px 12px', borderRadius: 'var(--r-2)', display: 'flex', alignItems: 'center', gap: 7,
+        fontSize: 12.5, cursor: 'pointer', fontWeight: 500 }}>
+      <Icon name={icon} size={14} color={primary ? 'var(--cream)' : 'var(--ink-soft)'} />
+      <span>{label}</span>
+    </button>
+  );
+}
+
+function NewFileDialog({ onClose }) {
+  const [dragActive, setDragActive] = useS(false);
+  
+  return (
+    <div style={{ position: 'absolute', inset: 0, background: 'color-mix(in srgb, var(--ink) 40%, transparent)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 20 }}>
+      <div style={{ width: 500, background: 'var(--cream)', border: '1px solid var(--hairline)', borderRadius: 'var(--r-3)', boxShadow: 'var(--shadow-lg)', overflow: 'hidden' }}>
+        <div style={{ padding: '20px 24px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--hairline)' }}>
+          <div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'var(--clay)', marginBottom: 6 }}>Create or upload</div>
+            <div style={{ fontFamily: 'var(--body)', fontWeight: 500, fontSize: 24, lineHeight: 1.1, letterSpacing: '-0.035em' }}>New item</div>
+          </div>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-muted)' }}>
+            <Icon name="x" size={20} />
+          </button>
+        </div>
+
+        <div style={{ padding: '24px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 24 }}>
+            <NewItemBtn icon="folder-plus" label="Folder" desc="Group related files" />
+            <NewItemBtn icon="file-plus" label="Markdown" desc="Draft a new document" />
+          </div>
+
+          <label style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'var(--ink-muted)', display: 'block', marginBottom: 12 }}>Upload</label>
+          <div 
+            onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
+            onDragLeave={() => setDragActive(false)}
+            onDrop={(e) => { e.preventDefault(); setDragActive(false); }}
+            style={{ 
+              height: 180, border: dragActive ? '2.5px dashed var(--clay)' : '1.5px dashed var(--hairline)', background: dragActive ? 'var(--paper-2)' : 'var(--paper)',
+              borderRadius: 'var(--r-3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12,
+              transition: 'all 0.2s', cursor: 'pointer'
+            }}
+          >
+            <div style={{ width: 44, height: 44, borderRadius: 22, background: 'var(--cream-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-soft)' }}>
+              <Icon name="upload" size={20} strokeWidth={2} />
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 15, fontWeight: 500 }}>Drop files here</div>
+              <div style={{ fontSize: 13, color: 'var(--ink-muted)', marginTop: 4 }}>or click to browse your computer</div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ padding: '16px 24px', background: 'var(--paper-2)', borderTop: '1px solid var(--hairline)', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <button onClick={onClose} style={{ background: 'transparent', border: '1px solid var(--hairline)', padding: '8px 20px', borderRadius: 'var(--r-pill)', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+          <button style={{ background: 'var(--ink)', color: 'var(--cream)', border: 'none', padding: '8px 24px', borderRadius: 'var(--r-pill)', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Upload</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NewItemBtn({ icon, label, desc }) {
+  const [h, setH] = useS(false);
+  return (
+    <button 
+      onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
+      style={{ 
+        flex: 1, background: h ? 'var(--paper-2)' : 'var(--paper)', border: '1px solid var(--hairline)', borderRadius: 'var(--r-2)', 
+        padding: '16px', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'flex-start', gap: 14, transition: 'all 0.15s'
+      }}
+    >
+      <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--cream-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--clay)', flexShrink: 0 }}>
+        <Icon name={icon} size={18} strokeWidth={2} />
+      </div>
+      <div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{label}</div>
+        <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2, lineHeight: 1.3 }}>{desc}</div>
+      </div>
+    </button>
+  );
+}
+
+function DesktopApp({ scene = 'files' }) {
+  const [tab, setTab] = useS('files');
+  const [account] = useS(ACCOUNTS[0]);
+  const [source, setSource] = useS('all');
+  const [newOpen, setNewOpen] = useS(true);
+
+  return (
+    <div style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}>
+      <Chrome tab={tab} onTab={setTab}>
+        <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+          <Sidebar selected={source} onSelect={setSource} account={account} />
+          <FilesScene files={FILE_TREE['/Sound']} onShare={() => {}} sourceFilter={source} />
+        </div>
+      </Chrome>
+      {newOpen && <NewFileDialog onClose={() => setNewOpen(false)} />}
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<DesktopApp />);
+</script>
+</body>
+</html>

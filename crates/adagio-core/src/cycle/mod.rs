@@ -1,10 +1,11 @@
 use crate::cycle::runner::PairRunner;
-use crate::detection::local::{scan_local, CachedLocalEntry};
+use crate::detection::local::{scan_local_with_stats, CachedLocalEntry};
 use crate::detection::remote::fetch_remote_snapshot;
 use crate::error::SyncError;
 use crate::journal::Journal;
+use crate::observability::{CycleMetrics, MemorySampler};
 use crate::remote::RemoteClient;
-use crate::types::{LocalPath, PairId, RelativePath, RemotePath, SyncPair};
+use crate::types::{AccountId, LocalPath, PairId, RelativePath, RemotePath, SyncPair};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -130,6 +131,11 @@ pub struct SyncCycle<'a> {
     pub pair: &'a SyncPair,
     pub client: &'a dyn RemoteClient,
     pub journal: &'a dyn Journal,
+    /// Optional channel for conflict-detected notifications (forwarded to propagator).
+    /// Bounded (capacity 1); `try_send` is used so a full channel never blocks.
+    pub conflict_tx: Option<&'a tokio::sync::mpsc::Sender<()>>,
+    /// Optional memory sampler; when set, `observe()` is called at cycle end.
+    pub memory_sampler: Option<Arc<std::sync::Mutex<MemorySampler>>>,
 }
 
 impl<'a> SyncCycle<'a> {
@@ -157,9 +163,10 @@ impl<'a> SyncCycle<'a> {
         let local_root = LocalPath::new(&self.pair.local_root.0);
         let remote_root = RemotePath::new(self.pair.remote_root.as_str());
 
-        let local_snapshot = scan_local(&local_root, &cache).await?;
+        let (local_snapshot, scan_stats) = scan_local_with_stats(&local_root, &cache).await?;
         // Directories are created implicitly; exclude them from reconciliation so
         // they don't generate spurious Upload ops.
+        let path_count = local_snapshot.len();
         let local_items: Vec<_> = local_snapshot.into_iter().filter(|i| !i.is_dir).collect();
         let raw_remote = fetch_remote_snapshot(self.client, &remote_root).await?;
         // Apply selective-sync filtering: if the pair has an explicit path list,
@@ -172,14 +179,22 @@ impl<'a> SyncCycle<'a> {
             &local_items,
             &remote_items,
             &journal_entries,
-            crate::types::ConflictPolicy::NewestWins, // default; override via pair config in future
+            self.pair.conflict_policy.clone(),
         );
 
         // 3. Propagation — use per-pair concurrency limits (T113).
-        let propagator = propagator::Propagator::new(
-            self.pair.max_upload_concurrency as usize,
-            self.pair.max_download_concurrency as usize,
-        );
+        let propagator = if let Some(tx) = self.conflict_tx {
+            propagator::Propagator::with_conflict_channel(
+                self.pair.max_upload_concurrency as usize,
+                self.pair.max_download_concurrency as usize,
+                tx.clone(),
+            )
+        } else {
+            propagator::Propagator::new(
+                self.pair.max_upload_concurrency as usize,
+                self.pair.max_download_concurrency as usize,
+            )
+        };
         let result = propagator
             .execute(
                 &plan.ops,
@@ -192,6 +207,39 @@ impl<'a> SyncCycle<'a> {
             .await;
 
         let completed_at = Utc::now();
+        let duration_ms = (completed_at - started_at).num_milliseconds().max(0) as u64;
+
+        // Emit cycle metrics for AC-1 observability.
+        CycleMetrics {
+            path_count,
+            checksum_recomputed: scan_stats.checksum_recomputed,
+            checksum_from_cache: scan_stats.checksum_from_cache,
+            duration_ms,
+        }
+        .emit();
+
+        // Sample RSS for AC-3 memory tracking.
+        if let Some(sampler_arc) = &self.memory_sampler {
+            let mut sampler = sampler_arc.lock().unwrap();
+            if !sampler.has_baseline() {
+                if let Some(rss) = MemorySampler::sample_rss() {
+                    sampler.set_baseline(rss);
+                }
+            } else {
+                sampler.observe();
+            }
+        }
+
+        // On Linux, ask glibc to return freed pages to the OS after every cycle.
+        // Sync cycles allocate large transient heaps (remote item lists, local scan
+        // results, journal entry maps) that glibc would otherwise retain indefinitely,
+        // causing the RSS to grow cycle over cycle even though no data is leaked.
+        #[cfg(target_os = "linux")]
+        {
+            // SAFETY: malloc_trim is a standard glibc extension with no preconditions.
+            unsafe { libc::malloc_trim(0) };
+        }
+
         Ok(SyncReport {
             pair_id: self.pair.id.clone(),
             started_at,
@@ -221,6 +269,10 @@ pub struct DefaultSyncEngine {
     pub pause_on_metered: bool,
     /// Minimum battery percentage below which sync is suspended (T071). None = no threshold.
     pub min_battery_percent: Option<u8>,
+    /// Shared RSS sampler for AC-3 memory tracking; passed to each PairRunner.
+    memory_sampler: Arc<std::sync::Mutex<MemorySampler>>,
+    /// Per-account bandwidth limits: (upload_kbps, download_kbps). 0 = unlimited.
+    pub bandwidth_limits: Arc<RwLock<HashMap<AccountId, (u64, u64)>>>,
 }
 
 impl DefaultSyncEngine {
@@ -235,20 +287,42 @@ impl DefaultSyncEngine {
             runners: Arc::new(RwLock::new(HashMap::new())),
             pause_on_metered: false,
             min_battery_percent: None,
+            memory_sampler: Arc::new(std::sync::Mutex::new(MemorySampler::new())),
+            bandwidth_limits: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    /// Update bandwidth limits for an account. Takes effect on the next sync cycle.
+    pub async fn update_bandwidth_limits(
+        &self,
+        account_id: &AccountId,
+        upload_kbps: u64,
+        download_kbps: u64,
+    ) {
+        let mut limits = self.bandwidth_limits.write().await;
+        if upload_kbps == 0 && download_kbps == 0 {
+            limits.remove(account_id);
+        } else {
+            limits.insert(account_id.clone(), (upload_kbps, download_kbps));
         }
     }
 
     /// Spawn a `PairRunner` for `pair` and register it.
     ///
     /// If a runner already exists for this pair it is stopped and replaced.
+    ///
+    /// Pass `conflict_tx` to receive a notification each time an Ask-policy conflict
+    /// is recorded by the propagator.
     pub async fn start_pair(
         &self,
         pair: SyncPair,
         client: Arc<dyn RemoteClient>,
         journal: Arc<dyn Journal>,
+        conflict_tx: Option<tokio::sync::mpsc::Sender<()>>,
     ) {
         let pair_id = pair.id.clone();
-        let runner = PairRunner::spawn(Arc::new(pair), client, journal);
+        let sampler = self.memory_sampler.clone();
+        let runner = PairRunner::spawn(Arc::new(pair), client, journal, conflict_tx, sampler);
         let mut runners = self.runners.write().await;
         if let Some(old) = runners.remove(&pair_id) {
             old.stop();
@@ -429,6 +503,7 @@ mod tests {
             scan_on_startup: false,
             max_upload_concurrency: 3,
             max_download_concurrency: 3,
+            conflict_policy: crate::types::ConflictPolicy::Ask,
         }
     }
 
@@ -440,7 +515,7 @@ mod tests {
         let pair_id = pair.id.clone();
         let client = Arc::new(MockRemoteClient::new());
         let journal = make_engine_test_journal().await;
-        engine.start_pair(pair, client, journal).await;
+        engine.start_pair(pair, client, journal, None).await;
         let runners = engine.runners.read().await;
         assert!(
             runners.contains_key(&pair_id),
@@ -456,7 +531,7 @@ mod tests {
         let pair_id = pair.id.clone();
         let client = Arc::new(MockRemoteClient::new());
         let journal = make_engine_test_journal().await;
-        engine.start_pair(pair, client, journal).await;
+        engine.start_pair(pair, client, journal, None).await;
         engine.stop_pair(&pair_id).await;
         let runners = engine.runners.read().await;
         assert!(
@@ -483,7 +558,7 @@ mod tests {
         let pair_id = pair.id.clone();
         let client = Arc::new(MockRemoteClient::new());
         let journal = make_engine_test_journal().await;
-        engine.start_pair(pair, client, journal).await;
+        engine.start_pair(pair, client, journal, None).await;
         assert!(
             engine.trigger_pair(&pair_id).await.is_ok(),
             "trigger_pair should succeed for a registered pair"

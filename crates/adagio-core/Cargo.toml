@@ -29,6 +29,7 @@ dashmap = { workspace = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }
 futures = { workspace = true }
+libc = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
@@ -51,6 +52,10 @@ path = "../../tests/integration/conflict.rs"
 [[test]]
 name = "error_recovery"
 path = "../../tests/integration/error_recovery.rs"
+
+[[bench]]
+name = "idle_scan"
+harness = false
 
 [[bench]]
 name = "reconciler"

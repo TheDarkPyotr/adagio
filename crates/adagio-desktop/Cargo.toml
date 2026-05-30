@@ -18,6 +18,7 @@ path = "src/main.rs"
 [dependencies]
 adagio-core = { path = "../adagio-core" }
 adagio-nextcloud = { path = "../adagio-nextcloud" }
+adagio-ipc = { path = "../adagio-ipc" }
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-shell = "2"
 serde = { workspace = true }

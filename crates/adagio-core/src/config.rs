@@ -416,6 +416,7 @@ mod tests {
             scan_on_startup: true,
             max_upload_concurrency: 3,
             max_download_concurrency: 3,
+            conflict_policy: ConflictPolicy::Ask,
         }
     }
 

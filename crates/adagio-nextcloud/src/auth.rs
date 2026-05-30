@@ -10,8 +10,10 @@ use tracing::{debug, error, info, instrument};
 /// (`ADAGIO_OAUTH2_CLIENT_ID` / `ADAGIO_OAUTH2_CLIENT_SECRET`). The defaults
 /// below are for local development only and must be registered in the target
 /// Nextcloud instance's admin panel at `/settings/admin/security`.
-pub const OAUTH2_CLIENT_ID: &str = "3UZ8GxFECiQB3yLgQx1Znv6eTLDHUJrrK6AGtkPWwkNnM7zkPVH65SczbswQzzFP";
-pub const OAUTH2_CLIENT_SECRET: &str = "8w0TRTZm7DejDsNM9gtWJzXsN95YTRqMbydSandKd4exNj9njq5WYQjCMaKb8yYR";
+pub const OAUTH2_CLIENT_ID: &str =
+    "3UZ8GxFECiQB3yLgQx1Znv6eTLDHUJrrK6AGtkPWwkNnM7zkPVH65SczbswQzzFP";
+pub const OAUTH2_CLIENT_SECRET: &str =
+    "8w0TRTZm7DejDsNM9gtWJzXsN95YTRqMbydSandKd4exNj9njq5WYQjCMaKb8yYR";
 
 /// Generate a PKCE (code_verifier, code_challenge) pair using S256 method.
 ///

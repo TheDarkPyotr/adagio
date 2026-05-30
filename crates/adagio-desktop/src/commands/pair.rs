@@ -1,14 +1,16 @@
-use crate::config::{load_config, save_config, SavedPair};
 use crate::state::AppState;
 use adagio_core::config::SyncPairConfig;
-use adagio_core::journal::Journal;
-use adagio_core::types::{
-    AccountId, LocalPath, PairId, PairStatus, RelativePath, RemotePath, SyncPair, SyncStatus,
-};
-use chrono::Utc;
+use adagio_core::types::{AccountId, SyncStatus};
+use adagio_ipc::DaemonRequest;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tauri::State;
+
+#[cfg(test)]
+use adagio_core::{
+    journal::Journal,
+    types::{RelativePath, SyncPair},
+};
 
 #[derive(Debug, Serialize)]
 pub struct PairDto {
@@ -56,12 +58,13 @@ pub struct PreflightSummaryDto {
     pub remote_root: String,
 }
 
-/// Create a new sync pair, validate the local root, and persist to config.json.
+/// Create a new sync pair via the daemon.
 #[tauri::command]
 pub async fn create_pair(
     state: State<'_, AppState>,
     req: CreatePairRequest,
-) -> Result<PairDto, String> {
+) -> Result<serde_json::Value, String> {
+    // Validate local root exists before sending to daemon.
     let local_root = PathBuf::from(&req.local_root);
     let cfg_check = SyncPairConfig {
         local_root: local_root.clone(),
@@ -70,217 +73,109 @@ pub async fn create_pair(
     };
     cfg_check.validate().map_err(|e| e.to_string())?;
 
-    let pair_id = PairId::new();
-    let pair = SyncPair {
-        id: pair_id.clone(),
-        account_id: AccountId(req.account_id.clone()),
-        local_root: LocalPath::new(local_root),
-        remote_root: RemotePath::new(&req.remote_root),
-        status: PairStatus::Idle,
-        exclude_patterns: req.exclude_patterns.clone(),
-        selective_paths: req
-            .selective_paths
-            .iter()
-            .map(|p| RelativePath::new(p.as_str()))
-            .collect(),
-        created_at: Utc::now(),
-        last_synced_at: None,
-        scan_interval_secs: req.scan_interval_secs,
-        scan_on_startup: req.scan_on_startup,
-        max_upload_concurrency: req.max_upload_concurrency.min(u8::MAX as usize) as u8,
-        max_download_concurrency: req.max_download_concurrency.min(u8::MAX as usize) as u8,
-    };
-
-    {
-        let mut pairs = state.pairs.write().await;
-        pairs.register_full_pair(pair.clone());
-    }
-
-    // Persist to config.json.
-    let mut file_cfg = load_config(&state.config_path);
-    file_cfg.pairs.push(SavedPair {
-        id: pair.id.0.clone(),
-        account_id: pair.account_id.0.clone(),
-        local_root: req.local_root.clone(),
-        remote_root: req.remote_root.clone(),
-        scan_interval_secs: req.scan_interval_secs,
-        scan_on_startup: req.scan_on_startup,
-        max_upload_concurrency: req.max_upload_concurrency,
-        max_download_concurrency: req.max_download_concurrency,
-        selective_paths: req.selective_paths,
-        exclude_patterns: req.exclude_patterns,
-    });
-    save_config(&state.config_path, &file_cfg).map_err(|e| e.to_string())?;
-
-    Ok(PairDto {
-        id: pair_id.0,
-        local_root: req.local_root,
-        remote_root: req.remote_root,
-        account_id: req.account_id,
-    })
+    state
+        .daemon
+        .request(DaemonRequest::CreatePair {
+            account_id: req.account_id,
+            local_root: req.local_root,
+            remote_root: req.remote_root,
+        })
+        .await
+        .map_err(|e| e.to_string())
 }
 
-/// Delete a sync pair, optionally removing local files, stop its runner, and update config.json.
+/// Delete a sync pair via the daemon.
 #[tauri::command]
 pub async fn delete_pair(
     state: State<'_, AppState>,
     pair_id: String,
     delete_local_files: bool,
 ) -> Result<(), String> {
-    let id = PairId(pair_id.clone());
-
-    // Stop the runner first.
-    state.engine.stop_pair(&id).await;
-
-    {
-        let mut pairs = state.pairs.write().await;
-        pairs
-            .delete_pair(&id, delete_local_files)
-            .map_err(|e| e.to_string())?;
-        pairs.remove_pair(&id);
-    }
-
-    // Remove from config.json.
-    let mut cfg = load_config(&state.config_path);
-    cfg.pairs.retain(|p| p.id != pair_id);
-    save_config(&state.config_path, &cfg).map_err(|e| e.to_string())?;
-
-    Ok(())
+    state
+        .daemon
+        .request(DaemonRequest::DeletePair {
+            pair_id,
+            delete_local_files,
+        })
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
 
 /// List all configured sync pairs.
 #[tauri::command]
-pub async fn list_pairs(state: State<'_, AppState>) -> Result<Vec<PairDto>, String> {
-    let pairs = state.pairs.read().await;
-    Ok(pairs
-        .all_pairs()
-        .into_iter()
-        .map(|p| PairDto {
-            id: p.id.0.clone(),
-            local_root: p.local_root.0.to_string_lossy().to_string(),
-            remote_root: p.remote_root.0.clone(),
-            account_id: p.account_id.0.clone(),
-        })
-        .collect())
+pub async fn list_pairs(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    state
+        .daemon
+        .request(DaemonRequest::ListPairs)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── File browser ──────────────────────────────────────────────────────────────
 
 /// Per-file sync status entry returned by `list_synced_files`.
+/// Field names and types mirror the TypeScript `FileStatusDto` interface.
 #[derive(Debug, Serialize)]
 pub struct FileStatusDto {
+    pub path: String,
     pub name: String,
-    pub relative_path: String,
     pub is_dir: bool,
-    pub size: u64,
-    pub modified_at: String,
-    pub sync_status: String,
-    pub error_message: Option<String>,
+    pub size: Option<u64>,
+    pub mtime: Option<i64>,
+    pub status: String,
+    pub etag: Option<String>,
+    pub share_count: Option<u32>,
+    pub item_count: Option<u32>,
 }
 
-fn sync_status_str(status: &SyncStatus) -> &'static str {
-    match status {
-        SyncStatus::Synced => "synced",
-        SyncStatus::PendingUpload => "pending_upload",
-        SyncStatus::PendingDownload => "pending_download",
+/// Recursively sum the sizes of all regular files under `path`.
+/// Silently skips entries that can't be read (permission errors, broken symlinks, etc.).
+#[cfg_attr(not(test), allow(dead_code))]
+fn dir_size(path: &std::path::Path) -> u64 {
+    let Ok(rd) = std::fs::read_dir(path) else {
+        return 0;
+    };
+    rd.flatten()
+        .map(|e| {
+            let Ok(m) = e.metadata() else { return 0 };
+            if m.is_file() {
+                m.len()
+            } else if m.is_dir() {
+                dir_size(&e.path())
+            } else {
+                0
+            }
+        })
+        .sum()
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+fn journal_status_to_frontend(s: &SyncStatus) -> &'static str {
+    match s {
+        SyncStatus::Synced => "ok",
+        SyncStatus::PendingUpload | SyncStatus::PendingDownload => "sync",
         SyncStatus::Conflict => "conflict",
-        SyncStatus::Error => "error",
-        SyncStatus::Excluded => "unknown",
+        SyncStatus::Error => "conflict",
+        SyncStatus::Excluded => "ok",
     }
 }
 
-/// List the contents of a sync pair's local folder enriched with per-file sync status.
-///
-/// Returns entries sorted: directories first, then files, each group alphabetically.
-/// Files not present in the journal are returned with `sync_status: "unknown"`.
+/// List the synced files for a pair via the daemon.
 #[tauri::command]
 pub async fn list_synced_files(
     state: State<'_, AppState>,
     pair_id: String,
     relative_path: Option<String>,
-) -> Result<Vec<FileStatusDto>, String> {
-    let id = PairId(pair_id.clone());
-    let sub = relative_path.unwrap_or_default();
-
-    // Resolve the local directory to list.
-    let local_root = {
-        let pairs = state.pairs.read().await;
-        let pair = pairs
-            .get_pair(&id)
-            .ok_or_else(|| format!("pair {pair_id} not found"))?;
-        pair.local_root.0.clone()
-    };
-
-    let target_dir = if sub.is_empty() {
-        local_root.clone()
-    } else {
-        local_root.join(&sub)
-    };
-
-    // Read the directory entries from the filesystem.
-    let read_dir =
-        std::fs::read_dir(&target_dir).map_err(|e| format!("cannot read {:?}: {e}", target_dir))?;
-
-    let mut entries: Vec<FileStatusDto> = Vec::new();
-    for entry in read_dir {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let file_name = entry.file_name().to_string_lossy().to_string();
-        let meta = entry.metadata().map_err(|e| e.to_string())?;
-        let is_dir = meta.is_dir();
-        let size = if is_dir { 0 } else { meta.len() };
-        let modified_at = meta
-            .modified()
-            .ok()
-            .and_then(|t| {
-                t.duration_since(std::time::UNIX_EPOCH).ok().map(|d| {
-                    chrono::DateTime::<chrono::Utc>::from_timestamp(d.as_secs() as i64, 0)
-                        .map(|dt| dt.to_rfc3339())
-                        .unwrap_or_default()
-                })
-            })
-            .unwrap_or_default();
-
-        let rel = if sub.is_empty() {
-            file_name.clone()
-        } else {
-            format!("{}/{}", sub.trim_end_matches('/'), file_name)
-        };
-
-        // Look up the journal entry for sync status.
-        let rel_path = RelativePath::new(&rel);
-        let journal_entry = state.journal.get(&id, &rel_path).await.ok().flatten();
-
-        let (sync_status, error_message) = match &journal_entry {
-            Some(e) => {
-                let err = if matches!(e.status, SyncStatus::Error | SyncStatus::Conflict) {
-                    e.error_message.clone()
-                } else {
-                    None
-                };
-                (sync_status_str(&e.status).to_string(), err)
-            }
-            None => ("unknown".to_string(), None),
-        };
-
-        entries.push(FileStatusDto {
-            name: file_name,
-            relative_path: rel,
-            is_dir,
-            size,
-            modified_at,
-            sync_status,
-            error_message,
-        });
-    }
-
-    // Sort: directories first, then files; each group alphabetically by name.
-    entries.sort_by(|a, b| match (b.is_dir, a.is_dir) {
-        (true, false) => std::cmp::Ordering::Greater,
-        (false, true) => std::cmp::Ordering::Less,
-        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-    });
-
-    Ok(entries)
+) -> Result<serde_json::Value, String> {
+    state
+        .daemon
+        .request(DaemonRequest::ListSyncedFiles {
+            pair_id,
+            relative_path,
+        })
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Remote tree for selective sync UI ────────────────────────────────────────
@@ -293,24 +188,27 @@ pub struct RemoteTreeItemDto {
     pub excluded: bool,
 }
 
-/// Return all remote items for display in the tree browser.
+/// Return all remote items for the tree browser.
 #[tauri::command]
 pub async fn list_remote_tree(
-    _state: State<'_, AppState>,
-    _pair_id: String,
-) -> Result<Vec<RemoteTreeItemDto>, String> {
-    Ok(vec![])
+    state: State<'_, AppState>,
+    pair_id: String,
+) -> Result<serde_json::Value, String> {
+    state
+        .daemon
+        .request(DaemonRequest::ListRemoteTree { pair_id })
+        .await
+        .map_err(|e| e.to_string())
 }
 
-/// Return the current exclude patterns for the application.
+/// Return the current exclude patterns.
 #[tauri::command]
-pub async fn get_exclude_patterns(state: State<'_, AppState>) -> Result<Vec<String>, String> {
-    let pairs = state.pairs.read().await;
-    Ok(pairs
-        .exclude_patterns()
-        .iter()
-        .map(|p| p.pattern.clone())
-        .collect())
+pub async fn get_exclude_patterns(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    state
+        .daemon
+        .request(DaemonRequest::GetExcludePatterns)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -318,9 +216,14 @@ pub async fn get_exclude_patterns(state: State<'_, AppState>) -> Result<Vec<Stri
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{save_config, SavedConfig};
+    use crate::config::{save_config, SavedConfig, SavedPair};
     use adagio_core::journal::sqlite::SqliteJournal;
-    use adagio_core::types::{JournalEntry, SyncStatus};
+    use adagio_core::journal::Journal as _;
+    use adagio_core::types::{
+        AccountId, JournalEntry, LocalPath, PairId, PairStatus, RelativePath, RemotePath, SyncPair,
+        SyncStatus,
+    };
+    use chrono::Utc;
     use sqlx::sqlite::{
         SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous,
     };
@@ -455,6 +358,7 @@ mod tests {
             scan_on_startup: false,
             max_upload_concurrency: 3,
             max_download_concurrency: 3,
+            conflict_policy: adagio_core::types::ConflictPolicy::Ask,
         };
 
         let (journal, _) = make_journal().await;
@@ -485,13 +389,14 @@ mod tests {
             scan_on_startup: false,
             max_upload_concurrency: 3,
             max_download_concurrency: 3,
+            conflict_policy: adagio_core::types::ConflictPolicy::Ask,
         };
 
         let (journal, _) = make_journal().await;
         let entries = list_files_internal(&pair, "", &*journal).await.unwrap();
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].sync_status, "unknown");
+        assert_eq!(entries[0].status, "ok");
     }
 
     #[tokio::test]
@@ -515,6 +420,7 @@ mod tests {
             scan_on_startup: false,
             max_upload_concurrency: 3,
             max_download_concurrency: 3,
+            conflict_policy: adagio_core::types::ConflictPolicy::Ask,
         };
 
         let (journal, pool) = make_journal().await;
@@ -545,7 +451,7 @@ mod tests {
         let entries = list_files_internal(&pair, "", &*journal).await.unwrap();
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].sync_status, "synced");
+        assert_eq!(entries[0].status, "ok");
     }
 }
 
@@ -571,18 +477,12 @@ async fn list_files_internal(
         let file_name = entry.file_name().to_string_lossy().to_string();
         let meta = entry.metadata().map_err(|e| e.to_string())?;
         let is_dir = meta.is_dir();
-        let size = if is_dir { 0 } else { meta.len() };
-        let modified_at = meta
-            .modified()
-            .ok()
-            .and_then(|t| {
-                t.duration_since(std::time::UNIX_EPOCH).ok().map(|d| {
-                    chrono::DateTime::<chrono::Utc>::from_timestamp(d.as_secs() as i64, 0)
-                        .map(|dt| dt.to_rfc3339())
-                        .unwrap_or_default()
-                })
-            })
-            .unwrap_or_default();
+
+        let mtime: Option<i64> = meta.modified().ok().and_then(|t| {
+            t.duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .map(|d| d.as_millis() as i64)
+        });
 
         let rel = if sub.is_empty() {
             file_name.clone()
@@ -593,26 +493,34 @@ async fn list_files_internal(
         let rel_path = RelativePath::new(&rel);
         let journal_entry = journal.get(&pair.id, &rel_path).await.ok().flatten();
 
-        let (sync_status, error_message) = match &journal_entry {
-            Some(e) => {
-                let err = if matches!(e.status, SyncStatus::Error | SyncStatus::Conflict) {
-                    e.error_message.clone()
-                } else {
-                    None
-                };
-                (sync_status_str(&e.status).to_string(), err)
-            }
-            None => ("unknown".to_string(), None),
+        let status = match &journal_entry {
+            Some(e) => journal_status_to_frontend(&e.status).to_string(),
+            None => "ok".to_string(),
+        };
+        let etag = journal_entry.as_ref().and_then(|e| e.etag.clone());
+
+        let item_count: Option<u32> = if is_dir {
+            std::fs::read_dir(entry.path())
+                .ok()
+                .map(|d| d.count() as u32)
+        } else {
+            None
         };
 
         entries.push(FileStatusDto {
+            path: format!("/{rel}"),
             name: file_name,
-            relative_path: rel,
             is_dir,
-            size,
-            modified_at,
-            sync_status,
-            error_message,
+            size: Some(if is_dir {
+                dir_size(&entry.path())
+            } else {
+                meta.len()
+            }),
+            mtime,
+            status,
+            etag,
+            share_count: None,
+            item_count,
         });
     }
 

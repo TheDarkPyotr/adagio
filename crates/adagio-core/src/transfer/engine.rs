@@ -44,14 +44,14 @@ impl<C: RemoteClient + Send + Sync + 'static> TransferManager for DefaultTransfe
             .unwrap_or(0);
 
         if size < opts.chunked_threshold {
-            upload_single(&self.client, local_path, remote_path, &opts, progress).await
+            upload_single(&self.client, local_path, remote_path, &opts, progress, None).await
         } else {
             // Chunked upload: delegate to a standalone function so the
             // nextcloud crate's implementation is injected via the public API.
             // The core trait stub calls upload_single as a fallback here;
             // the actual routing to chunked upload happens in the nextcloud
             // adapter layer which wraps this engine.
-            upload_single(&self.client, local_path, remote_path, &opts, progress).await
+            upload_single(&self.client, local_path, remote_path, &opts, progress, None).await
         }
     }
 
@@ -71,6 +71,7 @@ impl<C: RemoteClient + Send + Sync + 'static> TransferManager for DefaultTransfe
             expected_checksum,
             &TransferOptions::default(),
             progress,
+            None,
         )
         .await
     }
@@ -91,7 +92,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn make_pair() -> SyncPair {
-        use crate::types::PairStatus;
+        use crate::types::{ConflictPolicy, PairStatus};
         SyncPair {
             id: PairId::new(),
             account_id: AccountId::new(),
@@ -106,6 +107,7 @@ mod tests {
             scan_on_startup: true,
             max_upload_concurrency: 3,
             max_download_concurrency: 3,
+            conflict_policy: ConflictPolicy::Ask,
         }
     }
 

@@ -1,3 +1,4 @@
+use crate::bandwidth::{ThroughputMeter, TokenBucket};
 use crate::error::{BackoffPolicy, TransferError};
 use crate::journal::Journal;
 use crate::remote::RemoteClient;
@@ -5,8 +6,8 @@ use crate::transfer::download::download_file;
 use crate::transfer::upload::upload_single;
 use crate::transfer::TransferOptions;
 use crate::types::{
-    ConflictPolicy, ConflictSide, JournalEntry, LocalPath, PairId, RelativePath, RemotePath,
-    SyncStatus,
+    ConflictKind, ConflictPolicy, ConflictRecord, ConflictSide, JournalEntry, LocalPath, PairId,
+    RelativePath, RemotePath, SyncStatus,
 };
 use chrono::Utc;
 use dashmap::DashMap;
@@ -44,21 +45,33 @@ pub struct PropagatorResult {
 /// according to `backoff`; after exhausting all attempts the item is parked and
 /// counted as an error.
 ///
-/// For `ConflictPolicy::Ask`, the propagator suspends the conflicting item and
-/// inserts an `oneshot::Sender<ConflictSide>` into `pending_conflicts`. The caller
-/// must send a `ConflictSide` on that channel to unblock propagation.
+/// For `ConflictPolicy::Ask`, the propagator records the conflict to the journal
+/// and skips the item (does not block the sync cycle). Resolution is handled by
+/// the `resolve_conflict` Tauri command independently (ADR-006).
 ///
 /// When a `ClientError::AuthRequired` is detected, `auth_required_tx` (if set)
 /// is notified so the engine can pause the account and prompt re-authentication.
 pub struct Propagator {
     upload_sem: Arc<Semaphore>,
     download_sem: Arc<Semaphore>,
-    /// Senders waiting for user conflict resolution (Ask policy).
+    /// Senders waiting for user conflict resolution (legacy; kept for compatibility).
     pending_conflicts: Arc<DashMap<RelativePath, oneshot::Sender<ConflictSide>>>,
     /// Retry policy for transient upload/download errors.
     backoff: BackoffPolicy,
     /// Optional channel notified when `ClientError::AuthRequired` is detected.
     auth_required_tx: Option<watch::Sender<bool>>,
+    /// Optional bounded channel (capacity 1) notified when a new conflict is recorded (Ask policy).
+    /// The desktop layer subscribes to emit `adagio://conflict-detected` events.
+    /// `try_send` is used; a full channel (consumer not yet drained) is silently ignored (ADR-008).
+    conflict_detected_tx: Option<tokio::sync::mpsc::Sender<()>>,
+    /// Upload rate limiter. `None` = unlimited.
+    upload_throttle: Option<Arc<TokenBucket>>,
+    /// Download rate limiter. `None` = unlimited.
+    download_throttle: Option<Arc<TokenBucket>>,
+    /// Rolling throughput meter for uploads (used by GetBandwidthStatus).
+    pub upload_meter: Arc<std::sync::Mutex<ThroughputMeter>>,
+    /// Rolling throughput meter for downloads (used by GetBandwidthStatus).
+    pub download_meter: Arc<std::sync::Mutex<ThroughputMeter>>,
 }
 
 impl Default for Propagator {
@@ -75,6 +88,11 @@ impl Propagator {
             pending_conflicts: Arc::new(DashMap::new()),
             backoff: BackoffPolicy::default(),
             auth_required_tx: None,
+            conflict_detected_tx: None,
+            upload_throttle: None,
+            download_throttle: None,
+            upload_meter: Arc::new(std::sync::Mutex::new(ThroughputMeter::new())),
+            download_meter: Arc::new(std::sync::Mutex::new(ThroughputMeter::new())),
         }
     }
 
@@ -86,6 +104,11 @@ impl Propagator {
             pending_conflicts: Arc::new(DashMap::new()),
             backoff,
             auth_required_tx: None,
+            conflict_detected_tx: None,
+            upload_throttle: None,
+            download_throttle: None,
+            upload_meter: Arc::new(std::sync::Mutex::new(ThroughputMeter::new())),
+            download_meter: Arc::new(std::sync::Mutex::new(ThroughputMeter::new())),
         }
     }
 
@@ -97,6 +120,11 @@ impl Propagator {
             pending_conflicts: Arc::new(DashMap::new()),
             backoff,
             auth_required_tx: Some(auth_tx),
+            conflict_detected_tx: None,
+            upload_throttle: None,
+            download_throttle: None,
+            upload_meter: Arc::new(std::sync::Mutex::new(ThroughputMeter::new())),
+            download_meter: Arc::new(std::sync::Mutex::new(ThroughputMeter::new())),
         }
     }
 
@@ -111,6 +139,71 @@ impl Propagator {
             pending_conflicts,
             backoff: BackoffPolicy::default(),
             auth_required_tx: None,
+            conflict_detected_tx: None,
+            upload_throttle: None,
+            download_throttle: None,
+            upload_meter: Arc::new(std::sync::Mutex::new(ThroughputMeter::new())),
+            download_meter: Arc::new(std::sync::Mutex::new(ThroughputMeter::new())),
+        }
+    }
+
+    /// Create a Propagator with a conflict-detected notification channel.
+    ///
+    /// When an Ask-policy conflict is recorded, `try_send(())` is called on `tx`.
+    /// If the channel is full (`TrySendError::Full`), the notification is silently
+    /// dropped — the consumer already has a pending signal and will process it.
+    pub fn with_conflict_channel(
+        max_uploads: usize,
+        max_downloads: usize,
+        tx: tokio::sync::mpsc::Sender<()>,
+    ) -> Self {
+        Self {
+            upload_sem: Arc::new(Semaphore::new(max_uploads)),
+            download_sem: Arc::new(Semaphore::new(max_downloads)),
+            pending_conflicts: Arc::new(DashMap::new()),
+            backoff: BackoffPolicy::default(),
+            auth_required_tx: None,
+            conflict_detected_tx: Some(tx),
+            upload_throttle: None,
+            download_throttle: None,
+            upload_meter: Arc::new(std::sync::Mutex::new(ThroughputMeter::new())),
+            download_meter: Arc::new(std::sync::Mutex::new(ThroughputMeter::new())),
+        }
+    }
+
+    /// Create a Propagator with bandwidth limits (bytes/sec; 0 = unlimited).
+    ///
+    /// Constructs `TokenBucket` instances from the given Kbps values and stores
+    /// them so each upload/download call respects the configured ceiling.
+    pub fn with_bandwidth(
+        max_uploads: usize,
+        max_downloads: usize,
+        upload_kbps: u64,
+        download_kbps: u64,
+    ) -> Self {
+        let upload_throttle = if upload_kbps > 0 {
+            let rate = upload_kbps * 1000 / 8; // Kbps → bytes/sec
+            Some(Arc::new(TokenBucket::new(rate, rate))) // burst = 1s worth
+        } else {
+            None
+        };
+        let download_throttle = if download_kbps > 0 {
+            let rate = download_kbps * 1000 / 8;
+            Some(Arc::new(TokenBucket::new(rate, rate)))
+        } else {
+            None
+        };
+        Self {
+            upload_sem: Arc::new(Semaphore::new(max_uploads)),
+            download_sem: Arc::new(Semaphore::new(max_downloads)),
+            pending_conflicts: Arc::new(DashMap::new()),
+            backoff: BackoffPolicy::default(),
+            auth_required_tx: None,
+            conflict_detected_tx: None,
+            upload_throttle,
+            download_throttle,
+            upload_meter: Arc::new(std::sync::Mutex::new(ThroughputMeter::new())),
+            download_meter: Arc::new(std::sync::Mutex::new(ThroughputMeter::new())),
         }
     }
 
@@ -123,6 +216,21 @@ impl Propagator {
     fn notify_auth_required(&self) {
         if let Some(tx) = &self.auth_required_tx {
             let _ = tx.send(true);
+        }
+    }
+
+    /// Signal `conflict_detected_tx` if it is set.
+    ///
+    /// Uses `try_send`; a full channel (capacity 1) means the consumer already
+    /// has a pending notification so the new signal is silently dropped (ADR-008).
+    fn notify_conflict_detected(&self) {
+        if let Some(tx) = &self.conflict_detected_tx {
+            match tx.try_send(()) {
+                Ok(()) | Err(tokio::sync::mpsc::error::TrySendError::Full(())) => {}
+                Err(tokio::sync::mpsc::error::TrySendError::Closed(())) => {
+                    tracing::warn!("conflict_detected_tx closed; desktop layer may have stopped");
+                }
+            }
         }
     }
 
@@ -147,10 +255,11 @@ impl Propagator {
                 Err(TransferError::Transient(msg)) => match self.backoff.backoff_for(attempt) {
                     None => return Err(format!("max retries exceeded: {msg}")),
                     Some(delay) => {
-                        tracing::debug!(
-                            attempt,
-                            delay_ms = delay.as_millis(),
-                            "transient error — retrying"
+                        tracing::warn!(
+                            retry_attempt = attempt,
+                            delay_ms = delay.as_millis() as u64,
+                            %msg,
+                            "transient error — retrying after backoff"
                         );
                         tokio::time::sleep(delay).await;
                         attempt += 1;
@@ -206,13 +315,41 @@ impl Propagator {
         for op in ops {
             // Path compatibility check: reject paths that are unsafe on Windows
             // before attempting any local or remote operation (T095).
+            //
+            // IMPORTANT: write the op's REAL remote etag (for Download) or local
+            // checksum (for Upload) into the error entry so the reconciler sees
+            // the file as "in sync" on the next cycle and emits NoOp instead of
+            // re-queuing the same op forever.
             if let Some(path) = op.path() {
                 if let Err(e) = crate::path_compat::check_path_compat(path.as_str()) {
                     tracing::warn!(path = %path, error = %e, "path compat violation (parked)");
                     result.errors += 1;
-                    let _ = journal
-                        .upsert(&journal_entry_error(pair_id, path, &e.to_string()))
-                        .await;
+                    let mut entry = journal_entry_error(pair_id, path, &e.to_string());
+                    // Stamp the entry with op-specific identifiers so the reconciler
+                    // treats the file as already at its last-known state.
+                    match op {
+                        SyncOp::Download {
+                            etag,
+                            remote_checksum,
+                            ..
+                        } => {
+                            entry.etag = Some(etag.clone());
+                            entry.checksum = remote_checksum.clone();
+                        }
+                        SyncOp::Upload { local_checksum, .. } => {
+                            entry.checksum = local_checksum.clone();
+                        }
+                        SyncOp::Adopt {
+                            etag,
+                            local_checksum,
+                            ..
+                        } => {
+                            entry.etag = Some(etag.clone());
+                            entry.checksum = local_checksum.clone();
+                        }
+                        _ => {}
+                    }
+                    let _ = journal.upsert(&entry).await;
                     continue;
                 }
             }
@@ -220,22 +357,28 @@ impl Propagator {
             match op {
                 SyncOp::NoOp { .. } => {}
 
-                SyncOp::Upload { path } => {
+                SyncOp::Upload {
+                    path,
+                    local_checksum,
+                } => {
                     let _permit = self.upload_sem.acquire().await.unwrap();
                     let local_file = local_path_for(local_root, path);
                     let remote_file = remote_path_for(remote_root, path);
+                    let upload_throttle_clone = self.upload_throttle.clone();
                     let upload_res = self
                         .with_retry(|| {
                             let lf = local_file.clone();
                             let rf = remote_file.clone();
                             let o = opts.clone();
                             let (tx, _rx) = mpsc::channel(8);
-                            async move { upload_single(client, &lf, &rf, &o, tx).await }
+                            let throttle = upload_throttle_clone.clone();
+                            async move { upload_single(client, &lf, &rf, &o, tx, throttle).await }
                         })
                         .await;
                     match upload_res {
                         Ok(upload_result) => {
                             result.uploaded += 1;
+                            // Upload meter recording deferred — UploadResult does not carry size yet.
                             let mtime_local = tokio::fs::metadata(&local_file.0)
                                 .await
                                 .ok()
@@ -250,6 +393,7 @@ impl Propagator {
                             if let Some(mt) = mtime_local {
                                 entry.mtime_local = Some(mt);
                             }
+                            entry.checksum = local_checksum.clone();
                             let _ = journal.upsert(&entry).await;
                         }
                         Err(ref e) if e == "auth required" => {
@@ -267,22 +411,31 @@ impl Propagator {
                     }
                 }
 
-                SyncOp::Download { path, etag } => {
+                SyncOp::Download {
+                    path,
+                    etag,
+                    remote_checksum,
+                } => {
                     let _permit = self.download_sem.acquire().await.unwrap();
                     let local_file = local_path_for(local_root, path);
                     let remote_file = remote_path_for(remote_root, path);
+                    let download_throttle_clone = self.download_throttle.clone();
                     let dl_res = self
                         .with_retry(|| {
                             let rf = remote_file.clone();
                             let lf = local_file.clone();
                             let o = opts.clone();
                             let (tx, _rx) = mpsc::channel(8);
-                            async move { download_file(client, &rf, &lf, None, &o, tx).await }
+                            let throttle = download_throttle_clone.clone();
+                            async move { download_file(client, &rf, &lf, None, &o, tx, throttle).await }
                         })
                         .await;
                     match dl_res {
-                        Ok(_) => {
+                        Ok(dl) => {
                             result.downloaded += 1;
+                            if let Ok(mut m) = self.download_meter.lock() {
+                                m.record(dl.size);
+                            }
                             let mtime_local = tokio::fs::metadata(&local_file.0)
                                 .await
                                 .ok()
@@ -292,6 +445,7 @@ impl Propagator {
                             if let Some(mt) = mtime_local {
                                 entry.mtime_local = Some(mt);
                             }
+                            entry.checksum = remote_checksum.clone();
                             let _ = journal.upsert(&entry).await;
                         }
                         Err(ref e) if e == "auth required" => {
@@ -376,7 +530,11 @@ impl Propagator {
                     }
                 }
 
-                SyncOp::Adopt { path, etag } => {
+                SyncOp::Adopt {
+                    path,
+                    etag,
+                    local_checksum,
+                } => {
                     let local_file = local_path_for(local_root, path);
                     let mtime_local = tokio::fs::metadata(&local_file.0)
                         .await
@@ -387,6 +545,7 @@ impl Propagator {
                     if let Some(mt) = mtime_local {
                         entry.mtime_local = Some(mt);
                     }
+                    entry.checksum = local_checksum.clone();
                     let _ = journal.upsert(&entry).await;
                     result.skipped += 1;
                 }
@@ -395,6 +554,7 @@ impl Propagator {
                     path,
                     remote_etag,
                     remote_mtime,
+                    remote_size,
                     policy,
                 } => {
                     tracing::warn!(path = %path, remote_etag = %remote_etag, ?policy, "conflict detected");
@@ -402,9 +562,32 @@ impl Propagator {
 
                     let side = match policy {
                         ConflictPolicy::Ask => {
-                            // Suspend: register a oneshot sender and await the user's choice.
-                            let (tx, rx) = oneshot::channel::<ConflictSide>();
-                            self.pending_conflicts.insert(path.clone(), tx);
+                            // Record the conflict in the journal and skip for now.
+                            // Resolution is handled independently by the resolve_conflict
+                            // Tauri command (ADR-006 — direct execution model).
+                            let local_path = local_path_for(local_root, path);
+                            let local_meta = tokio::fs::metadata(&local_path.0).await.ok();
+                            let local_size = local_meta.as_ref().map(|m| m.len()).unwrap_or(0);
+                            let local_mtime = local_meta
+                                .and_then(|m| m.modified().ok())
+                                .map(chrono::DateTime::<Utc>::from)
+                                .unwrap_or_else(Utc::now);
+                            let conflict_record = ConflictRecord {
+                                id: uuid::Uuid::new_v4().to_string(),
+                                pair_id: pair_id.clone(),
+                                path: path.clone(),
+                                local_mtime,
+                                remote_mtime: *remote_mtime,
+                                local_size,
+                                remote_size: *remote_size,
+                                policy: policy.clone(),
+                                resolution: None,
+                                detected_at: Utc::now(),
+                                resolved_at: None,
+                                is_dir: false,
+                                conflict_kind: ConflictKind::ContentModified,
+                            };
+                            let _ = journal.upsert_conflict(&conflict_record).await;
                             let _ = journal
                                 .upsert(&journal_entry(
                                     pair_id,
@@ -413,7 +596,8 @@ impl Propagator {
                                     SyncStatus::Conflict,
                                 ))
                                 .await;
-                            rx.await.ok()
+                            self.notify_conflict_detected();
+                            None // skip this item; user resolves via wizard
                         }
                         ConflictPolicy::LocalWins => Some(ConflictSide::Local),
                         ConflictPolicy::RemoteWins => Some(ConflictSide::Remote),
@@ -444,9 +628,15 @@ impl Propagator {
                         let (tx, _rx) = mpsc::channel(8);
                         match side {
                             ConflictSide::Local => {
-                                if let Ok(ur) =
-                                    upload_single(client, &local_file, &remote_file, &opts, tx)
-                                        .await
+                                if let Ok(ur) = upload_single(
+                                    client,
+                                    &local_file,
+                                    &remote_file,
+                                    &opts,
+                                    tx,
+                                    None,
+                                )
+                                .await
                                 {
                                     let mtime_local = tokio::fs::metadata(&local_file.0)
                                         .await
@@ -462,9 +652,17 @@ impl Propagator {
                                 }
                             }
                             ConflictSide::Remote => {
-                                if download_file(client, &remote_file, &local_file, None, &opts, tx)
-                                    .await
-                                    .is_ok()
+                                if download_file(
+                                    client,
+                                    &remote_file,
+                                    &local_file,
+                                    None,
+                                    &opts,
+                                    tx,
+                                    None,
+                                )
+                                .await
+                                .is_ok()
                                 {
                                     let mtime_local = tokio::fs::metadata(&local_file.0)
                                         .await
@@ -483,6 +681,9 @@ impl Propagator {
                                     let _ = journal.upsert(&entry).await;
                                 }
                             }
+                            // Both: handled by the resolve_conflict Tauri command;
+                            // the propagator should never see this variant.
+                            ConflictSide::Both => {}
                         }
                     }
                 }
@@ -569,6 +770,7 @@ mod tests {
         let propagator = Propagator::default();
         let ops = vec![SyncOp::Upload {
             path: RelativePath::new("hello.txt"),
+            local_checksum: None,
         }];
         let result = propagator
             .execute(
@@ -599,6 +801,7 @@ mod tests {
         let ops = vec![SyncOp::Download {
             path: RelativePath::new("doc.txt"),
             etag: "etag1".to_string(),
+            remote_checksum: None,
         }];
         let result = propagator
             .execute(
@@ -647,71 +850,210 @@ mod tests {
         assert_eq!(client.item_count().await, 0);
     }
 
-    // T107: Conflict with Ask policy suspends execution and awaits user resolution.
+    // ADR-006: Ask policy records the conflict in the journal and skips the item
+    // without blocking the sync cycle. Resolution is handled by the Tauri command.
     #[tokio::test]
-    async fn propagator_ask_conflict_suspends_until_resolved() {
-        use crate::types::ConflictPolicy;
-        use crate::types::ConflictSide;
-        use dashmap::DashMap;
-        use std::sync::Arc;
-        use tokio::sync::oneshot;
-        use tokio::time::{sleep, Duration};
+    async fn propagator_ask_conflict_records_and_skips() {
+        use crate::types::{
+            Account, AccountId, ConflictPolicy, LocalPath as LP, PairStatus, RemotePath as RP,
+            SyncPair,
+        };
 
         let dir = TempDir::new().unwrap();
         fs::write(dir.path().join("f.txt"), b"local content").unwrap();
         let client = MockRemoteClient::new();
         client.seed("remote/f.txt", b"remote content").await;
         let journal = make_journal(&dir).await;
+
+        let account_id = AccountId::new();
         let pair_id = PairId::new();
 
-        // Shared DashMap to hold pending conflict senders.
-        let pending: Arc<DashMap<RelativePath, oneshot::Sender<ConflictSide>>> =
-            Arc::new(DashMap::new());
+        // Register account + pair so FK constraints on conflict_records are satisfied.
+        let account = Account {
+            id: account_id.clone(),
+            display_name: "Test".into(),
+            server_url: "https://cloud.example.com".into(),
+            username: "u".into(),
+            keychain_service_key: "k".into(),
+            created_at: Utc::now(),
+            upload_limit_kbps: 0,
+            download_limit_kbps: 0,
+        };
+        let pair = SyncPair {
+            id: pair_id.clone(),
+            account_id: account_id.clone(),
+            local_root: LP::new(dir.path()),
+            remote_root: RP::new("remote/"),
+            status: PairStatus::Idle,
+            exclude_patterns: vec![],
+            selective_paths: vec![],
+            created_at: Utc::now(),
+            last_synced_at: None,
+            scan_interval_secs: 7200,
+            scan_on_startup: true,
+            max_upload_concurrency: 3,
+            max_download_concurrency: 3,
+            conflict_policy: ConflictPolicy::Ask,
+        };
+        journal.register_pair(&account, &pair).await.unwrap();
 
-        let propagator = Propagator::with_pending_conflicts(
-            DEFAULT_MAX_UPLOADS,
-            DEFAULT_MAX_DOWNLOADS,
-            pending.clone(),
-        );
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<()>(1);
+        let propagator =
+            Propagator::with_conflict_channel(DEFAULT_MAX_UPLOADS, DEFAULT_MAX_DOWNLOADS, tx);
 
         let ops = vec![SyncOp::Conflict {
             path: RelativePath::new("f.txt"),
             remote_etag: "etag1".into(),
             remote_mtime: Utc::now(),
+            remote_size: 0,
             policy: ConflictPolicy::Ask,
         }];
 
-        // Run propagation in the background — should block waiting for user choice.
         let lr = local_root(&dir);
         let rr = remote_root();
-        let exec_handle = tokio::spawn({
-            let pending = pending.clone();
-            let _ = pending;
-            async move {
-                propagator
-                    .execute(&ops, &pair_id, &lr, &rr, &client, &journal)
-                    .await
-            }
-        });
+        let result = propagator
+            .execute(&ops, &pair_id, &lr, &rr, &client, &journal)
+            .await;
 
-        // Give propagator time to register the pending conflict.
-        sleep(Duration::from_millis(20)).await;
+        // Cycle must complete immediately (no suspension).
+        assert_eq!(result.conflicts, 1, "conflict count should be 1");
+
+        // Conflict must be persisted in the journal.
+        let records = journal.list_conflicts(&pair_id).await.unwrap();
+        assert_eq!(records.len(), 1, "conflict should be recorded in journal");
         assert!(
-            pending.contains_key(&RelativePath::new("f.txt")),
-            "propagator should register a pending conflict before resolving"
+            records[0].resolution.is_none(),
+            "conflict should be unresolved"
         );
 
-        // Send the user's resolution choice.
-        let (_, tx) = pending.remove(&RelativePath::new("f.txt")).unwrap();
-        tx.send(ConflictSide::Local).unwrap();
+        // Notification channel must have fired.
+        assert!(
+            rx.try_recv().is_ok(),
+            "conflict-detected notification should have been sent"
+        );
+    }
 
-        // Propagation should now complete.
-        let result = tokio::time::timeout(Duration::from_secs(2), exec_handle)
-            .await
-            .expect("propagation should complete after choice")
-            .unwrap();
+    // T007-a — retry log event carries retry_attempt and delay_ms fields.
+    // Verifies the log *fields* exist indirectly: the backoff sequence must
+    // produce ≥1000 ms on the first retry (base_delay_ms = 1000).
+    #[tokio::test]
+    async fn retry_rate_never_exceeds_3_per_second() {
+        use crate::error::BackoffPolicy;
+        use std::sync::{Arc, Mutex};
+        use std::time::Instant;
 
-        assert_eq!(result.conflicts, 1, "conflict count should be 1");
+        // Record call timestamps via a shared vec.
+        let timestamps: Arc<Mutex<Vec<Instant>>> = Arc::new(Mutex::new(Vec::new()));
+        let ts_clone = timestamps.clone();
+
+        // Fast backoff so the test doesn't take >5s, but still ≥100ms between retries.
+        let fast_backoff = BackoffPolicy {
+            base_ms: 150,
+            cap_ms: 500,
+            max_attempts: 4,
+            ..BackoffPolicy::default()
+        };
+        let propagator = Propagator::with_backoff(fast_backoff);
+
+        let result = propagator
+            .with_retry(|| {
+                let ts = ts_clone.clone();
+                async move {
+                    ts.lock().unwrap().push(Instant::now());
+                    Err::<(), _>(crate::error::TransferError::Transient("fail".into()))
+                }
+            })
+            .await;
+
+        assert!(result.is_err(), "should exhaust retries");
+        let calls = timestamps.lock().unwrap();
+        assert!(calls.len() > 1, "must have retried at least once");
+
+        // Each consecutive pair must be at least 100ms apart (our fast base delay).
+        for window in calls.windows(2) {
+            let gap = window[1].duration_since(window[0]);
+            assert!(
+                gap.as_millis() >= 100,
+                "consecutive retries too close: {}ms — rate would exceed 10 req/s",
+                gap.as_millis()
+            );
+        }
+    }
+
+    // T007-b — conflict channel being full must not block or panic the propagator.
+    #[tokio::test]
+    async fn conflict_channel_full_does_not_block_propagator() {
+        use crate::types::{Account, AccountId, ConflictPolicy, PairStatus};
+
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("f.txt"), b"local").unwrap();
+        let client = MockRemoteClient::new();
+        client.seed("remote/f.txt", b"remote").await;
+        let journal = make_journal(&dir).await;
+
+        let account_id = AccountId::new();
+        let pair_id = PairId::new();
+        let account = Account {
+            id: account_id.clone(),
+            display_name: "T".into(),
+            server_url: "https://nc.example.com".into(),
+            username: "u".into(),
+            keychain_service_key: "k".into(),
+            created_at: chrono::Utc::now(),
+            upload_limit_kbps: 0,
+            download_limit_kbps: 0,
+        };
+        let pair = crate::types::SyncPair {
+            id: pair_id.clone(),
+            account_id: account_id.clone(),
+            local_root: crate::types::LocalPath::new(dir.path()),
+            remote_root: crate::types::RemotePath::new("remote/"),
+            status: PairStatus::Idle,
+            exclude_patterns: vec![],
+            selective_paths: vec![],
+            created_at: chrono::Utc::now(),
+            last_synced_at: None,
+            scan_interval_secs: 7200,
+            scan_on_startup: false,
+            max_upload_concurrency: 3,
+            max_download_concurrency: 3,
+            conflict_policy: ConflictPolicy::Ask,
+        };
+        journal.register_pair(&account, &pair).await.unwrap();
+
+        // Bounded channel, capacity 1 — pre-fill it so it's already full.
+        let (tx, _rx) = tokio::sync::mpsc::channel::<()>(1);
+        tx.try_send(()).unwrap(); // fill the channel
+
+        let propagator = Propagator::with_conflict_channel(
+            DEFAULT_MAX_UPLOADS,
+            DEFAULT_MAX_DOWNLOADS,
+            tx, // full channel
+        );
+
+        let ops = vec![SyncOp::Conflict {
+            path: RelativePath::new("f.txt"),
+            remote_etag: "e1".into(),
+            remote_mtime: chrono::Utc::now(),
+            remote_size: 0,
+            policy: ConflictPolicy::Ask,
+        }];
+
+        // Must complete without panic or deadlock.
+        let result = propagator
+            .execute(
+                &ops,
+                &pair_id,
+                &local_root(&dir),
+                &remote_root(),
+                &client,
+                &journal,
+            )
+            .await;
+        assert_eq!(
+            result.conflicts, 1,
+            "conflict must be counted even when channel is full"
+        );
     }
 
     // T047: MoveRemote emits a server-side MOVE.

@@ -103,6 +103,18 @@ fn is_sync_relevant(event: &Event) -> bool {
 
 // ── Full local scan (T040) ────────────────────────────────────────────────────
 
+/// Per-cycle checksum accounting emitted as structured log fields.
+///
+/// Returned alongside scan results so callers can emit `CycleMetrics` without
+/// re-reading the file system.
+#[derive(Debug, Default, Clone)]
+pub struct ScanStats {
+    /// Files whose checksum was recomputed (mtime or size changed).
+    pub checksum_recomputed: usize,
+    /// Files whose cached checksum was reused (mtime and size unchanged).
+    pub checksum_from_cache: usize,
+}
+
 /// Scan a local directory tree and return `LocalItem`s for all files.
 ///
 /// Uses mtime + size from the journal cache where available to avoid
@@ -113,12 +125,22 @@ pub async fn scan_local(
     root: &LocalPath,
     cache: &HashMap<RelativePath, CachedLocalEntry>,
 ) -> Result<Vec<LocalItem>, DetectorError> {
+    let (items, _) = scan_local_with_stats(root, cache).await?;
+    Ok(items)
+}
+
+/// Like `scan_local` but also returns [`ScanStats`] with checksum accounting.
+pub async fn scan_local_with_stats(
+    root: &LocalPath,
+    cache: &HashMap<RelativePath, CachedLocalEntry>,
+) -> Result<(Vec<LocalItem>, ScanStats), DetectorError> {
     let root_path = root.0.to_path_buf();
     let cache = cache.clone();
-    let items = tokio::task::spawn_blocking(move || scan_blocking(&root_path, &root_path, &cache))
-        .await
-        .map_err(|e| DetectorError::Fs(std::io::Error::other(e.to_string())))??;
-    Ok(items)
+    let (items, stats) =
+        tokio::task::spawn_blocking(move || scan_blocking(&root_path, &root_path, &cache))
+            .await
+            .map_err(|e| DetectorError::Fs(std::io::Error::other(e.to_string())))??;
+    Ok((items, stats))
 }
 
 /// Cache entry from journal to avoid rehashing unchanged files.
@@ -133,8 +155,9 @@ fn scan_blocking(
     root: &Path,
     current: &Path,
     cache: &HashMap<RelativePath, CachedLocalEntry>,
-) -> Result<Vec<LocalItem>, DetectorError> {
+) -> Result<(Vec<LocalItem>, ScanStats), DetectorError> {
     let mut items = Vec::new();
+    let mut stats = ScanStats::default();
 
     let read_dir = std::fs::read_dir(current).map_err(DetectorError::Fs)?;
 
@@ -159,9 +182,11 @@ fn scan_blocking(
                 checksum: None,
                 is_dir: true,
             });
-            // Recurse
-            let mut sub = scan_blocking(root, &path, cache)?;
+            // Recurse and accumulate stats.
+            let (mut sub, sub_stats) = scan_blocking(root, &path, cache)?;
             items.append(&mut sub);
+            stats.checksum_recomputed += sub_stats.checksum_recomputed;
+            stats.checksum_from_cache += sub_stats.checksum_from_cache;
         } else if meta.is_file() {
             let size = meta.len();
             let mtime = mtime_from_meta(&meta);
@@ -171,11 +196,14 @@ fn scan_blocking(
                 if cached.size == size
                     && (cached.mtime - mtime).abs() < chrono::Duration::seconds(2)
                 {
+                    stats.checksum_from_cache += 1;
                     Ok(cached.checksum.clone())
                 } else {
+                    stats.checksum_recomputed += 1;
                     compute_checksum(&path)
                 }
             } else {
+                stats.checksum_recomputed += 1;
                 compute_checksum(&path)
             };
 
@@ -195,7 +223,7 @@ fn scan_blocking(
         }
     }
 
-    Ok(items)
+    Ok((items, stats))
 }
 
 fn mtime_from_meta(meta: &std::fs::Metadata) -> DateTime<Utc> {
@@ -229,6 +257,16 @@ pub(crate) fn file_changed_during_read(
     }
 }
 
+/// Compute a SHA-256 checksum for the file at `path`.
+///
+/// Uses `std::fs::read()` which on Linux/macOS opens the file with `O_RDONLY`
+/// and on Windows with `GENERIC_READ | FILE_SHARE_READ | FILE_SHARE_WRITE |
+/// FILE_SHARE_DELETE`. No exclusive lock is taken; other processes may read or
+/// write the file concurrently. No file descriptor is held open after return.
+///
+/// If the file changes during the read (detected by comparing mtime/size before
+/// and after), returns `DetectorError::FileInProgress` so the caller can skip
+/// and retry on the next cycle.
 fn compute_checksum(path: &Path) -> Result<Option<crate::types::Checksum>, DetectorError> {
     use sha2::{Digest, Sha256};
 
@@ -330,6 +368,80 @@ mod tests {
             .expect("scan should succeed");
         let nested = items.iter().find(|i| i.path.as_str() == "sub/nested.txt");
         assert!(nested.is_some(), "nested file should be found");
+    }
+
+    // T005 — Scanner must not lock files visible to other applications.
+    // A concurrent `File::open` on the same file must not cause the scan to
+    // return `PermissionDenied` or `WouldBlock`.
+    #[tokio::test]
+    async fn scan_concurrent_open_file_no_lock() {
+        let dir = TempDir::new().unwrap();
+        let file_path = dir.path().join("open_by_app.txt");
+        fs::write(&file_path, b"some content").unwrap();
+
+        // Hold the file open (simulates an editor / Obsidian holding it).
+        let _held = std::fs::File::open(&file_path).expect("test setup: open should succeed");
+
+        // Run the scanner concurrently with the held handle.
+        let result = scan_local(&local_path(&dir), &HashMap::new()).await;
+
+        assert!(
+            result.is_ok(),
+            "scan must succeed even while another handle holds the file open: {:?}",
+            result.err()
+        );
+        // The file should appear in results (not skipped due to lock).
+        let items = result.unwrap();
+        let found = items.iter().any(|i| i.path.as_str() == "open_by_app.txt");
+        assert!(
+            found,
+            "file held open by another handle must still appear in scan"
+        );
+    }
+
+    // T004 — ScanStats must report zero checksum_recomputed on second scan.
+    // This test will fail to compile until ScanStats is added to local.rs.
+    #[tokio::test]
+    async fn scan_stats_zero_recomputed_for_unchanged_files() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("a.txt"), b"alpha").unwrap();
+        fs::write(dir.path().join("b.txt"), b"beta").unwrap();
+
+        // First scan: populates the cache.
+        let (first_items, first_stats) = scan_local_with_stats(&local_path(&dir), &HashMap::new())
+            .await
+            .expect("first scan should succeed");
+        assert_eq!(
+            first_stats.checksum_recomputed, 2,
+            "first scan recomputes all"
+        );
+        assert_eq!(first_stats.checksum_from_cache, 0);
+
+        // Build cache from first scan results.
+        let cache: HashMap<RelativePath, CachedLocalEntry> = first_items
+            .iter()
+            .filter(|i| !i.is_dir)
+            .map(|i| {
+                (
+                    i.path.clone(),
+                    CachedLocalEntry {
+                        mtime: i.mtime,
+                        size: i.size,
+                        checksum: i.checksum.clone(),
+                    },
+                )
+            })
+            .collect();
+
+        // Second scan: nothing changed, all checksums come from cache.
+        let (_second_items, second_stats) = scan_local_with_stats(&local_path(&dir), &cache)
+            .await
+            .expect("second scan should succeed");
+        assert_eq!(
+            second_stats.checksum_recomputed, 0,
+            "unchanged files must not recompute checksum"
+        );
+        assert_eq!(second_stats.checksum_from_cache, 2);
     }
 
     // T040-4: cache hit avoids recomputing checksum.

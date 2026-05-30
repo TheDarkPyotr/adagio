@@ -3,6 +3,9 @@ members = [
     "crates/adagio-core",
     "crates/adagio-nextcloud",
     "crates/adagio-desktop",
+    "crates/adagio-ipc",
+    "crates/adagio-daemon",
+    "crates/adagio-cli",
 ]
 resolver = "2"
 
@@ -70,6 +73,12 @@ futures = "0.3"
 
 # Criterion benchmarks
 criterion = { version = "0.5", features = ["async_tokio"] }
+
+# OS interfaces (RSS sampling, platform utilities)
+libc = "0.2"
+
+# CLI argument parsing
+clap = { version = "4.5", features = ["derive"] }
 
 [profile.release]
 opt-level = 3

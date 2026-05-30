@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Adagio",
         "width": 900,
         "height": 650,
@@ -19,7 +20,19 @@
         "minHeight": 520,
         "resizable": true,
         "fullscreen": false,
-        "decorations": true
+        "decorations": false
+      },
+      {
+        "label": "tray",
+        "title": "Adagio",
+        "url": "index.html?tray",
+        "width": 380,
+        "height": 520,
+        "decorations": false,
+        "resizable": false,
+        "alwaysOnTop": true,
+        "visible": false,
+        "skipTaskbar": true
       }
     ],
     "security": {
