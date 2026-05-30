@@ -27,6 +27,11 @@ thiserror = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
 
+# jemalloc returns freed pages to the OS far more aggressively than glibc,
+# preventing the RSS fragmentation that triggers the AC-3 20% growth alarm.
+[target.'cfg(not(windows))'.dependencies]
+tikv-jemallocator = "0.6"
+
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"
 

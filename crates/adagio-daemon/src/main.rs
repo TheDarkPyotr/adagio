@@ -1,3 +1,10 @@
+// Use jemalloc on non-Windows platforms: it returns freed pages to the OS
+// aggressively via background threads, preventing the glibc heap fragmentation
+// that causes RSS to grow ~60-70% after large sync cycles (AC-3 violation).
+#[cfg(not(target_os = "windows"))]
+#[global_allocator]
+static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 mod autostart;
 mod dispatcher;
 mod events;
