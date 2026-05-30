@@ -23,7 +23,7 @@ serde = { workspace = true }
 
 # Linux: FUSE3 + libc for uid/gid + futures-util for stream
 [target.'cfg(target_os = "linux")'.dependencies]
-fuse3 = { version = "0.9", features = ["tokio-runtime"] }
+fuse3 = { version = "0.9", features = ["tokio-runtime", "unprivileged"] }
 libc = { workspace = true }
 futures-util = "0.3"
 

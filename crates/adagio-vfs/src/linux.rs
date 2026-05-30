@@ -398,11 +398,20 @@ fn run_fuse(
         let mut opts = MountOptions::default();
         opts.read_only(true);
         opts.fs_name("adagio");
+        // allow_other lets the desktop user access the mount even though the
+        // daemon process owns it (requires user_allow_other in /etc/fuse.conf).
+        opts.allow_other(true);
 
-        let handle = match Session::new(opts).mount(fs, &mount_point).await {
-            Ok(h) => h,
-            Err(e) => {
-                warn!(pair_id = %pair_id, error = %e, "FUSE3 mount failed (need root or user_allow_other)");
+        // Try unprivileged mount first (works after `usermod -aG fuse` +
+        // `user_allow_other` in /etc/fuse.conf). Fall back to privileged mount
+        // for root-run daemons.
+        let handle = match Session::new(opts.clone()).mount_with_unprivileged(fs, &mount_point).await {
+            Ok(h) => {
+                info!(pair_id = %pair_id, "FUSE3 unprivileged mount succeeded");
+                h
+            }
+            Err(unpriv_err) => {
+                warn!(pair_id = %pair_id, error = %unpriv_err, "FUSE3 unprivileged mount failed — check: sudo usermod -aG fuse $USER && echo user_allow_other | sudo tee -a /etc/fuse.conf");
                 return;
             }
         };

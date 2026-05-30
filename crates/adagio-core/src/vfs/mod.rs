@@ -123,6 +123,25 @@ impl VfsPairRunner {
             }
         }
 
+        // Reconcile disk presence: if a file exists on disk but the journal
+        // still says cloud_only (e.g. after daemon restart), mark it as
+        // locally_available so the UI shows the correct icon.
+        let local_root = &self.pair.local_root.0;
+        let now = Utc::now();
+        for entry in &existing {
+            if entry.state != VfsState::CloudOnly { continue; }
+            let local = local_root.join(entry.path.as_str());
+            if let Ok(meta) = tokio::fs::metadata(&local).await {
+                if meta.is_file() && meta.len() > 0 {
+                    let mut updated = entry.clone();
+                    updated.state = VfsState::LocallyAvailable { cached_at: now, last_accessed: now };
+                    updated.cache_bytes = meta.len();
+                    let _ = self.journal.upsert_vfs_entry(&updated).await;
+                    debug!(path = %entry.path, "reconciled: file on disk, marked locally_available");
+                }
+            }
+        }
+
         info!(
             pair_id = %pair_id,
             total = remote_items.iter().filter(|i| !i.is_dir).count(),
