@@ -5,6 +5,7 @@ use tracing::{info, instrument};
 
 const VALID_PALETTES: &[&str] = &[
     "sienna", "slate", "bone", "ink", "plum", "azure", "iris", "citron",
+    "forest", "rose", "midnight", "carbon",
 ];
 
 /// Return the active palette name from config.
@@ -21,7 +22,7 @@ pub async fn get_palette(state: State<'_, AppState>) -> Result<String, String> {
 
 /// Persist a palette selection to config.
 ///
-/// Returns an error if the name is not one of the eight supported palettes.
+/// Returns an error if the name is not one of the supported palettes.
 #[tauri::command]
 #[instrument(skip(state))]
 pub async fn set_palette(state: State<'_, AppState>, name: String) -> Result<(), String> {

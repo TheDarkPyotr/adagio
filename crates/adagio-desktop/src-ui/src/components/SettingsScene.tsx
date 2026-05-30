@@ -6,14 +6,18 @@ import { setPalette as ipcSetPalette, pauseSync, resumeSync, getDaemonStatus, st
 type Section = 'appearance' | 'sync' | 'about';
 
 const PALETTES = [
-  { id: 'sienna', label: 'Sienna', cream: '#f5f1ea', ink: '#15171a', accent: '#c8542a' },
-  { id: 'slate',  label: 'Slate',  cream: '#e9ecef', ink: '#0e1116', accent: '#b76b35' },
-  { id: 'bone',   label: 'Bone',   cream: '#ece4d4', ink: '#1c1815', accent: '#a4452f' },
-  { id: 'ink',    label: 'Ink',    cream: '#15181c', ink: '#f0ece4', accent: '#e07a4d' },
-  { id: 'plum',   label: 'Plum',   cream: '#efe5e3', ink: '#2a1422', accent: '#c66648' },
-  { id: 'azure',  label: 'Azure',  cream: '#e8edf3', ink: '#0d1a2e', accent: '#2f6fcf' },
-  { id: 'iris',   label: 'Iris',   cream: '#ebe3ef', ink: '#1f1729', accent: '#9550b8' },
-  { id: 'citron', label: 'Citron', cream: '#f1ecd2', ink: '#1c1810', accent: '#c89020' },
+  { id: 'sienna',   label: 'Sienna',   cream: '#f5f1ea', ink: '#15171a', accent: '#c8542a' },
+  { id: 'slate',    label: 'Slate',    cream: '#e9ecef', ink: '#0e1116', accent: '#b76b35' },
+  { id: 'bone',     label: 'Bone',     cream: '#ece4d4', ink: '#1c1815', accent: '#a4452f' },
+  { id: 'ink',      label: 'Ink',      cream: '#15181c', ink: '#f0ece4', accent: '#e07a4d' },
+  { id: 'plum',     label: 'Plum',     cream: '#efe5e3', ink: '#2a1422', accent: '#c66648' },
+  { id: 'azure',    label: 'Azure',    cream: '#e8edf3', ink: '#0d1a2e', accent: '#2f6fcf' },
+  { id: 'iris',     label: 'Iris',     cream: '#ebe3ef', ink: '#1f1729', accent: '#9550b8' },
+  { id: 'citron',   label: 'Citron',   cream: '#f1ecd2', ink: '#1c1810', accent: '#c89020' },
+  { id: 'forest',   label: 'Forest',   cream: '#edf0e8', ink: '#182418', accent: '#3d7a3d' },
+  { id: 'rose',     label: 'Rose',     cream: '#f5ece8', ink: '#2a1a18', accent: '#c4505e' },
+  { id: 'midnight', label: 'Midnight', cream: '#0f1117', ink: '#e8eef8', accent: '#5b9bd6' },
+  { id: 'carbon',   label: 'Carbon',   cream: '#111213', ink: '#f4f4f2', accent: '#d0a060' },
 ];
 
 export default function SettingsScene({ palette, onPalette, syncStatus, onBack, onPairs }: {
