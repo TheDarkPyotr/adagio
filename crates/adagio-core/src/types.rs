@@ -188,10 +188,28 @@ pub struct SyncPair {
     /// How to resolve sync conflicts for this pair (default: Ask).
     #[serde(default = "default_conflict_policy")]
     pub conflict_policy: ConflictPolicy,
+    /// Number of parallel upload workers in bulk-upload mode (default: 8, range 1–32).
+    #[serde(default = "default_bulk_upload_workers")]
+    pub bulk_upload_workers: u8,
+    /// Minimum pending-upload count to trigger bulk mode (default: 50).
+    #[serde(default = "default_bulk_upload_threshold_files")]
+    pub bulk_upload_threshold_files: u32,
+    /// File size in bytes above which chunked multipart upload is used (default: 10 MiB).
+    #[serde(default = "default_bulk_upload_chunk_threshold_bytes")]
+    pub bulk_upload_chunk_threshold_bytes: u64,
 }
 
 fn default_conflict_policy() -> ConflictPolicy {
     ConflictPolicy::Ask
+}
+fn default_bulk_upload_workers() -> u8 {
+    8
+}
+fn default_bulk_upload_threshold_files() -> u32 {
+    50
+}
+fn default_bulk_upload_chunk_threshold_bytes() -> u64 {
+    10 * 1024 * 1024 // 10 MiB
 }
 
 fn default_scan_interval_secs() -> u64 {

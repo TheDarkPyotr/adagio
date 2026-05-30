@@ -292,6 +292,12 @@ fn restore_pairs(manager: &mut SyncPairManager, saved: &serde_json::Value) {
                 max_upload_concurrency: p["max_upload_concurrency"].as_u64().unwrap_or(3) as u8,
                 max_download_concurrency: p["max_download_concurrency"].as_u64().unwrap_or(3) as u8,
                 conflict_policy: ConflictPolicy::Ask,
+                bulk_upload_workers: p["bulk_upload_workers"].as_u64().unwrap_or(8) as u8,
+                bulk_upload_threshold_files: p["bulk_upload_threshold_files"].as_u64().unwrap_or(50)
+                    as u32,
+                bulk_upload_chunk_threshold_bytes: p["bulk_upload_chunk_threshold_bytes"]
+                    .as_u64()
+                    .unwrap_or(10 * 1024 * 1024),
             };
             manager.register_full_pair(pair);
         }

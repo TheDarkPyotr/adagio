@@ -108,6 +108,9 @@ mod tests {
             max_upload_concurrency: 3,
             max_download_concurrency: 3,
             conflict_policy: ConflictPolicy::Ask,
+            bulk_upload_workers: 8,
+            bulk_upload_threshold_files: 50,
+            bulk_upload_chunk_threshold_bytes: 10 * 1024 * 1024,
         }
     }
 

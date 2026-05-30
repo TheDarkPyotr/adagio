@@ -70,6 +70,15 @@ pub struct SavedPair {
     pub selective_paths: Vec<String>,
     #[serde(default)]
     pub exclude_patterns: Vec<String>,
+    /// Number of parallel upload workers in bulk mode (default: 8).
+    #[serde(default = "default_bulk_upload_workers")]
+    pub bulk_upload_workers: u8,
+    /// Minimum pending-upload count to trigger bulk mode (default: 50).
+    #[serde(default = "default_bulk_upload_threshold_files")]
+    pub bulk_upload_threshold_files: u32,
+    /// File size in bytes above which chunked upload is used (default: 10 MiB).
+    #[serde(default = "default_bulk_upload_chunk_threshold_bytes")]
+    pub bulk_upload_chunk_threshold_bytes: u64,
 }
 
 fn default_scan_interval() -> u64 {
@@ -77,6 +86,15 @@ fn default_scan_interval() -> u64 {
 }
 fn default_scan_on_startup() -> bool {
     true
+}
+fn default_bulk_upload_workers() -> u8 {
+    8
+}
+fn default_bulk_upload_threshold_files() -> u32 {
+    50
+}
+fn default_bulk_upload_chunk_threshold_bytes() -> u64 {
+    10 * 1024 * 1024
 }
 fn default_concurrency() -> usize {
     3
@@ -171,6 +189,9 @@ mod tests {
             max_download_concurrency: 3,
             selective_paths: vec![],
             exclude_patterns: vec![],
+            bulk_upload_workers: 8,
+            bulk_upload_threshold_files: 50,
+            bulk_upload_chunk_threshold_bytes: 10 * 1024 * 1024,
         }
     }
 

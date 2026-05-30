@@ -31,6 +31,9 @@ fn make_pair(local_dir: &TempDir) -> SyncPair {
         max_upload_concurrency: 2,
         max_download_concurrency: 2,
         conflict_policy: adagio_core::types::ConflictPolicy::Ask,
+        bulk_upload_workers: 8,
+        bulk_upload_threshold_files: 50,
+        bulk_upload_chunk_threshold_bytes: 10 * 1024 * 1024,
     }
 }
 

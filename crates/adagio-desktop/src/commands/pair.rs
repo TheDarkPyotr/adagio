@@ -298,6 +298,9 @@ mod tests {
             max_download_concurrency: 3,
             selective_paths: vec![],
             exclude_patterns: vec![],
+            bulk_upload_workers: 8,
+            bulk_upload_threshold_files: 50,
+            bulk_upload_chunk_threshold_bytes: 10 * 1024 * 1024,
         });
         save_config(&config_path, &loaded).unwrap();
 
@@ -324,6 +327,9 @@ mod tests {
             max_download_concurrency: 3,
             selective_paths: vec![],
             exclude_patterns: vec![],
+            bulk_upload_workers: 8,
+            bulk_upload_threshold_files: 50,
+            bulk_upload_chunk_threshold_bytes: 10 * 1024 * 1024,
         });
         save_config(&config_path, &cfg).unwrap();
 
@@ -359,6 +365,9 @@ mod tests {
             max_upload_concurrency: 3,
             max_download_concurrency: 3,
             conflict_policy: adagio_core::types::ConflictPolicy::Ask,
+            bulk_upload_workers: 8,
+            bulk_upload_threshold_files: 50,
+            bulk_upload_chunk_threshold_bytes: 10 * 1024 * 1024,
         };
 
         let (journal, _) = make_journal().await;
@@ -390,6 +399,9 @@ mod tests {
             max_upload_concurrency: 3,
             max_download_concurrency: 3,
             conflict_policy: adagio_core::types::ConflictPolicy::Ask,
+            bulk_upload_workers: 8,
+            bulk_upload_threshold_files: 50,
+            bulk_upload_chunk_threshold_bytes: 10 * 1024 * 1024,
         };
 
         let (journal, _) = make_journal().await;
@@ -421,6 +433,9 @@ mod tests {
             max_upload_concurrency: 3,
             max_download_concurrency: 3,
             conflict_policy: adagio_core::types::ConflictPolicy::Ask,
+            bulk_upload_workers: 8,
+            bulk_upload_threshold_files: 50,
+            bulk_upload_chunk_threshold_bytes: 10 * 1024 * 1024,
         };
 
         let (journal, pool) = make_journal().await;

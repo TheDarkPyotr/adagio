@@ -4,9 +4,12 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
+pub mod chunked;
 pub mod download;
 pub mod engine;
 pub mod upload;
+
+pub use chunked::upload_chunked;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransferOptions {

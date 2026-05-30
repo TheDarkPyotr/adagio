@@ -27,6 +27,10 @@ pub struct MockRemoteClient {
     #[allow(clippy::type_complexity)]
     chunks: Arc<RwLock<HashMap<(String, u32), Vec<u8>>>>,
     capabilities: ServerCapabilities,
+    /// Counts calls to `upload()` (single-PUT path).
+    upload_calls: Arc<std::sync::atomic::AtomicUsize>,
+    /// Counts calls to `begin_chunked_upload()`.
+    begin_chunked_calls: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl MockRemoteClient {
@@ -40,7 +44,20 @@ impl MockRemoteClient {
                 supports_dav_checksum: true,
                 server_version: "mock-1.0".into(),
             },
+            upload_calls: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            begin_chunked_calls: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         }
+    }
+
+    /// Number of single-PUT `upload()` calls received.
+    pub fn upload_call_count(&self) -> usize {
+        self.upload_calls.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Number of `begin_chunked_upload()` calls received.
+    pub fn begin_chunked_upload_call_count(&self) -> usize {
+        self.begin_chunked_calls
+            .load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// Seed a file directly (bypasses upload).
@@ -123,6 +140,8 @@ impl RemoteClient for MockRemoteClient {
         _size: u64,
         checksum: &Checksum,
     ) -> Result<String, ClientError> {
+        self.upload_calls
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         use futures::StreamExt;
         let mut bytes_vec = Vec::new();
         let mut stream = data;
@@ -146,6 +165,8 @@ impl RemoteClient for MockRemoteClient {
     }
 
     async fn begin_chunked_upload(&self) -> Result<String, ClientError> {
+        self.begin_chunked_calls
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Ok(format!("mock-session-{}", uuid::Uuid::new_v4()))
     }
 

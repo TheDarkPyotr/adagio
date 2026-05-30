@@ -188,6 +188,9 @@ pub async fn dispatch(req: DaemonRequest, state: &DaemonProcess) -> Result<Daemo
                 max_upload_concurrency: 3,
                 max_download_concurrency: 3,
                 conflict_policy: adagio_core::types::ConflictPolicy::Ask,
+                bulk_upload_workers: 8,
+                bulk_upload_threshold_files: 50,
+                bulk_upload_chunk_threshold_bytes: 10 * 1024 * 1024,
             };
             let dto = serde_json::json!({
                 "id": pair.id.to_string(),
@@ -737,6 +740,9 @@ fn build_saved_config(
             "max_download_concurrency": p.max_download_concurrency,
             "selective_paths": p.selective_paths.iter().map(|r| r.as_str()).collect::<Vec<_>>(),
             "exclude_patterns": p.exclude_patterns,
+            "bulk_upload_workers": p.bulk_upload_workers,
+            "bulk_upload_threshold_files": p.bulk_upload_threshold_files,
+            "bulk_upload_chunk_threshold_bytes": p.bulk_upload_chunk_threshold_bytes,
         })).collect::<Vec<_>>(),
     })
 }

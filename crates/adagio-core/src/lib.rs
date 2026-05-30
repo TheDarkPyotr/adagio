@@ -1,5 +1,6 @@
 pub mod account_manager;
 pub mod bandwidth;
+pub mod bulk_upload;
 pub mod config;
 pub mod conflict;
 pub mod cycle;

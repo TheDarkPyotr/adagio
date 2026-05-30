@@ -182,29 +182,90 @@ impl<'a> SyncCycle<'a> {
             self.pair.conflict_policy.clone(),
         );
 
-        // 3. Propagation — use per-pair concurrency limits (T113).
-        let propagator = if let Some(tx) = self.conflict_tx {
-            propagator::Propagator::with_conflict_channel(
-                self.pair.max_upload_concurrency as usize,
-                self.pair.max_download_concurrency as usize,
-                tx.clone(),
-            )
+        // 3. Propagation — optionally via BulkUploadDriver for initial-sync fast path.
+        use crate::bulk_upload::BulkUploadDriver;
+        use crate::cycle::reconciler::SyncOp;
+
+        // Partition: Upload ops are candidates for bulk mode; everything else always
+        // goes through the standard propagator.
+        let (upload_ops, other_ops): (Vec<SyncOp>, Vec<SyncOp>) = plan
+            .ops
+            .into_iter()
+            .partition(|op| matches!(op, SyncOp::Upload { .. }));
+
+        let use_bulk =
+            BulkUploadDriver::should_activate(remote_items.len(), upload_ops.len(), self.pair);
+
+        let mut result = if use_bulk {
+            let driver = BulkUploadDriver::new(self.pair, self.client, self.journal, None);
+            let bulk_result = driver.run(upload_ops, &local_root, &remote_root).await;
+            crate::cycle::propagator::PropagatorResult {
+                uploaded: bulk_result.uploaded,
+                downloaded: 0,
+                deleted_remote: 0,
+                deleted_local: 0,
+                moved: 0,
+                conflicts: 0,
+                errors: bulk_result.errors,
+                skipped: bulk_result.skipped,
+            }
         } else {
-            propagator::Propagator::new(
-                self.pair.max_upload_concurrency as usize,
-                self.pair.max_download_concurrency as usize,
-            )
+            // Standard path: recombine upload ops with other ops.
+            let mut all_ops = upload_ops;
+            all_ops.extend(other_ops.iter().cloned());
+
+            let propagator = if let Some(tx) = self.conflict_tx {
+                propagator::Propagator::with_conflict_channel(
+                    self.pair.max_upload_concurrency as usize,
+                    self.pair.max_download_concurrency as usize,
+                    tx.clone(),
+                )
+            } else {
+                propagator::Propagator::new(
+                    self.pair.max_upload_concurrency as usize,
+                    self.pair.max_download_concurrency as usize,
+                )
+            };
+            propagator
+                .execute(
+                    &all_ops,
+                    &self.pair.id,
+                    &local_root,
+                    &remote_root,
+                    self.client,
+                    self.journal,
+                )
+                .await
         };
-        let result = propagator
-            .execute(
-                &plan.ops,
-                &self.pair.id,
-                &local_root,
-                &remote_root,
-                self.client,
-                self.journal,
-            )
-            .await;
+
+        // After bulk mode, run propagator on non-upload ops (downloads, deletes, conflicts).
+        if use_bulk && !other_ops.is_empty() {
+            let propagator = if let Some(tx) = self.conflict_tx {
+                propagator::Propagator::with_conflict_channel(
+                    self.pair.max_upload_concurrency as usize,
+                    self.pair.max_download_concurrency as usize,
+                    tx.clone(),
+                )
+            } else {
+                propagator::Propagator::new(
+                    self.pair.max_upload_concurrency as usize,
+                    self.pair.max_download_concurrency as usize,
+                )
+            };
+            let other_result = propagator
+                .execute(
+                    &other_ops,
+                    &self.pair.id,
+                    &local_root,
+                    &remote_root,
+                    self.client,
+                    self.journal,
+                )
+                .await;
+            result.downloaded += other_result.downloaded;
+            result.errors += other_result.errors;
+            result.conflicts += other_result.conflicts;
+        }
 
         let completed_at = Utc::now();
         let duration_ms = (completed_at - started_at).num_milliseconds().max(0) as u64;
@@ -506,6 +567,9 @@ mod tests {
             max_upload_concurrency: 3,
             max_download_concurrency: 3,
             conflict_policy: crate::types::ConflictPolicy::Ask,
+            bulk_upload_workers: 8,
+            bulk_upload_threshold_files: 50,
+            bulk_upload_chunk_threshold_bytes: 10 * 1024 * 1024,
         }
     }
 
