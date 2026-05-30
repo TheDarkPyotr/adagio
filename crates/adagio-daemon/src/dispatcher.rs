@@ -202,8 +202,15 @@ pub async fn dispatch(req: DaemonRequest, state: &DaemonProcess) -> Result<Daemo
             });
             {
                 let mut pairs = state.pairs.write().await;
-                pairs.register_full_pair(pair);
+                pairs.register_full_pair(pair.clone());
             } // release write lock before save_config acquires read lock
+
+            // Register in journal so journal_entries FK constraint is satisfied.
+            let accounts = state.accounts.list().map_err(|e| e.to_string())?;
+            if let Some(account) = accounts.iter().find(|a| a.id == pair.account_id) {
+                let _ = state.journal.register_pair(account, &pair).await;
+            }
+
             save_config(state).await?;
             Ok(DaemonResponse::Pair(dto))
         }

@@ -107,6 +107,14 @@ async fn main() -> anyhow::Result<()> {
         drop(pairs_guard);
 
         for pair in all_pairs {
+            // Ensure account + pair are registered in the journal DB so
+            // journal_entries FK constraints are satisfied on the first cycle.
+            if let Ok(accts) = accounts.list() {
+                if let Some(acct) = accts.iter().find(|a| a.id == pair.account_id) {
+                    let _ = journal.register_pair(acct, &pair).await;
+                }
+            }
+
             let client = build_nextcloud_client(&accounts, &pair).await;
             if let Some(client) = client {
                 engine
