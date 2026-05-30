@@ -48,6 +48,9 @@ const defaultInvoke = (cmd: string): Promise<unknown> => {
     case 'add_blocked_ssid': return Promise.resolve();
     case 'remove_blocked_ssid': return Promise.resolve();
     case 'list_blocked_ssids': return Promise.resolve([]);
+    case 'list_custom_palettes': return Promise.resolve([]);
+    case 'save_custom_palette': return Promise.resolve({ id: 'custom-test', name: 'Test', cream: '#f5f1ea', ink: '#15171a', accent: '#c8542a' });
+    case 'delete_custom_palette': return Promise.resolve();
     default: return Promise.resolve(null);
   }
 };

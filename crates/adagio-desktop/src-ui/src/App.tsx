@@ -10,13 +10,14 @@ import NewFileDialog from './components/NewFileDialog';
 import SettingsScene from './components/SettingsScene';
 import PairsScene from './components/PairsScene';
 import TrayPopover from './components/TrayPopover';
-import { listAccounts, listPairs, getStatus, getPalette, setPalette as ipcSetPalette, removeAccount, pauseSync, resumeSync, listConflicts, listenConflictDetected, listenConflictResolved, resolveConflict as ipcResolveConflict, dismissAllConflicts, listenDaemonConnectionState, startDaemon } from './tauri';
+import { listAccounts, listPairs, getStatus, getPalette, setPalette as ipcSetPalette, removeAccount, pauseSync, resumeSync, listConflicts, listenConflictDetected, listenConflictResolved, resolveConflict as ipcResolveConflict, dismissAllConflicts, listenDaemonConnectionState, startDaemon, listCustomPalettes } from './tauri';
 import { open as shellOpen } from '@tauri-apps/plugin-shell';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import useLocalMeta from './useLocalMeta';
 import SectionScene from './components/SectionScene';
-import type { AccountDto, PairDto, SyncStatusDto, ConflictDto } from './tauri';
+import type { AccountDto, PairDto, SyncStatusDto, ConflictDto, CustomPaletteDto } from './tauri';
 import type { SidebarAccount } from './components/Sidebar';
+import { applyCustomPaletteTokens, clearCustomPaletteTokens } from './paletteUtils';
 
 const IS_TRAY = new URLSearchParams(window.location.search).has('tray');
 
@@ -39,6 +40,7 @@ export default function App() {
   const [onboarded, setOnboarded] = useState<boolean | null>(null);
   const [view, setView] = useState<View>('main');
   const [palette, setPalette] = useState('sienna');
+  const [customPalettes, setCustomPalettes] = useState<CustomPaletteDto[]>([]);
   const [filePath, setFilePath] = useState('/');
   const [pendingConflicts, setPendingConflicts] = useState(0);
   const [wizardOpen, setWizardOpen] = useState(false);
@@ -75,12 +77,27 @@ export default function App() {
     loadInitialData();
   }, [loadInitialData]);
 
-  // Load and apply saved palette
+  // Load custom palettes and apply the saved palette on mount.
   useEffect(() => {
-    getPalette().then(name => {
-      setPalette(name);
-      document.documentElement.setAttribute('data-palette', name);
-    }).catch(() => {});
+    // Load custom palettes first so we can apply them if selected.
+    listCustomPalettes().then(customs => {
+      setCustomPalettes(customs);
+      // Then load and apply the stored palette name.
+      getPalette().then(name => {
+        setPalette(name);
+        if (name.startsWith('custom-')) {
+          const custom = customs.find(p => p.id === name);
+          if (custom) applyCustomPaletteTokens(custom);
+        } else {
+          document.documentElement.dataset.palette = name;
+        }
+      }).catch(() => {});
+    }).catch(() => {
+      getPalette().then(name => {
+        setPalette(name);
+        document.documentElement.dataset.palette = name;
+      }).catch(() => {});
+    });
   }, []);
 
   // Subscribe to daemon connection state changes.
@@ -161,7 +178,12 @@ export default function App() {
 
   const handlePalette = (name: string) => {
     setPalette(name);
-    document.documentElement.setAttribute('data-palette', name);
+    if (name.startsWith('custom-')) {
+      const custom = customPalettes.find(p => p.id === name);
+      if (custom) applyCustomPaletteTokens(custom);
+    } else {
+      clearCustomPaletteTokens(name);
+    }
     ipcSetPalette(name).catch(() => {});
   };
 
@@ -236,6 +258,8 @@ export default function App() {
             syncStatus={syncStatus}
             onBack={() => setView('main')}
             onPairs={() => setView('pairs')}
+            customPalettes={customPalettes}
+            onCustomPalettesChange={setCustomPalettes}
           />
         ) : view === 'pairs' ? (
           <PairsScene

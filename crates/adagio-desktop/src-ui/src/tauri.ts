@@ -188,9 +188,34 @@ export const listenConflictResolved = (
 export const getPalette = (): Promise<string> =>
   invoke('get_palette');
 
-/** Persists the palette name. Throws if the name is not one of the 8 valid palettes. */
+/** Persists the palette name (built-in or custom ID). */
 export const setPalette = (name: string): Promise<void> =>
   invoke('set_palette', { name });
+
+// ── Custom palettes ───────────────────────────────────────────────────────────
+
+export interface CustomPaletteDto {
+  id: string;
+  name: string;
+  cream: string;
+  ink: string;
+  accent: string;
+}
+
+export const listCustomPalettes = (): Promise<CustomPaletteDto[]> =>
+  invoke('list_custom_palettes');
+
+export const saveCustomPalette = (
+  name: string,
+  cream: string,
+  ink: string,
+  accent: string,
+  id?: string,
+): Promise<CustomPaletteDto> =>
+  invoke('save_custom_palette', { id: id ?? null, name, cream, ink, accent });
+
+export const deleteCustomPalette = (id: string): Promise<void> =>
+  invoke('delete_custom_palette', { id });
 
 // ── Sharing ───────────────────────────────────────────────────────────────────
 

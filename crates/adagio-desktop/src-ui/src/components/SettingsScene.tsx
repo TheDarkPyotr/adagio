@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Icon, SpinDot } from './shared';
-import type { SyncStatusDto, DaemonStatusDto, BandwidthStatusDto, NetworkStatusDto, NetworkAction } from '../tauri';
-import { setPalette as ipcSetPalette, pauseSync, resumeSync, getDaemonStatus, startDaemon, stopDaemon, setStartAtLogin, getBandwidthStatus, setBandwidthLimits, clearBandwidthLimits, getNetworkStatus, setNetworkPolicy, addBlockedSsid, removeBlockedSsid } from '../tauri';
+import type { SyncStatusDto, DaemonStatusDto, BandwidthStatusDto, NetworkStatusDto, NetworkAction, CustomPaletteDto } from '../tauri';
+import { setPalette as ipcSetPalette, pauseSync, resumeSync, getDaemonStatus, startDaemon, stopDaemon, setStartAtLogin, getBandwidthStatus, setBandwidthLimits, clearBandwidthLimits, getNetworkStatus, setNetworkPolicy, addBlockedSsid, removeBlockedSsid, saveCustomPalette, deleteCustomPalette } from '../tauri';
+import { deriveTokens } from '../paletteUtils';
 
 type Section = 'appearance' | 'sync' | 'about';
 
@@ -20,14 +21,28 @@ const PALETTES = [
   { id: 'carbon',   label: 'Carbon',   cream: '#111213', ink: '#f4f4f2', accent: '#d0a060' },
 ];
 
-export default function SettingsScene({ palette, onPalette, syncStatus, onBack, onPairs }: {
+export default function SettingsScene({ palette, onPalette, syncStatus, onBack, onPairs, customPalettes = [], onCustomPalettesChange }: {
   palette: string;
   onPalette: (name: string) => void;
   syncStatus: SyncStatusDto | null;
   onBack: () => void;
   onPairs: () => void;
+  customPalettes?: CustomPaletteDto[];
+  onCustomPalettesChange?: (palettes: CustomPaletteDto[]) => void;
 }) {
   const [section, setSection] = useState<Section>('appearance');
+
+  // Custom palette editor state.
+  const [customEditorOpen, setCustomEditorOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | undefined>(undefined);
+  const [customName, setCustomName] = useState('');
+  const [customCream, setCustomCream] = useState('#f5f1ea');
+  const [customInk, setCustomInk] = useState('#15171a');
+  const [customAccent, setCustomAccent] = useState('#c8542a');
+  const [customSaving, setCustomSaving] = useState(false);
+  const [customError, setCustomError] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+
   const [pausing, setPausing] = useState(false);
   const [daemonStatus, setDaemonStatus] = useState<DaemonStatusDto | null>(null);
   const [daemonLoading, setDaemonLoading] = useState(false);
@@ -141,6 +156,7 @@ export default function SettingsScene({ palette, onPalette, syncStatus, onBack, 
 
             <div style={FIELD_LABEL}>Palette</div>
             <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+              {/* Built-in palettes */}
               {PALETTES.map(p => {
                 const active = palette === p.id;
                 return (
@@ -159,6 +175,92 @@ export default function SettingsScene({ palette, onPalette, syncStatus, onBack, 
                   </button>
                 );
               })}
+
+              {/* Custom palettes */}
+              {customPalettes.map(p => {
+                const active = palette === p.id;
+                return (
+                  <div key={p.id} style={{ position: 'relative' }}>
+                    <button onClick={() => onPalette(p.id)}
+                      style={{ width: '100%', background: p.cream, border: active ? `2px solid ${p.accent}` : '1.5px solid rgba(0,0,0,0.09)', borderRadius: 'var(--r-2)', padding: '12px 10px 10px', cursor: 'pointer', textAlign: 'left', transition: 'border-color 0.12s', position: 'relative' }}>
+                      <div style={{ display: 'flex', gap: 5, marginBottom: 8 }}>
+                        <div style={{ width: 16, height: 16, borderRadius: 8, background: p.accent }} />
+                        <div style={{ width: 16, height: 16, borderRadius: 8, background: p.ink }} />
+                      </div>
+                      <div style={{ fontFamily: 'var(--body)', fontSize: 11, fontWeight: 500, color: p.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
+                      {active && (
+                        <div style={{ position: 'absolute', top: 6, right: 6, width: 16, height: 16, borderRadius: 8, background: p.accent, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <Icon name="check" size={9} color={p.cream} strokeWidth={3} />
+                        </div>
+                      )}
+                    </button>
+                    {/* Edit / delete controls on hover — show with a small overlay row */}
+                    <div style={{ position: 'absolute', bottom: 4, right: 4, display: 'flex', gap: 3 }}>
+                      <button title="Edit" onClick={() => {
+                        setEditingId(p.id);
+                        setCustomName(p.name);
+                        setCustomCream(p.cream);
+                        setCustomInk(p.ink);
+                        setCustomAccent(p.accent);
+                        setCustomEditorOpen(true);
+                        setCustomError(null);
+                      }} style={{ background: 'rgba(255,255,255,0.7)', border: 'none', borderRadius: 3, width: 18, height: 18, cursor: 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✎</button>
+                      {deleteConfirm === p.id ? (
+                        <button title="Confirm delete" onClick={async () => {
+                          await deleteCustomPalette(p.id).catch(() => {});
+                          const updated = customPalettes.filter(c => c.id !== p.id);
+                          onCustomPalettesChange?.(updated);
+                          if (palette === p.id) onPalette('sienna');
+                          setDeleteConfirm(null);
+                        }} style={{ background: '#c8542a', border: 'none', borderRadius: 3, width: 18, height: 18, cursor: 'pointer', color: '#fff', fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✓</button>
+                      ) : (
+                        <button title="Delete" onClick={() => setDeleteConfirm(p.id)} style={{ background: 'rgba(255,255,255,0.7)', border: 'none', borderRadius: 3, width: 18, height: 18, cursor: 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Custom palette editor */}
+            <div style={{ marginTop: 20 }}>
+              {!customEditorOpen ? (
+                <button onClick={() => {
+                  setEditingId(undefined);
+                  setCustomName('');
+                  setCustomCream('#f5f1ea');
+                  setCustomInk('#15171a');
+                  setCustomAccent('#c8542a');
+                  setCustomError(null);
+                  setCustomEditorOpen(true);
+                }} style={{ background: 'transparent', border: '1px dashed var(--hairline)', borderRadius: 'var(--r-2)', padding: '8px 14px', fontSize: 12.5, cursor: 'pointer', color: 'var(--ink-muted)', display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> Create custom palette
+                </button>
+              ) : (
+                <CustomPaletteEditor
+                  editingId={editingId}
+                  name={customName} cream={customCream} ink={customInk} accent={customAccent}
+                  saving={customSaving} error={customError}
+                  onName={setCustomName} onCream={setCustomCream} onInk={setCustomInk} onAccent={setCustomAccent}
+                  onSave={async () => {
+                    if (!customName.trim()) { setCustomError('Name is required.'); return; }
+                    setCustomSaving(true); setCustomError(null);
+                    try {
+                      const saved = await saveCustomPalette(customName.trim(), customCream, customInk, customAccent, editingId);
+                      const updated = editingId
+                        ? customPalettes.map(p => p.id === editingId ? saved : p)
+                        : [...customPalettes, saved];
+                      onCustomPalettesChange?.(updated);
+                      onPalette(saved.id);
+                      setCustomEditorOpen(false);
+                    } catch (e) {
+                      setCustomError(e instanceof Error ? e.message : 'Save failed.');
+                    }
+                    setCustomSaving(false);
+                  }}
+                  onCancel={() => { setCustomEditorOpen(false); setCustomError(null); }}
+                />
+              )}
             </div>
           </div>
         )}
@@ -555,3 +657,115 @@ function Divider() {
 const SECTION_H2: React.CSSProperties = { fontFamily: 'var(--body)', fontWeight: 500, fontSize: 22, letterSpacing: '-0.04em', margin: '0 0 8px' };
 const SECTION_P: React.CSSProperties = { fontSize: 13.5, color: 'var(--ink-soft)', lineHeight: 1.6, margin: '0 0 28px' };
 const FIELD_LABEL: React.CSSProperties = { fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'var(--ink-muted)' };
+
+// ── Custom Palette Editor ─────────────────────────────────────────────────────
+
+function CustomPaletteEditor({ editingId, name, cream, ink, accent, saving, error, onName, onCream, onInk, onAccent, onSave, onCancel }: {
+  editingId?: string;
+  name: string; cream: string; ink: string; accent: string;
+  saving: boolean; error: string | null;
+  onName: (v: string) => void;
+  onCream: (v: string) => void;
+  onInk: (v: string) => void;
+  onAccent: (v: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  // Derive preview tokens from the current colour selections.
+  const tokens = deriveTokens(cream, ink, accent);
+  const previewStyle = {
+    background: cream,
+    border: `1.5px solid ${tokens['--hairline'] ?? 'rgba(0,0,0,0.1)'}`,
+    borderRadius: 'var(--r-2)',
+    padding: '14px 16px',
+    marginTop: 16,
+  };
+
+  return (
+    <div style={{ border: '1px solid var(--hairline)', borderRadius: 'var(--r-3)', padding: 20, background: 'var(--paper)' }}>
+      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)', marginBottom: 16 }}>
+        {editingId ? 'Edit palette' : 'New palette'}
+      </div>
+
+      {/* Name */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={FIELD_LABEL}>Name</div>
+        <input
+          value={name}
+          onChange={e => onName(e.target.value)}
+          placeholder="My palette"
+          style={{ marginTop: 6, width: '100%', boxSizing: 'border-box', padding: '7px 10px', fontSize: 13, border: '1px solid var(--hairline)', borderRadius: 'var(--r-2)', background: 'var(--cream)', color: 'var(--ink)', outline: 'none' }}
+        />
+      </div>
+
+      {/* Colour pickers */}
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
+        <ColorField label="Background" value={cream} onChange={onCream} />
+        <ColorField label="Text" value={ink} onChange={onInk} />
+        <ColorField label="Accent" value={accent} onChange={onAccent} />
+      </div>
+
+      {/* Live preview */}
+      <div style={previewStyle}>
+        <div style={{ fontSize: 11, fontFamily: 'var(--mono)', color: tokens['--ink-muted'], marginBottom: 8, letterSpacing: '0.12em', textTransform: 'uppercase' }}>Preview</div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 500, color: tokens['--ink'], marginBottom: 3 }}>{name || 'Palette name'}</div>
+            <div style={{ fontSize: 12, color: tokens['--ink-muted'] }}>Adagio sync client</div>
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <div style={{ width: 28, height: 28, borderRadius: 14, background: tokens['--clay'] }} title="Accent" />
+            <div style={{ width: 28, height: 28, borderRadius: 14, background: tokens['--ink-soft'] }} title="Soft text" />
+            <div style={{ width: 28, height: 28, borderRadius: 14, background: tokens['--cream-3'] }} title="Border" />
+          </div>
+        </div>
+        <div style={{ marginTop: 10, display: 'flex', gap: 6 }}>
+          <div style={{ flex: 1, height: 6, borderRadius: 3, background: tokens['--clay'] }} />
+          <div style={{ flex: 2, height: 6, borderRadius: 3, background: tokens['--cream-2'] }} />
+          <div style={{ flex: 1, height: 6, borderRadius: 3, background: tokens['--ink-muted'] }} />
+        </div>
+      </div>
+
+      {error && <div style={{ fontSize: 12, color: 'var(--danger, #a83a22)', marginTop: 10 }}>{error}</div>}
+
+      <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+        <button onClick={onCancel}
+          style={{ background: 'transparent', border: '1px solid var(--hairline)', padding: '7px 14px', borderRadius: 'var(--r-pill)', fontSize: 12.5, cursor: 'pointer', color: 'var(--ink)' }}>
+          Cancel
+        </button>
+        <button onClick={onSave} disabled={saving}
+          style={{ background: 'var(--clay)', color: '#fff', border: 'none', padding: '7px 18px', borderRadius: 'var(--r-pill)', fontSize: 12.5, fontWeight: 500, cursor: saving ? 'wait' : 'pointer', opacity: saving ? 0.6 : 1 }}>
+          {saving ? 'Saving…' : editingId ? 'Update palette' : 'Save palette'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={FIELD_LABEL}>{label}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {/* Native colour picker — shows the system colour wheel */}
+        <input
+          type="color"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          style={{ width: 36, height: 36, padding: 2, border: '1px solid var(--hairline)', borderRadius: 'var(--r-2)', cursor: 'pointer', background: 'transparent' }}
+        />
+        {/* Hex text input */}
+        <input
+          type="text"
+          value={value}
+          maxLength={7}
+          onChange={e => {
+            const v = e.target.value;
+            if (/^#[0-9a-fA-F]{0,6}$/.test(v)) onChange(v);
+          }}
+          style={{ width: 80, padding: '6px 8px', fontSize: 12, fontFamily: 'var(--mono)', border: '1px solid var(--hairline)', borderRadius: 'var(--r-2)', background: 'var(--cream)', color: 'var(--ink)', outline: 'none' }}
+        />
+      </div>
+    </div>
+  );
+}

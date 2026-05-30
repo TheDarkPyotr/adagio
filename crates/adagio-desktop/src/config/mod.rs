@@ -27,6 +27,24 @@ pub struct SavedConfig {
     /// Network awareness policy (metered/battery/SSID rules). Default = all Allow.
     #[serde(default)]
     pub network_policy: NetworkPolicy,
+    /// User-defined custom color palettes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub custom_palettes: Vec<CustomPaletteEntry>,
+}
+
+/// A user-defined colour palette stored alongside built-in themes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomPaletteEntry {
+    /// Unique identifier, e.g. `"custom-my-theme"`.
+    pub id: String,
+    /// Human-readable name chosen by the user.
+    pub name: String,
+    /// Background colour as a CSS hex string, e.g. `"#f5f1ea"`.
+    pub cream: String,
+    /// Text colour as a CSS hex string.
+    pub ink: String,
+    /// Accent / action colour as a CSS hex string.
+    pub accent: String,
 }
 
 /// A Nextcloud account as persisted on disk.
