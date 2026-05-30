@@ -335,3 +335,24 @@ export const listenDaemonConnectionState = (
   listen<{ state: string; attempt?: number }>('adagio://daemon-connection-state', (e) =>
     cb(e.payload as { state: 'connected' | 'reconnecting' | 'stopped' | 'failed'; attempt?: number }),
   );
+
+// ── VFS (on-demand files) ─────────────────────────────────────────────────────
+
+export interface VfsStatsDto {
+  pair_id: string;
+  cloud_only_count: number;
+  locally_available_count: number;
+  pinned_count: number;
+  cached_bytes: number;
+  cache_max_bytes: number;
+  last_eviction_at: string | null;
+}
+
+export const getVfsStats = (pairId: string): Promise<VfsStatsDto> =>
+  invoke('get_vfs_stats', { pairId });
+
+export const setVfsPin = (pairId: string, path: string, pinned: boolean): Promise<void> =>
+  invoke('set_vfs_pin', { pairId, path, pinned });
+
+export const evictVfsFile = (pairId: string, path: string): Promise<void> =>
+  invoke('evict_vfs_file', { pairId, path });

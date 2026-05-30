@@ -375,6 +375,9 @@ mod tests {
             exclude_patterns: vec![],
             bulk_upload_workers: 8,
             bulk_upload_chunk_threshold_bytes: 10 * 1024 * 1024,
+            vfs_enabled: false,
+            vfs_cache_max_bytes: 20 * 1024 * 1024 * 1024,
+            vfs_eviction_threshold_bytes: 5 * 1024 * 1024 * 1024,
             bulk_upload_threshold_files: 50,
         });
         save_config(&config_path, &cfg).unwrap();

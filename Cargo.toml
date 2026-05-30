@@ -6,6 +6,7 @@ members = [
     "crates/adagio-ipc",
     "crates/adagio-daemon",
     "crates/adagio-cli",
+    "crates/adagio-vfs",
 ]
 resolver = "2"
 

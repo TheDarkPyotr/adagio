@@ -73,6 +73,49 @@ pub enum Commands {
         #[command(subcommand)]
         command: NetworkCommand,
     },
+    /// Manage VFS (on-demand files) for a sync pair.
+    Vfs {
+        #[command(subcommand)]
+        command: VfsCommand,
+    },
+}
+
+/// Subcommands for `adagio vfs`.
+#[derive(Subcommand, Debug)]
+pub enum VfsCommand {
+    /// Show VFS cache statistics for one or all pairs.
+    Status {
+        /// Show stats for a specific pair ID (omit for all pairs).
+        #[arg(long)]
+        pair_id: Option<String>,
+    },
+    /// Pin a path for offline access (downloads content immediately).
+    Pin {
+        /// File or directory path to pin.
+        path: String,
+        /// Pair ID (required).
+        #[arg(long)]
+        pair_id: Option<String>,
+    },
+    /// Unpin a path (content may still be cached but is now evictable).
+    Unpin {
+        /// File or directory path to unpin.
+        path: String,
+        /// Pair ID (required).
+        #[arg(long)]
+        pair_id: Option<String>,
+    },
+    /// Evict local content, returning file(s) to cloud-only state.
+    Evict {
+        /// File or directory path to evict (omit with --all to evict everything).
+        path: Option<String>,
+        /// Pair ID (required).
+        #[arg(long)]
+        pair_id: Option<String>,
+        /// Evict all locally-available content for the pair.
+        #[arg(long)]
+        all: bool,
+    },
 }
 
 /// Subcommands for `adagio network`.

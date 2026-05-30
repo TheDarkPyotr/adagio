@@ -8,3 +8,4 @@ pub mod pairs;
 pub mod pause_resume;
 pub mod status;
 pub mod sync;
+pub mod vfs;

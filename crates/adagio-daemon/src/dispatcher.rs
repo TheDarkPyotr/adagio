@@ -191,6 +191,9 @@ pub async fn dispatch(req: DaemonRequest, state: &DaemonProcess) -> Result<Daemo
                 bulk_upload_workers: 8,
                 bulk_upload_threshold_files: 50,
                 bulk_upload_chunk_threshold_bytes: 10 * 1024 * 1024,
+                vfs_enabled: false,
+                vfs_cache_max_bytes: 20 * 1024 * 1024 * 1024,
+                vfs_eviction_threshold_bytes: 5 * 1024 * 1024 * 1024,
             };
             let dto = serde_json::json!({
                 "id": pair.id.to_string(),
@@ -677,6 +680,73 @@ pub async fn dispatch(req: DaemonRequest, state: &DaemonProcess) -> Result<Daemo
                 }
                 other => Err(format!("unknown action: {other}")),
             }
+        }
+
+        // ── VFS (on-demand files) ─────────────────────────────────────────────
+        DaemonRequest::GetVfsStats { pair_id } => {
+            use adagio_core::types::PairId;
+            use adagio_core::vfs::get_vfs_stats;
+            let pid = PairId(pair_id);
+            let pairs = state.pairs.read().await;
+            let pair = pairs
+                .get_pair(&pid)
+                .cloned()
+                .ok_or_else(|| format!("pair {pid} not found"))?;
+            drop(pairs);
+            let stats = get_vfs_stats(&state.journal, &pair).await;
+            Ok(DaemonResponse::Status(
+                serde_json::to_value(&stats).unwrap_or_default(),
+            ))
+        }
+
+        DaemonRequest::SetVfsPin {
+            pair_id,
+            path,
+            pinned,
+        } => {
+            use adagio_core::types::PairId;
+            use chrono::Utc;
+            let pid = PairId(pair_id);
+            if pinned {
+                state
+                    .journal
+                    .pin_path(&pid, &path, Utc::now())
+                    .await
+                    .map_err(|e| e.to_string())?;
+            } else {
+                state
+                    .journal
+                    .unpin_path(&pid, &path)
+                    .await
+                    .map_err(|e| e.to_string())?;
+            }
+            Ok(DaemonResponse::Unit {})
+        }
+
+        DaemonRequest::EvictVfsFile { pair_id, path } => {
+            use adagio_core::types::PairId;
+            use adagio_core::vfs::types::{VfsCacheEntry, VfsState};
+            let pid = PairId(pair_id);
+            // Guard: pinned paths cannot be evicted.
+            if state
+                .journal
+                .is_path_pinned(&pid, &path)
+                .await
+                .unwrap_or(false)
+            {
+                return Err("path is pinned — unpin before evicting".to_string());
+            }
+            // Set state to cloud_only and zero cache_bytes.
+            if let Ok(Some(mut entry)) = state.journal.get_vfs_entry(&pid, &path).await {
+                entry.state = VfsState::CloudOnly;
+                entry.cache_bytes = 0;
+                state
+                    .journal
+                    .upsert_vfs_entry(&entry)
+                    .await
+                    .map_err(|e| e.to_string())?;
+            }
+            Ok(DaemonResponse::Unit {})
         }
     }
 }

@@ -4,8 +4,8 @@ use tauri::State;
 use tracing::{info, instrument};
 
 const BUILTIN_PALETTES: &[&str] = &[
-    "sienna", "slate", "bone", "ink", "plum", "azure", "iris", "citron",
-    "forest", "rose", "midnight", "carbon",
+    "sienna", "slate", "bone", "ink", "plum", "azure", "iris", "citron", "forest", "rose",
+    "midnight", "carbon",
 ];
 
 // ── Built-in palette commands ─────────────────────────────────────────────────
@@ -40,7 +40,9 @@ pub async fn set_palette(state: State<'_, AppState>, name: String) -> Result<(),
 
 /// List all user-defined custom palettes.
 #[tauri::command]
-pub async fn list_custom_palettes(state: State<'_, AppState>) -> Result<Vec<CustomPaletteEntry>, String> {
+pub async fn list_custom_palettes(
+    state: State<'_, AppState>,
+) -> Result<Vec<CustomPaletteEntry>, String> {
     let cfg = load_config(&state.config_path);
     Ok(cfg.custom_palettes)
 }
@@ -95,10 +97,7 @@ pub async fn save_custom_palette(
 
 /// Delete a custom palette. If it was the active palette, clears the selection.
 #[tauri::command]
-pub async fn delete_custom_palette(
-    state: State<'_, AppState>,
-    id: String,
-) -> Result<(), String> {
+pub async fn delete_custom_palette(state: State<'_, AppState>, id: String) -> Result<(), String> {
     let mut cfg = load_config(&state.config_path);
     cfg.custom_palettes.retain(|p| p.id != id);
     // Clear active palette if it was the deleted one.

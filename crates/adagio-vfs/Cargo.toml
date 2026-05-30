@@ -1,0 +1,44 @@
+[package]
+name = "adagio-vfs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Adagio VFS — on-demand virtual filesystem drivers (FUSE3 / FileProvider / CfApi)"
+
+[lib]
+name = "adagio_vfs"
+path = "src/lib.rs"
+
+[dependencies]
+adagio-core = { path = "../adagio-core" }
+async-trait = { workspace = true }
+tokio = { workspace = true }
+bytes = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }
+
+# Linux: FUSE3
+[target.'cfg(target_os = "linux")'.dependencies]
+fuse3 = { version = "0.7", features = ["tokio-runtime"], optional = true }
+
+# macOS: FileProvider
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-file-provider = { version = "0.3", optional = true }
+
+# Windows: Cloud Files API (cloud-filter is a safe CfApi wrapper)
+[target.'cfg(windows)'.dependencies]
+cloud-filter = { version = "0.0.6", optional = true }
+
+[features]
+default = []
+linux-fuse = ["fuse3"]
+macos-fileprovider = ["objc2-file-provider"]
+windows-cfapi = ["cloud-filter"]
+
+[dev-dependencies]
+tokio = { workspace = true }
+tempfile = "3"

@@ -197,6 +197,15 @@ pub struct SyncPair {
     /// File size in bytes above which chunked multipart upload is used (default: 10 MiB).
     #[serde(default = "default_bulk_upload_chunk_threshold_bytes")]
     pub bulk_upload_chunk_threshold_bytes: u64,
+    /// Enable VFS (on-demand files) mode for this pair. Default: false (copy sync).
+    #[serde(default)]
+    pub vfs_enabled: bool,
+    /// Maximum bytes of locally-cached VFS content (default: 20 GiB; 0 = unlimited).
+    #[serde(default = "default_vfs_cache_max_bytes")]
+    pub vfs_cache_max_bytes: u64,
+    /// Auto-evict locally-available files when free disk falls below this threshold (default: 5 GiB).
+    #[serde(default = "default_vfs_eviction_threshold_bytes")]
+    pub vfs_eviction_threshold_bytes: u64,
 }
 
 fn default_conflict_policy() -> ConflictPolicy {
@@ -210,6 +219,12 @@ fn default_bulk_upload_threshold_files() -> u32 {
 }
 fn default_bulk_upload_chunk_threshold_bytes() -> u64 {
     10 * 1024 * 1024 // 10 MiB
+}
+fn default_vfs_cache_max_bytes() -> u64 {
+    20 * 1024 * 1024 * 1024 // 20 GiB
+}
+fn default_vfs_eviction_threshold_bytes() -> u64 {
+    5 * 1024 * 1024 * 1024 // 5 GiB free-disk minimum
 }
 
 fn default_scan_interval_secs() -> u64 {

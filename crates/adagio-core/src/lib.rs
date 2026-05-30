@@ -14,6 +14,7 @@ pub mod remote;
 pub mod telemetry;
 pub mod transfer;
 pub mod types;
+pub mod vfs;
 
 pub use config::AppConfig;
 pub use error::{ClientError, DetectorError, JournalError, SyncError, TransferError};

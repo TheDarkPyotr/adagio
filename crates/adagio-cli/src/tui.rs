@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use adagio_ipc::{DaemonClient, DaemonRequest};
 
-use crate::output::{bold, cyan, dim, format_uptime, green, red, shorten_path, status_icon, yellow};
+use crate::output::{
+    bold, cyan, dim, format_uptime, green, red, shorten_path, status_icon, yellow,
+};
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -28,9 +30,9 @@ pub async fn run_dashboard(client: Arc<DaemonClient>) {
     // ── Engine status ─────────────────────────────────────────────────────────
     let (engine_icon, engine_label) = match engine.as_str() {
         "syncing" => (cyan("⟳"), cyan("syncing")),
-        "paused"  => (yellow("⏸"), yellow("paused")),
-        "error"   => (red("✗"), red("error")),
-        _         => (green("✓"), dim("idle")),
+        "paused" => (yellow("⏸"), yellow("paused")),
+        "error" => (red("✗"), red("error")),
+        _ => (green("✓"), dim("idle")),
     };
     let uptime_s = if uptime > 0 {
         format!("  {}", dim(&format!("daemon up {}", format_uptime(uptime))))
@@ -43,18 +45,21 @@ pub async fn run_dashboard(client: Arc<DaemonClient>) {
     // ── Pairs ─────────────────────────────────────────────────────────────────
     if pairs.is_empty() {
         println!("  {}", dim("No sync pairs configured."));
-        println!("  {}", dim("Add one with: adagio pairs add --local <dir> --remote <path> --account <id>"));
+        println!(
+            "  {}",
+            dim("Add one with: adagio pairs add --local <dir> --remote <path> --account <id>")
+        );
     } else {
         for pair in &pairs {
-            let icon  = status_icon(&engine);
-            let root  = shorten_path(&pair.local_root, 48);
+            let icon = status_icon(&engine);
+            let root = shorten_path(&pair.local_root, 48);
             let arrow = dim("→");
-            let dest  = dim(&pair.remote_root);
+            let dest = dim(&pair.remote_root);
             let colored_icon = match engine.as_str() {
                 "syncing" => cyan(icon),
-                "paused"  => yellow(icon),
-                "error"   => red(icon),
-                _         => green(icon),
+                "paused" => yellow(icon),
+                "error" => red(icon),
+                _ => green(icon),
             };
             println!("  {colored_icon}  {root}  {arrow}  {dest}");
         }
@@ -63,11 +68,11 @@ pub async fn run_dashboard(client: Arc<DaemonClient>) {
 
     // ── Hints ─────────────────────────────────────────────────────────────────
     let hints = [
-        ("adagio sync",           "trigger sync now"),
-        ("adagio status",         "engine status"),
-        ("adagio activity",       "recent activity"),
-        ("adagio pairs list",     "manage pairs"),
-        ("adagio --help",         "all commands"),
+        ("adagio sync", "trigger sync now"),
+        ("adagio status", "engine status"),
+        ("adagio activity", "recent activity"),
+        ("adagio pairs list", "manage pairs"),
+        ("adagio --help", "all commands"),
     ];
     for (cmd, desc) in hints {
         println!("  {}  {}", dim(&format!("{cmd:<24}")), dim(desc));
@@ -109,7 +114,11 @@ async fn fetch_account(client: &Arc<DaemonClient>) -> String {
                 .trim_start_matches("https://")
                 .trim_start_matches("http://")
                 .to_string();
-            if name.is_empty() { url } else { format!("{name} @ {url}") }
+            if name.is_empty() {
+                url
+            } else {
+                format!("{name} @ {url}")
+            }
         })
         .unwrap_or_default()
 }
@@ -128,7 +137,7 @@ async fn fetch_pairs(client: &Arc<DaemonClient>) -> Vec<PairInfo> {
         .unwrap_or_default()
         .iter()
         .map(|p| PairInfo {
-            local_root:  p["local_root"].as_str().unwrap_or("?").to_string(),
+            local_root: p["local_root"].as_str().unwrap_or("?").to_string(),
             remote_root: p["remote_root"].as_str().unwrap_or("/").to_string(),
         })
         .collect()

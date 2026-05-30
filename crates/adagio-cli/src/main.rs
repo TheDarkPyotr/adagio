@@ -27,9 +27,13 @@ async fn connect_to_daemon() -> Result<Arc<DaemonClient>, CliError> {
             .parent()
             .ok_or_else(|| CliError::Unreachable("cannot find daemon binary".into()))?;
         #[cfg(windows)]
-        { parent.join("adagio-daemon.exe") }
+        {
+            parent.join("adagio-daemon.exe")
+        }
         #[cfg(not(windows))]
-        { parent.join("adagio-daemon") }
+        {
+            parent.join("adagio-daemon")
+        }
     };
 
     DaemonClient::connect_or_start(&daemon_path)

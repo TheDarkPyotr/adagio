@@ -131,6 +131,18 @@ pub enum DaemonRequest {
         action: String,
         ssid: Option<String>,
     },
+
+    // ── VFS (on-demand files) ─────────────────────────────────────────────────
+    /// Return VFS cache statistics for a pair.
+    GetVfsStats { pair_id: String },
+    /// Pin or unpin a path for offline access (`pinned: true` = pin).
+    SetVfsPin {
+        pair_id: String,
+        path: String,
+        pinned: bool,
+    },
+    /// Evict a locally-available file or directory tree.
+    EvictVfsFile { pair_id: String, path: String },
 }
 
 // ── Response (daemon → client) ────────────────────────────────────────────────

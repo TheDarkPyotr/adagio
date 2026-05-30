@@ -39,6 +39,7 @@ pub async fn run(cli: &Cli, client: Arc<DaemonClient>) -> Result<(), CliError> {
         Some(Commands::Network { command }) => {
             handlers::network::run_network(&client, command, cli.json).await
         }
+        Some(Commands::Vfs { command }) => handlers::vfs::run_vfs(&client, command, cli.json).await,
     }
 }
 

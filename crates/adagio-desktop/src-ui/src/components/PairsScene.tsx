@@ -229,8 +229,15 @@ function PairRow({ pair, syncing, syncElapsed, lastDuration, deleting, onSync, o
             <Icon name="arrow-r" size={12} color="var(--ink-muted)" />
             <PathChip label={pair.remote_root} cloud />
           </div>
-          <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink-muted)', letterSpacing: '0.08em' }}>
-            {pair.id.slice(0, 8)}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink-muted)', letterSpacing: '0.08em' }}>
+              {pair.id.slice(0, 8)}
+            </div>
+            {(pair as any).vfs_enabled && (
+              <div style={{ fontSize: 10, fontFamily: 'var(--mono)', background: 'var(--clay)', color: '#fff', borderRadius: 3, padding: '1px 5px', letterSpacing: '0.06em' }}>
+                VFS
+              </div>
+            )}
           </div>
         </div>
 

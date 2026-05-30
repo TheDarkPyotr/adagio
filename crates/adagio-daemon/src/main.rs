@@ -313,6 +313,13 @@ fn restore_pairs(manager: &mut SyncPairManager, saved: &serde_json::Value) {
                 bulk_upload_chunk_threshold_bytes: p["bulk_upload_chunk_threshold_bytes"]
                     .as_u64()
                     .unwrap_or(10 * 1024 * 1024),
+                vfs_enabled: p["vfs_enabled"].as_bool().unwrap_or(false),
+                vfs_cache_max_bytes: p["vfs_cache_max_bytes"]
+                    .as_u64()
+                    .unwrap_or(20 * 1024 * 1024 * 1024),
+                vfs_eviction_threshold_bytes: p["vfs_eviction_threshold_bytes"]
+                    .as_u64()
+                    .unwrap_or(5 * 1024 * 1024 * 1024),
             };
             manager.register_full_pair(pair);
         }

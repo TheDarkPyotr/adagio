@@ -7,3 +7,4 @@ pub mod pair;
 pub mod prefs;
 pub mod sharing;
 pub mod sync;
+pub mod vfs;

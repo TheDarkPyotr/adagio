@@ -97,6 +97,15 @@ pub struct SavedPair {
     /// File size in bytes above which chunked upload is used (default: 10 MiB).
     #[serde(default = "default_bulk_upload_chunk_threshold_bytes")]
     pub bulk_upload_chunk_threshold_bytes: u64,
+    /// Enable VFS (on-demand files) mode for this pair (default: false).
+    #[serde(default)]
+    pub vfs_enabled: bool,
+    /// Maximum bytes of cached VFS content (default: 20 GiB; 0 = unlimited).
+    #[serde(default = "default_vfs_cache_max_bytes")]
+    pub vfs_cache_max_bytes: u64,
+    /// Auto-eviction threshold: free disk minimum in bytes (default: 5 GiB).
+    #[serde(default = "default_vfs_eviction_threshold_bytes")]
+    pub vfs_eviction_threshold_bytes: u64,
 }
 
 fn default_scan_interval() -> u64 {
@@ -113,6 +122,12 @@ fn default_bulk_upload_threshold_files() -> u32 {
 }
 fn default_bulk_upload_chunk_threshold_bytes() -> u64 {
     10 * 1024 * 1024
+}
+fn default_vfs_cache_max_bytes() -> u64 {
+    20 * 1024 * 1024 * 1024
+}
+fn default_vfs_eviction_threshold_bytes() -> u64 {
+    5 * 1024 * 1024 * 1024
 }
 fn default_concurrency() -> usize {
     3
@@ -210,6 +225,9 @@ mod tests {
             bulk_upload_workers: 8,
             bulk_upload_threshold_files: 50,
             bulk_upload_chunk_threshold_bytes: 10 * 1024 * 1024,
+            vfs_enabled: false,
+            vfs_cache_max_bytes: 20 * 1024 * 1024 * 1024,
+            vfs_eviction_threshold_bytes: 5 * 1024 * 1024 * 1024,
         }
     }
 
@@ -236,6 +254,7 @@ mod tests {
             pairs: vec![make_pair("pair-1", "acc-1")],
             palette: None,
             network_policy: Default::default(),
+            custom_palettes: vec![],
         };
         save_config(&path, &cfg).unwrap();
         let loaded = load_config(&path);
@@ -287,6 +306,7 @@ mod tests {
             pairs: vec![],
             palette: None,
             network_policy: Default::default(),
+            custom_palettes: vec![],
         };
         save_config(&path, &cfg).unwrap();
         let raw = fs::read_to_string(&path).unwrap();
