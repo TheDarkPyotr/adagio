@@ -384,6 +384,7 @@ impl DefaultSyncEngine {
         conflict_tx: Option<tokio::sync::mpsc::Sender<()>>,
     ) {
         let pair_id = pair.id.clone();
+
         let sampler = self.memory_sampler.clone();
         let runner = PairRunner::spawn(Arc::new(pair), client, journal, conflict_tx, sampler);
         let mut runners = self.runners.write().await;
@@ -391,6 +392,44 @@ impl DefaultSyncEngine {
             old.stop();
         }
         runners.insert(pair_id, runner);
+    }
+
+    /// Start a VFS-mode pair runner (metadata-only, no content downloads).
+    ///
+    /// Called by the daemon when `pair.vfs_enabled = true`. Uses `SqliteJournal`
+    /// directly for VFS extension methods. Copy-sync pairs remain unaffected
+    /// (they use `start_pair` instead).
+    pub fn start_vfs_pair(
+        &self,
+        pair: SyncPair,
+        client: Arc<dyn RemoteClient>,
+        journal: Arc<crate::journal::sqlite::SqliteJournal>,
+        provider: Arc<dyn crate::vfs::VfsProvider>,
+    ) {
+        use crate::vfs::VfsPairRunner;
+
+        let pair_id = pair.id.clone();
+        let vfs_runner = Arc::new(VfsPairRunner::new(pair, client, journal, provider));
+        let pair_id_str = pair_id.0.clone();
+
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(std::time::Duration::from_secs(7200));
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            ticker.tick().await; // consume immediate first tick
+
+            // Run first metadata sync on startup.
+            if let Err(e) = vfs_runner.run_metadata_sync().await {
+                tracing::warn!(pair_id = %pair_id_str, error = %e, "VFS metadata sync failed");
+            }
+
+            loop {
+                ticker.tick().await;
+                if let Err(e) = vfs_runner.run_metadata_sync().await {
+                    tracing::warn!(pair_id = %pair_id_str, error = %e, "VFS metadata sync failed");
+                }
+            }
+        });
+        tracing::info!(pair_id = %pair_id, "VFS pair runner started");
     }
 
     /// Stop and remove the runner for `pair_id`.

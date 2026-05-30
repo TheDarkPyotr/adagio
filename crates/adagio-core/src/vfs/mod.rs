@@ -10,6 +10,7 @@ use tracing::{debug, info, warn};
 
 use crate::detection::remote::fetch_remote_snapshot;
 use crate::journal::sqlite::SqliteJournal;
+use crate::journal::Journal as _;
 use crate::remote::RemoteClient;
 use crate::types::{PairId, RelativePath, RemotePath, SyncPair};
 
@@ -208,6 +209,189 @@ pub async fn evict_lru(
     freed
 }
 
+// ── Pin path ─────────────────────────────────────────────────────────────────
+
+/// Pin a path (file or directory prefix) and enqueue all matching cloud-only
+/// files for immediate background download.
+///
+/// Returns the number of files enqueued for download.
+pub async fn pin_path(
+    pair_id: &PairId,
+    path: &str,
+    journal: Arc<SqliteJournal>,
+    client: Arc<dyn RemoteClient>,
+    pair: &SyncPair,
+    provider: Arc<dyn VfsProvider>,
+) -> Result<usize, crate::error::SyncError> {
+    // Persist the pin row.
+    journal
+        .pin_path(pair_id, path, Utc::now())
+        .await
+        .map_err(|e| crate::error::SyncError::Permanent(e.to_string()))?;
+
+    // Find all cloud-only entries under this path.
+    let all = journal
+        .all_vfs_entries(pair_id)
+        .await
+        .map_err(|e| crate::error::SyncError::Permanent(e.to_string()))?;
+
+    let to_pin: Vec<VfsCacheEntry> = all
+        .into_iter()
+        .filter(|e| {
+            e.state == VfsState::CloudOnly
+                && (e.path.as_str() == path || e.path.as_str().starts_with(&format!("{path}/")))
+        })
+        .collect();
+
+    let count = to_pin.len();
+    if count == 0 {
+        return Ok(0);
+    }
+
+    info!(pair_id = %pair_id, count = count, path = path, "pinning paths");
+
+    // Spawn background download task.
+    let remote_root = RemotePath::new(pair.remote_root.as_str());
+    let local_root = pair.local_root.clone();
+    tokio::spawn(async move {
+        for entry in to_pin {
+            let local_path = crate::types::LocalPath::new(local_root.0.join(entry.path.as_str()));
+            let remote_path = RemotePath::new(&format!(
+                "{}/{}",
+                remote_root.as_str().trim_end_matches('/'),
+                entry.path.as_str()
+            ));
+            let (tx, _rx) = tokio::sync::mpsc::channel(8);
+            let download_result = crate::transfer::download::download_file(
+                &*client,
+                &remote_path,
+                &local_path,
+                None,
+                &Default::default(),
+                tx,
+                None,
+            )
+            .await;
+
+            let now = Utc::now();
+            let mut updated = entry.clone();
+            match download_result {
+                Ok(result) => {
+                    updated.state = VfsState::Pinned {
+                        cached_at: now,
+                        last_accessed: now,
+                    };
+                    updated.cache_bytes = result.size;
+                    let _ = journal.upsert_vfs_entry(&updated).await;
+                    let _ = provider.set_pinned(&entry.path).await;
+                    debug!(path = %entry.path, "pinned file downloaded");
+                }
+                Err(e) => {
+                    warn!(path = %entry.path, error = %e, "pin download failed");
+                }
+            }
+        }
+    });
+
+    Ok(count)
+}
+
+// ── Evict file ────────────────────────────────────────────────────────────────
+
+/// Evict a single file, removing its local content and setting state to cloud-only.
+///
+/// Returns `VfsError::PathIsPinned` if the file is pinned.
+pub async fn evict_file(
+    pair_id: &PairId,
+    path: &str,
+    journal: &SqliteJournal,
+    provider: &dyn VfsProvider,
+) -> Result<u64, VfsError> {
+    // Guard: pinned paths cannot be auto-evicted.
+    if journal.is_path_pinned(pair_id, path).await.unwrap_or(false) {
+        return Err(VfsError::PathIsPinned);
+    }
+
+    let entry = journal
+        .get_vfs_entry(pair_id, path)
+        .await
+        .map_err(|e| VfsError::Other(e.to_string()))?;
+
+    let freed = match entry {
+        Some(e) if e.cache_bytes > 0 => {
+            let freed = e.cache_bytes;
+            let updated = VfsCacheEntry {
+                state: VfsState::CloudOnly,
+                cache_bytes: 0,
+                ..e
+            };
+            journal
+                .upsert_vfs_entry(&updated)
+                .await
+                .map_err(|e| VfsError::Other(e.to_string()))?;
+            provider
+                .set_cloud_only(&updated.path)
+                .await
+                .unwrap_or_else(|e| warn!("set_cloud_only: {e}"));
+            freed
+        }
+        _ => 0,
+    };
+
+    Ok(freed)
+}
+
+// ── Convert copy-sync pair to VFS ─────────────────────────────────────────────
+
+/// Convert an existing copy-sync pair to VFS mode.
+///
+/// Reads all `Synced` journal entries and creates corresponding
+/// `locally_available` VFS cache entries — existing local files are not
+/// deleted or re-downloaded.
+pub async fn convert_to_vfs(
+    pair_id: &PairId,
+    journal: &SqliteJournal,
+    provider: &dyn VfsProvider,
+) -> Result<usize, crate::error::SyncError> {
+    let existing = journal
+        .all_entries(pair_id)
+        .await
+        .map_err(|e| crate::error::SyncError::Permanent(e.to_string()))?;
+
+    let now = Utc::now();
+    let mut converted = 0;
+
+    for entry in existing {
+        if entry.status != crate::types::SyncStatus::Synced {
+            continue;
+        }
+        let vfs_entry = VfsCacheEntry {
+            pair_id: pair_id.clone(),
+            path: entry.path.clone(),
+            remote_size: entry.size,
+            remote_etag: entry.etag.clone(),
+            remote_mtime: entry.mtime_remote.unwrap_or(now),
+            state: VfsState::LocallyAvailable {
+                cached_at: now,
+                last_accessed: now,
+            },
+            cache_bytes: entry.size,
+        };
+        journal
+            .upsert_vfs_entry(&vfs_entry)
+            .await
+            .map_err(|e| crate::error::SyncError::Permanent(e.to_string()))?;
+        provider
+            .set_locally_available(&entry.path)
+            .await
+            .unwrap_or_else(|e| warn!("set_locally_available during convert: {e}"));
+        converted += 1;
+    }
+
+    info!(pair_id = %pair_id, converted = converted, "pair converted from copy-sync to VFS");
+    Ok(converted)
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /// Return free bytes on the filesystem containing the process working directory.
@@ -231,6 +415,7 @@ pub fn free_disk_bytes() -> u64 {
 mod tests {
     use super::*;
     use crate::journal::sqlite::SqliteJournal;
+    use crate::journal::Journal as _;
     use crate::types::{AccountId, PairId, PairStatus};
     use async_trait::async_trait;
     use chrono::Utc;

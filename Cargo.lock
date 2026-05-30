@@ -57,6 +57,7 @@ dependencies = [
  "adagio-core",
  "adagio-ipc",
  "adagio-nextcloud",
+ "adagio-vfs",
  "anyhow",
  "chrono",
  "serde",

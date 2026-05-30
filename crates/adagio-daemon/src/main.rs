@@ -124,6 +124,12 @@ async fn main() -> anyhow::Result<()> {
 
             let client = build_nextcloud_client(&accounts, &pair).await;
             if let Some(client) = client {
+                if pair.vfs_enabled {
+                    // VFS pairs use the metadata-only runner (US5 coexistence).
+                    let provider = adagio_vfs::create_platform_provider();
+                    engine.start_vfs_pair(pair, Arc::new(client), journal.clone(), provider);
+                    continue;
+                }
                 engine
                     .start_pair(
                         pair,

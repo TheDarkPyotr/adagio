@@ -15,6 +15,7 @@ path = "src/main.rs"
 adagio-core = { path = "../adagio-core" }
 adagio-ipc = { path = "../adagio-ipc" }
 adagio-nextcloud = { path = "../adagio-nextcloud" }
+adagio-vfs = { path = "../adagio-vfs" }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 serde = { workspace = true }
