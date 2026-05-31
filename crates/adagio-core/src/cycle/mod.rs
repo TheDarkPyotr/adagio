@@ -91,9 +91,61 @@ pub struct ErrorItem {
 #[serde(rename_all = "snake_case")]
 pub enum EngineStatus {
     Idle,
-    Syncing { pair_id: PairId },
+    Syncing {
+        pair_id: PairId,
+    },
     Paused,
     Error(String),
+    /// Remote server returned 503 (maintenance mode). Sync pauses until the
+    /// server recovers; the next scheduled cycle will clear this status.
+    ServerMaintenance,
+    /// TCP/DNS connection to the server failed — server unreachable or network down.
+    ServerUnreachable,
+}
+
+/// Returns `true` when `e` indicates the remote is in maintenance mode (503).
+pub(crate) fn is_maintenance_error(e: &crate::error::SyncError) -> bool {
+    use crate::error::{ClientError, SyncError};
+    matches!(e, SyncError::Remote(ClientError::Maintenance))
+        || e.to_string().contains("server in maintenance mode")
+}
+
+/// Returns `true` when `e` is a transport-level connection failure (DNS / TCP).
+/// These are reqwest errors that occur before an HTTP response is received.
+pub(crate) fn is_connection_error(e: &crate::error::SyncError) -> bool {
+    e.to_string().contains("error sending request")
+}
+
+/// Classify `e`, update engine status, and emit an appropriate log line.
+pub(crate) fn report_sync_error(
+    e: &crate::error::SyncError,
+    pair_id: &str,
+    tx: &watch::Sender<EngineStatus>,
+) {
+    if is_maintenance_error(e) {
+        tracing::warn!(pair_id = %pair_id, "server in maintenance mode — sync paused");
+        let _ = tx.send(EngineStatus::ServerMaintenance);
+    } else if is_connection_error(e) {
+        tracing::warn!(pair_id = %pair_id, "server unreachable — sync will retry");
+        let _ = tx.send(EngineStatus::ServerUnreachable);
+    } else {
+        tracing::warn!(pair_id = %pair_id, error = %e, "sync failed");
+    }
+}
+
+/// On a successful sync, clear any server-error status back to Idle.
+pub(crate) fn clear_server_error_status(tx: &watch::Sender<EngineStatus>) {
+    let _ = tx.send_if_modified(|s| {
+        if matches!(
+            s,
+            EngineStatus::ServerMaintenance | EngineStatus::ServerUnreachable
+        ) {
+            *s = EngineStatus::Idle;
+            true
+        } else {
+            false
+        }
+    });
 }
 
 /// Drives sync cycles for all configured pairs.
@@ -386,7 +438,14 @@ impl DefaultSyncEngine {
         let pair_id = pair.id.clone();
 
         let sampler = self.memory_sampler.clone();
-        let runner = PairRunner::spawn(Arc::new(pair), client, journal, conflict_tx, sampler);
+        let runner = PairRunner::spawn(
+            Arc::new(pair),
+            client,
+            journal,
+            conflict_tx,
+            sampler,
+            Some(self.status_tx.clone()),
+        );
         let mut runners = self.runners.write().await;
         if let Some(old) = runners.remove(&pair_id) {
             old.stop();
@@ -407,12 +466,18 @@ impl DefaultSyncEngine {
         provider: Arc<dyn crate::vfs::VfsProvider>,
     ) {
         use crate::vfs::VfsPairRunner;
-        use tokio_util::sync::CancellationToken;
         use tokio::sync::mpsc;
+        use tokio_util::sync::CancellationToken;
 
         let pair_id = pair.id.clone();
-        let vfs_runner = Arc::new(VfsPairRunner::new(pair.clone(), client.clone(), journal.clone(), provider.clone()));
+        let vfs_runner = Arc::new(VfsPairRunner::new(
+            pair.clone(),
+            client.clone(),
+            journal.clone(),
+            provider.clone(),
+        ));
         let pair_id_str = pair_id.0.clone();
+        let status_tx = self.status_tx.clone();
 
         let cancel = CancellationToken::new();
         let (trigger_tx, mut trigger_rx) = mpsc::channel::<()>(1);
@@ -422,7 +487,10 @@ impl DefaultSyncEngine {
 
         let handle = tokio::spawn(async move {
             // Mount the FUSE filesystem before starting the sync loop.
-            let _mount_handle = match provider.mount(&mount_point, &pair, client, journal.clone()).await {
+            let _mount_handle = match provider
+                .mount(&mount_point, &pair, client, journal.clone())
+                .await
+            {
                 Ok(h) => {
                     tracing::info!(pair_id = %pair_id_str, mount = ?mount_point, "VFS filesystem mounted");
                     Some(h)
@@ -440,7 +508,7 @@ impl DefaultSyncEngine {
 
             // Run first metadata sync immediately on startup.
             if let Err(e) = vfs_runner.run_metadata_sync().await {
-                tracing::warn!(pair_id = %pair_id_str, error = %e, "VFS metadata sync failed");
+                report_sync_error(&e, &pair_id_str, &status_tx);
             }
 
             loop {
@@ -451,15 +519,17 @@ impl DefaultSyncEngine {
                         break;
                     }
                     _ = ticker.tick() => {
-                        if let Err(e) = vfs_runner.run_metadata_sync().await {
-                            tracing::warn!(pair_id = %pair_id_str, error = %e, "VFS metadata sync failed");
+                        match vfs_runner.run_metadata_sync().await {
+                            Ok(_) => { clear_server_error_status(&status_tx); }
+                            Err(e) => { report_sync_error(&e, &pair_id_str, &status_tx); }
                         }
                     }
                     Some(()) = trigger_rx.recv() => {
                         while trigger_rx.try_recv().is_ok() {}
                         tracing::info!(pair_id = %pair_id_str, "VFS metadata sync triggered");
-                        if let Err(e) = vfs_runner.run_metadata_sync().await {
-                            tracing::warn!(pair_id = %pair_id_str, error = %e, "VFS metadata sync failed");
+                        match vfs_runner.run_metadata_sync().await {
+                            Ok(_) => { clear_server_error_status(&status_tx); }
+                            Err(e) => { report_sync_error(&e, &pair_id_str, &status_tx); }
                         }
                     }
                 }
@@ -468,7 +538,10 @@ impl DefaultSyncEngine {
 
         // Register under runners so trigger_pair / stop_pair work for VFS pairs.
         let runner = crate::cycle::runner::PairRunner::from_parts(
-            pair_id.clone(), cancel, trigger_tx, handle,
+            pair_id.clone(),
+            cancel,
+            trigger_tx,
+            handle,
         );
         let runners = self.runners.clone();
         let pair_id_reg = pair_id.clone();
@@ -659,6 +732,8 @@ mod tests {
             vfs_enabled: false,
             vfs_cache_max_bytes: 20 * 1024 * 1024 * 1024,
             vfs_eviction_threshold_bytes: 5 * 1024 * 1024 * 1024,
+            e2ee_enabled: false,
+            e2ee_account_id: None,
         }
     }
 

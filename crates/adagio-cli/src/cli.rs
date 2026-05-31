@@ -78,6 +78,37 @@ pub enum Commands {
         #[command(subcommand)]
         command: VfsCommand,
     },
+    /// Manage end-to-end encryption for a sync pair.
+    E2ee {
+        #[command(subcommand)]
+        command: E2eeCommand,
+    },
+}
+
+/// Subcommands for `adagio e2ee`.
+#[derive(Subcommand, Debug)]
+pub enum E2eeCommand {
+    /// Initialise E2EE for a pair and print the one-time mnemonic.
+    Init {
+        /// Pair ID to enable E2EE on.
+        #[arg(long)]
+        pair_id: Option<String>,
+    },
+    /// Pair this device with an existing E2EE key using the mnemonic.
+    Pair {
+        /// Pair ID.
+        #[arg(long)]
+        pair_id: Option<String>,
+        /// 12-word BIP-39 mnemonic (prompted securely if omitted).
+        #[arg(long)]
+        mnemonic: Option<String>,
+    },
+    /// Show E2EE status for a pair.
+    Status {
+        /// Pair ID (omit for all E2EE-enabled pairs).
+        #[arg(long)]
+        pair_id: Option<String>,
+    },
 }
 
 /// Subcommands for `adagio vfs`.

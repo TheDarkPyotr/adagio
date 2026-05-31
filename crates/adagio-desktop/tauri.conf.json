@@ -40,5 +40,10 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "shell": {
+      "open": "^(https?://|mailto:|tel:|file://|/).+"
+    }
   }
 }

@@ -106,6 +106,12 @@ pub struct SavedPair {
     /// Auto-eviction threshold: free disk minimum in bytes (default: 5 GiB).
     #[serde(default = "default_vfs_eviction_threshold_bytes")]
     pub vfs_eviction_threshold_bytes: u64,
+    /// Enable E2EE (end-to-end encryption) for this pair (default: false).
+    #[serde(default)]
+    pub e2ee_enabled: bool,
+    /// Nextcloud account ID associated with the E2EE key pair.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub e2ee_account_id: Option<String>,
 }
 
 fn default_scan_interval() -> u64 {
@@ -228,6 +234,8 @@ mod tests {
             vfs_enabled: false,
             vfs_cache_max_bytes: 20 * 1024 * 1024 * 1024,
             vfs_eviction_threshold_bytes: 5 * 1024 * 1024 * 1024,
+            e2ee_enabled: false,
+            e2ee_account_id: None,
         }
     }
 

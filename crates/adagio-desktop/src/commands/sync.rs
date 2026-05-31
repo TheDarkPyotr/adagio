@@ -55,6 +55,33 @@ pub async fn get_activity_log(
         .map_err(|e| e.to_string())
 }
 
+/// Return sidebar section counts (total synced files, recently modified) for a pair.
+#[tauri::command]
+pub async fn get_section_counts(
+    state: State<'_, AppState>,
+    pair_id: Option<String>,
+) -> Result<serde_json::Value, String> {
+    state
+        .daemon
+        .request(DaemonRequest::GetSectionCounts { pair_id })
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Search synced file paths matching `query` across all pairs.
+#[tauri::command]
+pub async fn search_files(
+    state: State<'_, AppState>,
+    query: String,
+    limit: Option<u32>,
+) -> Result<serde_json::Value, String> {
+    state
+        .daemon
+        .request(DaemonRequest::SearchFiles { query, limit })
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Trigger an immediate sync cycle for a specific pair.
 #[tauri::command]
 pub async fn trigger_sync(state: State<'_, AppState>, pair_id: String) -> Result<(), String> {

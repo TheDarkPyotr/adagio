@@ -3,6 +3,7 @@ mod tests {
     use crate::journal::sqlite::SqliteJournal;
     use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
     use std::str::FromStr;
+    use tempfile::TempDir;
 
     async fn make_pool_memory() -> sqlx::SqlitePool {
         let opts = SqliteConnectOptions::from_str("sqlite::memory:")
@@ -44,6 +45,35 @@ mod tests {
         assert!(
             result.is_err(),
             "schema_check should detect missing journal_entries table"
+        );
+    }
+
+    // T011 — migration 004 (E2EE tables) runs cleanly on a fresh database.
+    #[tokio::test]
+    async fn migration_004_e2ee_tables_created() {
+        let dir = TempDir::new().unwrap();
+        let db_path = dir.path().join("test.db");
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(
+                SqliteConnectOptions::from_str(&format!("sqlite://{}?mode=rwc", db_path.display()))
+                    .unwrap()
+                    .journal_mode(SqliteJournalMode::Wal)
+                    .foreign_keys(true),
+            )
+            .await
+            .unwrap();
+        SqliteJournal::run_migrations(&pool).await.unwrap();
+        // Both E2EE tables must exist.
+        let count: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('e2ee_account_keys','e2ee_folder_state')"
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            count.0, 2,
+            "both E2EE tables must be created by migration 004"
         );
     }
 }

@@ -65,9 +65,51 @@ impl NextcloudClient {
         match status.as_u16() {
             401 | 403 => ClientError::AuthRequired,
             404 => ClientError::Permanent(format!("not found: {url}")),
+            503 => ClientError::Maintenance,
             s if s >= 500 => ClientError::Transient(format!("server error {s}: {url}")),
             s => ClientError::Permanent(format!("HTTP {s}: {url}")),
         }
+    }
+
+    /// Return the metadata (including `file_id`) for `path` itself using
+    /// `Depth: 0` — unlike `list()`, this always returns the folder entry even
+    /// when the directory is empty, giving us the numeric Nextcloud file ID.
+    ///
+    /// `user_agent_override`: when accessing E2EE-marked folders Nextcloud blocks
+    /// PROPFIND from non-E2EE user agents. Pass `Some("Mozilla/5.0 (Linux) mirall/…")`
+    /// to identify as an E2EE-capable client.
+    pub async fn stat(
+        &self,
+        path: &RemotePath,
+        user_agent_override: Option<&str>,
+    ) -> Result<Option<RemoteItem>, ClientError> {
+        let url = self.dav_url(path);
+        let (user, pass) = self.auth();
+        let mut req = self
+            .http
+            .request(reqwest::Method::from_bytes(b"PROPFIND").unwrap(), &url)
+            .basic_auth(&user, Some(&pass))
+            .header("Depth", "0")
+            .header(header::CONTENT_TYPE, "application/xml; charset=utf-8")
+            .body(propfind_body());
+        if let Some(agent) = user_agent_override {
+            req = req.header(header::USER_AGENT, agent);
+        }
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| ClientError::Transient(e.to_string()))?;
+
+        if !resp.status().is_success() && resp.status() != StatusCode::MULTI_STATUS {
+            return Err(Self::map_status(resp.status(), &url));
+        }
+
+        let body = resp
+            .bytes()
+            .await
+            .map_err(|e| ClientError::Transient(e.to_string()))?;
+        let items = parse_multistatus(&body, "")?;
+        Ok(items.into_iter().next())
     }
 }
 
@@ -103,6 +145,7 @@ impl RemoteClient for NextcloudClient {
         Ok(items)
     }
 
+    /// Return the metadata (including `file_id`) for `path` itself using
     #[instrument(err, skip(self), fields(path = %path))]
     async fn list_recursive(&self, path: &RemotePath) -> Result<Vec<RemoteItem>, ClientError> {
         let url = self.dav_url(path);

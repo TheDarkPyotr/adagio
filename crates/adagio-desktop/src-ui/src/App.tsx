@@ -10,7 +10,8 @@ import NewFileDialog from './components/NewFileDialog';
 import SettingsScene from './components/SettingsScene';
 import PairsScene from './components/PairsScene';
 import TrayPopover from './components/TrayPopover';
-import { listAccounts, listPairs, getStatus, getPalette, setPalette as ipcSetPalette, removeAccount, pauseSync, resumeSync, listConflicts, listenConflictDetected, listenConflictResolved, resolveConflict as ipcResolveConflict, dismissAllConflicts, listenDaemonConnectionState, startDaemon, listCustomPalettes } from './tauri';
+import { listAccounts, listPairs, getStatus, getPalette, setPalette as ipcSetPalette, removeAccount, pauseSync, resumeSync, listConflicts, listenConflictDetected, listenConflictResolved, resolveConflict as ipcResolveConflict, dismissAllConflicts, listenDaemonConnectionState, startDaemon, listCustomPalettes, getAccountAvatar, getSectionCounts } from './tauri';
+import type { FileSearchResult, SectionCounts } from './tauri';
 import { open as shellOpen } from '@tauri-apps/plugin-shell';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import useLocalMeta from './useLocalMeta';
@@ -32,6 +33,7 @@ export default function App() {
   const [tab, setTab] = useState<'files' | 'activity'>('files');
   const [source, setSource] = useState<Section>('all');
   const [accounts, setAccounts] = useState<AccountDto[]>([]);
+  const [avatarUrls, setAvatarUrls] = useState<Record<string, string>>({});
   const [activeAccountId, setActiveAccountId] = useState<string | null>(null);
   const [pairs, setPairs] = useState<PairDto[]>([]);
   const [syncStatus, setSyncStatus] = useState<SyncStatusDto | null>(null);
@@ -42,11 +44,14 @@ export default function App() {
   const [palette, setPalette] = useState('sienna');
   const [customPalettes, setCustomPalettes] = useState<CustomPaletteDto[]>([]);
   const [filePath, setFilePath] = useState('/');
+  const [highlightFile, setHighlightFile] = useState<string | null>(null);
   const [pendingConflicts, setPendingConflicts] = useState(0);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardConflicts, setWizardConflicts] = useState<ConflictDto[]>([]);
   const [daemonState, setDaemonState] = useState<'connected' | 'reconnecting' | 'stopped' | 'failed' | null>(null);
   const { favorites, allTaggedFiles, pathTags, toggleFavorite, addTag, removeTag } = useLocalMeta();
+  const [sectionCounts, setSectionCounts] = useState<SectionCounts>({ total: 0, recent: 0 });
+  const [sharedCount, setSharedCount] = useState(0);
 
   // Load accounts + pairs; called on mount and whenever the daemon connects.
   const loadInitialData = useCallback(async () => {
@@ -57,6 +62,12 @@ export default function App() {
         setAccounts(accs);
         setActiveAccountId(prev => prev ?? accs[0].id);
         setOnboarded(true);
+        // Fetch avatars in the background; failures fall back to initials.
+        accs.forEach(a => {
+          getAccountAvatar(a.id).then(url => {
+            if (url) setAvatarUrls(prev => ({ ...prev, [a.id]: url }));
+          }).catch(() => {});
+        });
       } else {
         // Only go to onboarding if we haven't already loaded accounts before
         setOnboarded(o => o === null ? false : o);
@@ -198,6 +209,21 @@ export default function App() {
 
   const [activePairId, setActivePairId] = useState<string | null>(null);
   const activePair = pairs.find(p => p.id === activePairId) ?? pairs[0] ?? null;
+
+  // Fetch sidebar counts whenever the active pair changes, then every 30 s.
+  React.useEffect(() => {
+    let cancelled = false;
+    const fetch = () => getSectionCounts(activePair?.id).then(c => { if (!cancelled) setSectionCounts(c); }).catch(() => {});
+    fetch();
+    const t = setInterval(fetch, 30_000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [activePair?.id]);
+
+  const handleSelectPair = useCallback((id: string) => {
+    setActivePairId(id);
+    setFilePath('/');
+    setHighlightFile(null);
+  }, []);
   const activeAccount = accounts.find(a => a.id === activeAccountId) ?? accounts[0] ?? null;
   const serverHost = activeAccount ? (() => { try { return new URL(activeAccount.server_url).hostname; } catch { return activeAccount.server_url; } })() : '';
 
@@ -208,6 +234,7 @@ export default function App() {
     host: (() => { try { return new URL(a.server_url).hostname; } catch { return a.server_url; } })(),
     initial: a.display_name?.trim().charAt(0).toUpperCase() ?? '?',
     color: ACCOUNT_COLORS[i % ACCOUNT_COLORS.length],
+    avatar_url: avatarUrls[a.id],
   }));
 
   const handleRemoveAccount = async (id: string) => {
@@ -249,7 +276,22 @@ export default function App() {
 
   return (
     <div style={{ width: '100%', height: '100vh', position: 'relative', overflow: 'hidden', borderRadius: 'inherit' }}>
-      <Chrome tab={view === 'main' ? tab : undefined} onTab={setTab} onSettings={() => setView('settings')} pendingConflicts={pendingConflicts} onOpenConflicts={handleOpenConflicts}>
+      <Chrome tab={view === 'main' ? tab : undefined} onTab={setTab} onSettings={() => setView('settings')} pendingConflicts={pendingConflicts} onOpenConflicts={handleOpenConflicts}
+        accountInitial={sidebarAccounts.find(a => a.id === (activeAccountId ?? sidebarAccounts[0]?.id))?.initial ?? '?'}
+        accountColor={sidebarAccounts.find(a => a.id === (activeAccountId ?? sidebarAccounts[0]?.id))?.color ?? 'var(--forest)'}
+        accountAvatarUrl={sidebarAccounts.find(a => a.id === (activeAccountId ?? sidebarAccounts[0]?.id))?.avatar_url}
+        onSearchResult={(r: FileSearchResult) => {
+          // Navigate to the pair, open the file's parent directory, and highlight the file.
+          const parts = r.path.split('/').filter(Boolean);
+          const parentPath = parts.length > 1 ? '/' + parts.slice(0, -1).join('/') : '/';
+          setActivePairId(r.pair_id);
+          setFilePath(parentPath);
+          setHighlightFile(r.filename);
+          setSource('all');
+          setView('main');
+          setTab('files');
+        }}
+      >
         {view === 'add-account' ? (
           <OnboardingWizard onComplete={handleAddAccountComplete} />
         ) : view === 'settings' ? (
@@ -281,18 +323,25 @@ export default function App() {
               onRemoveAccount={handleRemoveAccount}
               pairs={pairs}
               activePairId={activePair?.id ?? null}
-              onSelectPair={setActivePairId}
+              onSelectPair={handleSelectPair}
               syncStatus={syncStatus}
+              totalFiles={sectionCounts.total}
+              recentFiles={sectionCounts.recent}
+              favoriteFiles={favorites.size}
+              sharedFiles={sharedCount}
+              taggedFiles={allTaggedFiles.size}
             />
             {tab === 'files' ? (
               source === 'all' ? (
                 <FilesScene
                   pairId={activePair?.id ?? null}
                   isVfsPair={activePair?.vfs_enabled ?? false}
+                  isE2eePair={activePair?.e2ee_enabled ?? false}
                   localRoot={activePair?.local_root}
                   serverHost={serverHost}
                   currentPath={filePath}
-                  onPathChange={setFilePath}
+                  onPathChange={(p) => { setFilePath(p); setHighlightFile(null); }}
+                  highlightFile={highlightFile}
                   onShare={setShareTarget}
                   onNew={() => setNewFileOpen(true)}
                   syncStatus={syncStatus}
@@ -311,6 +360,7 @@ export default function App() {
                   onRemoveTag={removeTag}
                   onShare={setShareTarget}
                   onOpenFolder={path => { setFilePath(path); setSource('all'); }}
+                  onSharedCount={setSharedCount}
                 />
               )
             ) : (
@@ -320,7 +370,14 @@ export default function App() {
         )}
       </Chrome>
       {shareTarget && <ShareDialog path={shareTarget} onClose={() => setShareTarget(null)} />}
-      {newFileOpen && <NewFileDialog onClose={() => setNewFileOpen(false)} />}
+      {newFileOpen && (
+        <NewFileDialog
+          onClose={() => setNewFileOpen(false)}
+          onCreated={() => setNewFileOpen(false)}
+          localRoot={activePair?.local_root ?? ''}
+          currentPath={filePath}
+        />
+      )}
       {wizardOpen && wizardConflicts.length > 0 && (
         <ConflictWizard
           conflicts={wizardConflicts}

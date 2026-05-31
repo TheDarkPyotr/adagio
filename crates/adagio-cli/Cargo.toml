@@ -25,6 +25,7 @@ tracing = { workspace = true }
 chrono = { workspace = true }
 crossterm = "0.28"
 indicatif = "0.17"
+rpassword = "7"
 
 [dev-dependencies]
 tokio = { workspace = true }

@@ -95,7 +95,7 @@ impl<'a> BulkUploadDriver<'a> {
         remote_root: &RemotePath,
     ) -> BulkUploadResult {
         let pair_id = &self.pair.id;
-        let workers = self.pair.bulk_upload_workers.max(1).min(32) as usize;
+        let workers = self.pair.bulk_upload_workers.clamp(1, 32) as usize;
 
         // Load journal once to build skip sets.
         let existing = self.journal.all_entries(pair_id).await.unwrap_or_default();
@@ -110,7 +110,7 @@ impl<'a> BulkUploadDriver<'a> {
                 e.status == SyncStatus::Error
                     && e.error_message
                         .as_deref()
-                        .map_or(false, |m| m.starts_with("permanent error:"))
+                        .is_some_and(|m| m.starts_with("permanent error:"))
             })
             .map(|e| e.path.as_str().to_string())
             .collect();
@@ -176,7 +176,7 @@ impl<'a> BulkUploadDriver<'a> {
         opts: TransferOptions,
     ) -> BulkUploadResult {
         let local_file = LocalPath::new(local_root.0.join(path.as_str()));
-        let remote_file = RemotePath::new(&format!(
+        let remote_file = RemotePath::new(format!(
             "{}/{}",
             remote_root.as_str().trim_end_matches('/'),
             path.as_str()
@@ -344,6 +344,8 @@ mod tests {
             vfs_enabled: false,
             vfs_cache_max_bytes: 20 * 1024 * 1024 * 1024,
             vfs_eviction_threshold_bytes: 5 * 1024 * 1024 * 1024,
+            e2ee_enabled: false,
+            e2ee_account_id: None,
         }
     }
 

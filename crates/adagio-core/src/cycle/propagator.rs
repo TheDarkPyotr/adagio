@@ -1,4 +1,5 @@
 use crate::bandwidth::{ThroughputMeter, TokenBucket};
+use crate::e2ee::E2eePropagatorHook;
 use crate::error::{BackoffPolicy, TransferError};
 use crate::journal::Journal;
 use crate::remote::RemoteClient;
@@ -72,6 +73,9 @@ pub struct Propagator {
     pub upload_meter: Arc<std::sync::Mutex<ThroughputMeter>>,
     /// Rolling throughput meter for downloads (used by GetBandwidthStatus).
     pub download_meter: Arc<std::sync::Mutex<ThroughputMeter>>,
+    /// Optional E2EE hook. When set, uploads are encrypted and downloads are
+    /// decrypted transparently. `commit()` is called after all uploads complete.
+    e2ee: Option<Arc<dyn E2eePropagatorHook>>,
 }
 
 impl Default for Propagator {
@@ -93,6 +97,7 @@ impl Propagator {
             download_throttle: None,
             upload_meter: Arc::new(std::sync::Mutex::new(ThroughputMeter::new())),
             download_meter: Arc::new(std::sync::Mutex::new(ThroughputMeter::new())),
+            e2ee: None,
         }
     }
 
@@ -109,6 +114,7 @@ impl Propagator {
             download_throttle: None,
             upload_meter: Arc::new(std::sync::Mutex::new(ThroughputMeter::new())),
             download_meter: Arc::new(std::sync::Mutex::new(ThroughputMeter::new())),
+            e2ee: None,
         }
     }
 
@@ -125,6 +131,7 @@ impl Propagator {
             download_throttle: None,
             upload_meter: Arc::new(std::sync::Mutex::new(ThroughputMeter::new())),
             download_meter: Arc::new(std::sync::Mutex::new(ThroughputMeter::new())),
+            e2ee: None,
         }
     }
 
@@ -144,6 +151,7 @@ impl Propagator {
             download_throttle: None,
             upload_meter: Arc::new(std::sync::Mutex::new(ThroughputMeter::new())),
             download_meter: Arc::new(std::sync::Mutex::new(ThroughputMeter::new())),
+            e2ee: None,
         }
     }
 
@@ -168,6 +176,7 @@ impl Propagator {
             download_throttle: None,
             upload_meter: Arc::new(std::sync::Mutex::new(ThroughputMeter::new())),
             download_meter: Arc::new(std::sync::Mutex::new(ThroughputMeter::new())),
+            e2ee: None,
         }
     }
 
@@ -204,12 +213,19 @@ impl Propagator {
             download_throttle,
             upload_meter: Arc::new(std::sync::Mutex::new(ThroughputMeter::new())),
             download_meter: Arc::new(std::sync::Mutex::new(ThroughputMeter::new())),
+            e2ee: None,
         }
     }
 
     /// Return a handle to the pending-conflicts map (for wiring to the Tauri command).
     pub fn pending_conflicts(&self) -> Arc<DashMap<RelativePath, oneshot::Sender<ConflictSide>>> {
         self.pending_conflicts.clone()
+    }
+
+    /// Attach an E2EE hook so uploads are encrypted and downloads are decrypted.
+    pub fn with_e2ee(mut self, hook: Arc<dyn E2eePropagatorHook>) -> Self {
+        self.e2ee = Some(hook);
+        self
     }
 
     /// Signal `auth_required_tx` if it is set.
@@ -286,6 +302,9 @@ impl Propagator {
                     }
                     crate::error::ClientError::Transient(m) => TransferError::Transient(m),
                     crate::error::ClientError::Permanent(m) => TransferError::Permanent(m),
+                    crate::error::ClientError::Maintenance => {
+                        TransferError::Transient("server in maintenance mode".into())
+                    }
                 })
             }
         })
@@ -370,8 +389,42 @@ impl Propagator {
                 } => {
                     let _permit = self.upload_sem.acquire().await.unwrap();
                     let local_file = local_path_for(local_root, path);
-                    let remote_file = remote_path_for(remote_root, path);
                     let upload_throttle_clone = self.upload_throttle.clone();
+
+                    // If E2EE is active, encrypt the file content and use a UUID
+                    // as the remote filename.  The metadata commit happens after
+                    // all uploads in this cycle via `e2ee.commit()`.
+                    let remote_file = if let Some(e2ee) = &self.e2ee {
+                        let plaintext = match tokio::fs::read(&local_file.0).await {
+                            Ok(b) => b,
+                            Err(e) => {
+                                tracing::warn!(path = %path, error = %e, "e2ee: read local file failed");
+                                result.errors += 1;
+                                let _ = journal
+                                    .upsert(&journal_entry_error(pair_id, path, &e.to_string()))
+                                    .await;
+                                continue;
+                            }
+                        };
+                        let filename = path.as_str().rsplit('/').next().unwrap_or(path.as_str());
+                        let mime = mime_guess(filename);
+                        match e2ee.encrypt(pair_id, filename, &mime, &plaintext).await {
+                            Ok((_ciphertext, uuid, _entry_json)) => {
+                                remote_path_for(remote_root, &RelativePath::new(&uuid))
+                            }
+                            Err(e) => {
+                                tracing::warn!(path = %path, error = %e, "e2ee: encrypt failed");
+                                result.errors += 1;
+                                let _ = journal
+                                    .upsert(&journal_entry_error(pair_id, path, &e))
+                                    .await;
+                                continue;
+                            }
+                        }
+                    } else {
+                        remote_path_for(remote_root, path)
+                    };
+
                     let upload_res = self
                         .with_retry(|| {
                             let lf = local_file.clone();
@@ -385,7 +438,6 @@ impl Propagator {
                     match upload_res {
                         Ok(upload_result) => {
                             result.uploaded += 1;
-                            // Upload meter recording deferred — UploadResult does not carry size yet.
                             let mtime_local = tokio::fs::metadata(&local_file.0)
                                 .await
                                 .ok()
@@ -425,12 +477,23 @@ impl Propagator {
                 } => {
                     let _permit = self.download_sem.acquire().await.unwrap();
                     let local_file = local_path_for(local_root, path);
+                    // For E2EE pairs, `path` is the UUID-named server file; we
+                    // download to a temp path then decrypt into local_file.
                     let remote_file = remote_path_for(remote_root, path);
                     let download_throttle_clone = self.download_throttle.clone();
+
+                    // Use a temp file for E2EE downloads so we can decrypt after.
+                    let tmp_file = if self.e2ee.is_some() {
+                        let t = local_file.0.with_extension("e2ee_tmp");
+                        LocalPath::new(t)
+                    } else {
+                        local_file.clone()
+                    };
+
                     let dl_res = self
                         .with_retry(|| {
                             let rf = remote_file.clone();
-                            let lf = local_file.clone();
+                            let lf = tmp_file.clone();
                             let o = opts.clone();
                             let (tx, _rx) = mpsc::channel(8);
                             let throttle = download_throttle_clone.clone();
@@ -439,6 +502,50 @@ impl Propagator {
                         .await;
                     match dl_res {
                         Ok(dl) => {
+                            // Decrypt if E2EE is active.
+                            if let Some(e2ee) = &self.e2ee {
+                                let uuid =
+                                    path.as_str().rsplit('/').next().unwrap_or(path.as_str());
+                                match tokio::fs::read(&tmp_file.0).await {
+                                    Ok(ciphertext) => {
+                                        match e2ee.decrypt(pair_id, uuid, &ciphertext).await {
+                                            Ok(plaintext) => {
+                                                if let Some(parent) = local_file.0.parent() {
+                                                    let _ = tokio::fs::create_dir_all(parent).await;
+                                                }
+                                                if let Err(e) =
+                                                    tokio::fs::write(&local_file.0, &plaintext)
+                                                        .await
+                                                {
+                                                    tracing::warn!(path = %path, error = %e, "e2ee: write plaintext failed");
+                                                }
+                                                let _ = tokio::fs::remove_file(&tmp_file.0).await;
+                                            }
+                                            Err(e) => {
+                                                tracing::warn!(path = %path, error = %e, "e2ee: decrypt failed");
+                                                let _ = tokio::fs::remove_file(&tmp_file.0).await;
+                                                result.errors += 1;
+                                                let _ = journal
+                                                    .upsert(&journal_entry_error(pair_id, path, &e))
+                                                    .await;
+                                                continue;
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!(path = %path, error = %e, "e2ee: read ciphertext failed");
+                                        result.errors += 1;
+                                        let _ = journal
+                                            .upsert(&journal_entry_error(
+                                                pair_id,
+                                                path,
+                                                &e.to_string(),
+                                            ))
+                                            .await;
+                                        continue;
+                                    }
+                                }
+                            }
                             result.downloaded += 1;
                             if let Ok(mut m) = self.download_meter.lock() {
                                 m.record(dl.size);
@@ -697,8 +804,36 @@ impl Propagator {
             }
         }
 
+        // Flush accumulated E2EE metadata changes as one atomic server write.
+        if let Some(e2ee) = &self.e2ee {
+            if result.uploaded > 0 {
+                if let Err(e) = e2ee.commit(pair_id).await {
+                    tracing::warn!(pair_id = %pair_id, error = %e, "E2EE metadata commit failed");
+                }
+            }
+        }
+
         result
     }
+}
+
+/// Infer a basic MIME type from a filename extension for E2EE metadata.
+fn mime_guess(filename: &str) -> String {
+    let ext = filename.rsplit('.').next().unwrap_or("").to_lowercase();
+    match ext.as_str() {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "pdf" => "application/pdf",
+        "txt" | "md" => "text/plain",
+        "json" => "application/json",
+        "mp4" => "video/mp4",
+        "mp3" => "audio/mpeg",
+        "zip" => "application/zip",
+        _ => "application/octet-stream",
+    }
+    .to_string()
 }
 
 fn local_path_for(root: &LocalPath, rel: &RelativePath) -> LocalPath {
@@ -907,6 +1042,8 @@ mod tests {
             vfs_enabled: false,
             vfs_cache_max_bytes: 20 * 1024 * 1024 * 1024,
             vfs_eviction_threshold_bytes: 5 * 1024 * 1024 * 1024,
+            e2ee_enabled: false,
+            e2ee_account_id: None,
         };
         journal.register_pair(&account, &pair).await.unwrap();
 
@@ -1037,6 +1174,8 @@ mod tests {
             vfs_enabled: false,
             vfs_cache_max_bytes: 20 * 1024 * 1024 * 1024,
             vfs_eviction_threshold_bytes: 5 * 1024 * 1024 * 1024,
+            e2ee_enabled: false,
+            e2ee_account_id: None,
         };
         journal.register_pair(&account, &pair).await.unwrap();
 

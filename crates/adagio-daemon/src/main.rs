@@ -7,6 +7,7 @@ static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 mod autostart;
 mod dispatcher;
+mod e2ee_runner;
 mod events;
 mod network_monitor;
 mod server;
@@ -97,6 +98,8 @@ async fn main() -> anyhow::Result<()> {
 
     let engine = Arc::new(DefaultSyncEngine::new());
     let events = EventBroadcaster::new(256);
+    let e2ee_triggers: Arc<tokio::sync::Mutex<std::collections::HashMap<adagio_core::types::PairId, tokio::sync::mpsc::Sender<()>>>> =
+        Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
 
     // ── Network policy (loaded from config or defaulted) ──────────────────────
     let network_policy_val: NetworkPolicy =
@@ -120,6 +123,29 @@ async fn main() -> anyhow::Result<()> {
                 if let Some(acct) = accts.iter().find(|a| a.id == pair.account_id) {
                     let _ = journal.register_pair(acct, &pair).await;
                 }
+            }
+
+            // E2EE pairs use a dedicated encrypted sync runner instead of the
+            // plain-text PairRunner. Files are AES-128-GCM encrypted before upload
+            // and decrypted after download; the server only stores ciphertext.
+            if pair.e2ee_enabled {
+                let client = build_nextcloud_client(&accounts, &pair).await;
+                if let Some(nc_client) = client {
+                    let cred_provider = Arc::new(e2ee_runner::DaemonCredentialProvider {
+                        accounts: accounts.clone(),
+                        pairs: pairs.clone(),
+                    });
+                    let e2ee_client = Arc::new(adagio_e2ee::provider::NcE2eeClient::new(
+                        cred_provider,
+                        journal.clone(),
+                    ));
+                    tracing::info!(pair_id = %pair.id, "E2EE pair: starting encrypted sync runner");
+                    let (_, trigger_tx) = e2ee_runner::spawn_e2ee_runner(pair.clone(), e2ee_client, Arc::new(nc_client), journal.clone());
+                    e2ee_triggers.lock().await.insert(pair.id.clone(), trigger_tx);
+                } else {
+                    tracing::warn!(pair_id = %pair.id, "E2EE pair: no credentials, runner not started");
+                }
+                continue;
             }
 
             let client = build_nextcloud_client(&accounts, &pair).await;
@@ -161,6 +187,7 @@ async fn main() -> anyhow::Result<()> {
         config_path,
         network_policy,
         network_monitor,
+        e2ee_triggers,
     });
 
     #[cfg(unix)]
@@ -326,6 +353,8 @@ fn restore_pairs(manager: &mut SyncPairManager, saved: &serde_json::Value) {
                 vfs_eviction_threshold_bytes: p["vfs_eviction_threshold_bytes"]
                     .as_u64()
                     .unwrap_or(5 * 1024 * 1024 * 1024),
+                e2ee_enabled: p["e2ee_enabled"].as_bool().unwrap_or(false),
+                e2ee_account_id: p["e2ee_account_id"].as_str().map(|s| s.to_string()),
             };
             manager.register_full_pair(pair);
         }

@@ -1,11 +1,11 @@
-use crate::cycle::SyncCycle;
+use crate::cycle::{EngineStatus, SyncCycle};
 use crate::journal::Journal;
 use crate::observability::MemorySampler;
 use crate::remote::RemoteClient;
 use crate::types::{PairId, SyncPair};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
@@ -36,6 +36,7 @@ impl PairRunner {
         journal: Arc<dyn Journal>,
         conflict_tx: Option<tokio::sync::mpsc::Sender<()>>,
         memory_sampler: Arc<std::sync::Mutex<MemorySampler>>,
+        status_tx: Option<watch::Sender<EngineStatus>>,
     ) -> Self {
         let cancel = CancellationToken::new();
         let (trigger_tx, mut trigger_rx) = mpsc::channel::<()>(1);
@@ -57,6 +58,7 @@ impl PairRunner {
                     &*journal,
                     conflict_tx.as_ref(),
                     &memory_sampler,
+                    status_tx.as_ref(),
                 )
                 .await;
             }
@@ -70,13 +72,13 @@ impl PairRunner {
                     }
                     _ = ticker.tick() => {
                         info!(pair_id = %pair.id, "scheduled sync cycle starting");
-                        run_cycle(&pair, &*client, &*journal, conflict_tx.as_ref(), &memory_sampler).await;
+                        run_cycle(&pair, &*client, &*journal, conflict_tx.as_ref(), &memory_sampler, status_tx.as_ref()).await;
                     }
                     Some(()) = trigger_rx.recv() => {
                         // Drain queued triggers so we run exactly one cycle.
                         while trigger_rx.try_recv().is_ok() {}
                         info!(pair_id = %pair.id, "triggered sync cycle starting");
-                        run_cycle(&pair, &*client, &*journal, conflict_tx.as_ref(), &memory_sampler).await;
+                        run_cycle(&pair, &*client, &*journal, conflict_tx.as_ref(), &memory_sampler, status_tx.as_ref()).await;
                     }
                 }
             }
@@ -97,7 +99,12 @@ impl PairRunner {
         trigger_tx: mpsc::Sender<()>,
         handle: tokio::task::JoinHandle<()>,
     ) -> Self {
-        Self { pair_id, cancel, trigger_tx, handle }
+        Self {
+            pair_id,
+            cancel,
+            trigger_tx,
+            handle,
+        }
     }
 
     /// Send an immediate sync trigger. Fire-and-forget; returns `false` if the
@@ -119,6 +126,7 @@ async fn run_cycle(
     journal: &dyn Journal,
     conflict_tx: Option<&tokio::sync::mpsc::Sender<()>>,
     memory_sampler: &Arc<std::sync::Mutex<MemorySampler>>,
+    status_tx: Option<&watch::Sender<EngineStatus>>,
 ) {
     let cycle = SyncCycle {
         pair,
@@ -129,6 +137,9 @@ async fn run_cycle(
     };
     match cycle.run().await {
         Ok(report) => {
+            if let Some(tx) = status_tx {
+                crate::cycle::clear_server_error_status(tx);
+            }
             info!(
                 pair_id = %pair.id,
                 uploaded = report.uploaded,
@@ -139,7 +150,15 @@ async fn run_cycle(
             );
         }
         Err(e) => {
-            warn!(pair_id = %pair.id, error = %e, "sync cycle failed");
+            if let Some(tx) = status_tx {
+                crate::cycle::report_sync_error(&e, &pair.id.0, tx);
+            } else if crate::cycle::is_maintenance_error(&e) {
+                warn!(pair_id = %pair.id, "server in maintenance mode — sync paused");
+            } else if crate::cycle::is_connection_error(&e) {
+                warn!(pair_id = %pair.id, "server unreachable — sync will retry");
+            } else {
+                warn!(pair_id = %pair.id, error = %e, "sync cycle failed");
+            }
         }
     }
 }
@@ -196,6 +215,8 @@ mod tests {
             vfs_enabled: false,
             vfs_cache_max_bytes: 20 * 1024 * 1024 * 1024,
             vfs_eviction_threshold_bytes: 5 * 1024 * 1024 * 1024,
+            e2ee_enabled: false,
+            e2ee_account_id: None,
         })
     }
 
@@ -213,6 +234,7 @@ mod tests {
             Arc::new(std::sync::Mutex::new(
                 crate::observability::MemorySampler::new(),
             )),
+            None,
         );
         // stop must not panic or deadlock
         runner.stop();
@@ -232,6 +254,7 @@ mod tests {
             Arc::new(std::sync::Mutex::new(
                 crate::observability::MemorySampler::new(),
             )),
+            None,
         );
         assert!(
             runner.trigger(),
@@ -285,6 +308,7 @@ mod tests {
             Arc::new(std::sync::Mutex::new(
                 crate::observability::MemorySampler::new(),
             )),
+            None,
         );
         tokio::time::sleep(Duration::from_millis(100)).await;
         runner.stop();

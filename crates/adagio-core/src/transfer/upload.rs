@@ -82,6 +82,9 @@ fn map_client_error(e: crate::error::ClientError) -> TransferError {
         crate::error::ClientError::AuthRequired => TransferError::Permanent("auth required".into()),
         crate::error::ClientError::Transient(m) => TransferError::Transient(m),
         crate::error::ClientError::Permanent(m) => TransferError::Permanent(m),
+        crate::error::ClientError::Maintenance => {
+            TransferError::Transient("server in maintenance mode".into())
+        }
     }
 }
 

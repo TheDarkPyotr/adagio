@@ -206,6 +206,13 @@ pub struct SyncPair {
     /// Auto-evict locally-available files when free disk falls below this threshold (default: 5 GiB).
     #[serde(default = "default_vfs_eviction_threshold_bytes")]
     pub vfs_eviction_threshold_bytes: u64,
+    /// Enable E2EE (end-to-end encryption) for this pair. Default: false.
+    #[serde(default)]
+    pub e2ee_enabled: bool,
+    /// Nextcloud account ID associated with the E2EE key pair. Populated when
+    /// `e2ee_enabled` is true; mirrors `account_id` but stored for convenience.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub e2ee_account_id: Option<String>,
 }
 
 fn default_conflict_policy() -> ConflictPolicy {

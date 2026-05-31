@@ -257,7 +257,7 @@ pub fn reconcile(
                 if j.status == SyncStatus::Error
                     && j.error_message
                         .as_deref()
-                        .map_or(false, |m| m.starts_with("permanent error:"))
+                        .is_some_and(|m| m.starts_with("permanent error:"))
                 {
                     SyncOp::NoOp {
                         path: ri.path.clone(),
@@ -289,7 +289,7 @@ pub fn reconcile(
                 if j.status == SyncStatus::Error
                     && j.error_message
                         .as_deref()
-                        .map_or(false, |m| m.starts_with("permanent error:"))
+                        .is_some_and(|m| m.starts_with("permanent error:"))
                 {
                     SyncOp::NoOp {
                         path: li.path.clone(),

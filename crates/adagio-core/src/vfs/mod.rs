@@ -144,12 +144,17 @@ impl VfsPairRunner {
         let local_root = vfs_content_dir(&self.pair.id);
         let now = Utc::now();
         for entry in &existing {
-            if entry.state != VfsState::CloudOnly { continue; }
+            if entry.state != VfsState::CloudOnly {
+                continue;
+            }
             let local = local_root.as_path().join(entry.path.as_str());
             if let Ok(meta) = tokio::fs::metadata(&local).await {
                 if meta.is_file() && meta.len() > 0 {
                     let mut updated = entry.clone();
-                    updated.state = VfsState::LocallyAvailable { cached_at: now, last_accessed: now };
+                    updated.state = VfsState::LocallyAvailable {
+                        cached_at: now,
+                        last_accessed: now,
+                    };
                     updated.cache_bytes = meta.len();
                     let _ = self.journal.upsert_vfs_entry(&updated).await;
                     debug!(path = %entry.path, "reconciled: file on disk, marked locally_available");
@@ -302,7 +307,7 @@ pub async fn pin_path(
                 }
             }
 
-            let remote_path = RemotePath::new(&format!(
+            let remote_path = RemotePath::new(format!(
                 "{}/{}",
                 remote_root.as_str().trim_end_matches('/'),
                 entry.path.as_str()
@@ -324,7 +329,10 @@ pub async fn pin_path(
             let mut updated = entry.clone();
             match download_result {
                 Ok(result) => {
-                    updated.state = VfsState::Pinned { cached_at: now, last_accessed: now };
+                    updated.state = VfsState::Pinned {
+                        cached_at: now,
+                        last_accessed: now,
+                    };
                     updated.cache_bytes = result.size;
                     if let Err(e) = journal.upsert_vfs_entry(&updated).await {
                         warn!(path = %entry.path, error = %e, "pin: failed to update journal");
@@ -376,6 +384,13 @@ pub async fn evict_file(
                 .upsert_vfs_entry(&updated)
                 .await
                 .map_err(|e| VfsError::Other(e.to_string()))?;
+            // Delete the cached file from disk so space is actually freed.
+            let disk_path = vfs_content_dir(pair_id).join(updated.path.as_str());
+            if disk_path.exists() {
+                tokio::fs::remove_file(&disk_path)
+                    .await
+                    .unwrap_or_else(|e| warn!("evict remove_file {disk_path:?}: {e}"));
+            }
             provider
                 .set_cloud_only(&updated.path)
                 .await
@@ -550,6 +565,8 @@ mod tests {
             vfs_enabled: true,
             vfs_cache_max_bytes: 20 * 1024 * 1024 * 1024,
             vfs_eviction_threshold_bytes: 0, // disable auto-eviction in tests
+            e2ee_enabled: false,
+            e2ee_account_id: None,
         }
     }
 
@@ -643,7 +660,7 @@ mod tests {
     #[tokio::test]
     async fn metadata_sync_preserves_locally_available_state() {
         use crate::remote::mock::MockRemoteClient;
-        use crate::vfs::types::{VfsState, VfsCacheEntry};
+        use crate::vfs::types::{VfsCacheEntry, VfsState};
         use chrono::Utc;
 
         let journal = make_journal().await;
@@ -656,16 +673,27 @@ mod tests {
         client.seed("notes.txt", b"hello").await;
 
         let provider = Arc::new(MockVfsProvider::new());
-        let runner = VfsPairRunner::new(pair.clone(), client.clone(), journal.clone(), provider.clone());
+        let runner = VfsPairRunner::new(
+            pair.clone(),
+            client.clone(),
+            journal.clone(),
+            provider.clone(),
+        );
 
         // First sync: both files arrive as CloudOnly.
         runner.run_metadata_sync().await.unwrap();
 
         // Simulate the user downloading report.pdf — set it to LocallyAvailable.
         let mut entries = journal.all_vfs_entries(&pair_id).await.unwrap();
-        let report = entries.iter_mut().find(|e| e.path.as_str() == "report.pdf").unwrap();
+        let report = entries
+            .iter_mut()
+            .find(|e| e.path.as_str() == "report.pdf")
+            .unwrap();
         let now = Utc::now();
-        report.state = VfsState::LocallyAvailable { cached_at: now, last_accessed: now };
+        report.state = VfsState::LocallyAvailable {
+            cached_at: now,
+            last_accessed: now,
+        };
         report.cache_bytes = 11;
         journal.upsert_vfs_entry(&*report).await.unwrap();
 
@@ -673,16 +701,25 @@ mod tests {
         runner.run_metadata_sync().await.unwrap();
 
         let after = journal.all_vfs_entries(&pair_id).await.unwrap();
-        let report_after = after.iter().find(|e| e.path.as_str() == "report.pdf").unwrap();
+        let report_after = after
+            .iter()
+            .find(|e| e.path.as_str() == "report.pdf")
+            .unwrap();
         assert!(
             matches!(report_after.state, VfsState::LocallyAvailable { .. }),
             "LocallyAvailable state must survive a metadata sync cycle, got {:?}",
             report_after.state
         );
-        assert_eq!(report_after.cache_bytes, 11, "cache_bytes must be preserved");
+        assert_eq!(
+            report_after.cache_bytes, 11,
+            "cache_bytes must be preserved"
+        );
 
         // notes.txt was never downloaded — still CloudOnly.
-        let notes = after.iter().find(|e| e.path.as_str() == "notes.txt").unwrap();
+        let notes = after
+            .iter()
+            .find(|e| e.path.as_str() == "notes.txt")
+            .unwrap();
         assert_eq!(notes.state, VfsState::CloudOnly);
     }
 }

@@ -155,6 +155,10 @@ pub enum ClientError {
     /// Session expired or credentials invalid.
     #[error("auth required")]
     AuthRequired,
+
+    /// Server is in maintenance mode (HTTP 503). Sync will resume automatically.
+    #[error("server in maintenance mode")]
+    Maintenance,
 }
 
 // ── Tests (T073) ─────────────────────────────────────────────────────────────

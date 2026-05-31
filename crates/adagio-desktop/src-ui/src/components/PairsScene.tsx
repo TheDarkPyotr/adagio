@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Icon, SpinDot } from './shared';
 import type { PairDto, AccountDto, SyncStatusDto } from '../tauri';
-import { createPair, deletePair, getStatus, triggerSync } from '../tauri';
+import { createPair, deletePair, getStatus, triggerSync, e2eeInit, e2eePair, e2eeDisable } from '../tauri';
 
 export default function PairsScene({ pairs, account, onBack, onPairsChange }: {
   pairs: PairDto[];
@@ -16,6 +16,16 @@ export default function PairsScene({ pairs, account, onBack, onPairsChange }: {
   const [adding, setAdding] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [addError, setAddError] = useState<string | null>(null);
+
+  // E2EE modal state
+  const [e2eeMnemonic, setE2eeMnemonic] = useState<string | null>(null);
+  const [e2eeMnemonicConfirmed, setE2eeMnemonicConfirmed] = useState(false);
+  const [e2eeInitError, setE2eeInitError] = useState<string | null>(null);
+  const [e2eeInitLoading, setE2eeInitLoading] = useState(false);
+  const [e2eePairModal, setE2eePairModal] = useState<string | null>(null); // pair ID waiting for pairing
+  const [e2eePairingMnemonic, setE2eePairingMnemonic] = useState('');
+  const [e2eePairingError, setE2eePairingError] = useState<string | null>(null);
+  const [e2eePairingLoading, setE2eePairingLoading] = useState(false);
 
   // Sync state per pair: tracks which pair is currently syncing.
   const [syncingPair, setSyncingPair] = useState<string | null>(null);
@@ -158,8 +168,102 @@ export default function PairsScene({ pairs, account, onBack, onPairsChange }: {
               deleting={deleting === pair.id}
               onSync={() => handleSync(pair.id)}
               onDelete={() => handleDelete(pair.id)}
+              onE2eeInit={async () => {
+                setE2eeInitError(null);
+                setE2eeInitLoading(true);
+                try {
+                  const mnemonic = await e2eeInit(pair.id);
+                  setE2eeMnemonic(mnemonic);
+                  setE2eeMnemonicConfirmed(false);
+                  onPairsChange(pairs.map(p => p.id === pair.id ? { ...p, e2ee_enabled: true } : p));
+                } catch (err) {
+                  setE2eeInitError(err instanceof Error ? err.message : String(err));
+                } finally {
+                  setE2eeInitLoading(false);
+                }
+              }}
+              onE2eePair={() => { setE2eePairModal(pair.id); setE2eePairingMnemonic(''); setE2eePairingError(null); }}
+              e2eeInitLoading={e2eeInitLoading}
+              onE2eeDisable={pair.e2ee_enabled ? async () => {
+                try {
+                  await e2eeDisable(pair.id);
+                  onPairsChange(pairs.map(p => p.id === pair.id ? { ...p, e2ee_enabled: false } : p));
+                } catch {}
+              } : undefined}
             />
           ))}
+
+          {/* E2EE init error banner */}
+          {e2eeInitError && (
+            <div style={{ margin: '8px 0', padding: '10px 16px', background: 'color-mix(in srgb, var(--danger) 10%, var(--paper))', border: '1px solid var(--danger)', borderRadius: 'var(--r-2)', fontSize: 12.5, color: 'var(--danger)', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+              <span style={{ flexShrink: 0, fontWeight: 600 }}>E2EE init failed:</span>
+              <span style={{ flex: 1, wordBreak: 'break-word' }}>{e2eeInitError}</span>
+              <button onClick={() => setE2eeInitError(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', flexShrink: 0, padding: 0, fontSize: 14, lineHeight: 1 }}>✕</button>
+            </div>
+          )}
+
+          {/* E2EE mnemonic display modal */}
+          {e2eeMnemonic && !e2eeMnemonicConfirmed && (
+            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+              <div style={{ background: 'var(--paper)', borderRadius: 'var(--r-3)', padding: 28, maxWidth: 420, width: '90%', boxShadow: '0 12px 40px rgba(0,0,0,0.18)' }}>
+                <div style={{ fontWeight: 600, fontSize: 16, letterSpacing: '-0.03em', marginBottom: 10 }}>Save your recovery mnemonic</div>
+                <div style={{ fontSize: 13, color: 'var(--ink-muted)', marginBottom: 18 }}>Write down these 12 words in order. This is the only time they will be shown. You need them to access encrypted files on another device.</div>
+                <div style={{ background: 'var(--cream-2)', borderRadius: 'var(--r-2)', padding: '14px 18px', fontFamily: 'var(--mono)', fontSize: 13, letterSpacing: '0.02em', lineHeight: 2, marginBottom: 18 }}>
+                  {e2eeMnemonic.split(' ').map((w, i) => (
+                    <span key={i} style={{ display: 'inline-block', marginRight: 8 }}><span style={{ color: 'var(--ink-muted)', fontSize: 10 }}>{i + 1}.</span> {w}</span>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                  <button onClick={() => navigator.clipboard.writeText(e2eeMnemonic).catch(() => {})}
+                    style={{ background: 'var(--cream-2)', border: '1px solid var(--hairline)', padding: '7px 14px', borderRadius: 'var(--r-pill)', fontSize: 12.5, cursor: 'pointer', color: 'var(--ink)' }}>
+                    Copy
+                  </button>
+                  <button onClick={() => { setE2eeMnemonicConfirmed(true); setE2eeMnemonic(null); }}
+                    style={{ background: 'var(--forest)', color: '#fff', border: 'none', padding: '7px 18px', borderRadius: 'var(--r-pill)', fontSize: 12.5, fontWeight: 500, cursor: 'pointer' }}>
+                    I have saved this
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* E2EE pairing modal */}
+          {e2eePairModal && (
+            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+              <div style={{ background: 'var(--paper)', borderRadius: 'var(--r-3)', padding: 28, maxWidth: 420, width: '90%', boxShadow: '0 12px 40px rgba(0,0,0,0.18)' }}>
+                <div style={{ fontWeight: 600, fontSize: 16, letterSpacing: '-0.03em', marginBottom: 10 }}>Pair this device</div>
+                <div style={{ fontSize: 13, color: 'var(--ink-muted)', marginBottom: 14 }}>Enter the 12-word mnemonic from your other device to access encrypted files.</div>
+                <textarea
+                  value={e2eePairingMnemonic}
+                  onChange={e => setE2eePairingMnemonic(e.target.value)}
+                  placeholder="word1 word2 word3 … word12"
+                  rows={3}
+                  style={{ width: '100%', boxSizing: 'border-box', background: 'var(--cream)', border: '1px solid var(--hairline)', borderRadius: 'var(--r-2)', padding: '8px 12px', fontSize: 13, fontFamily: 'var(--mono)', outline: 'none', resize: 'none', marginBottom: 10 }}
+                />
+                {e2eePairingError && <div style={{ color: 'var(--danger)', fontSize: 12.5, marginBottom: 10 }}>{e2eePairingError}</div>}
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                  <button onClick={() => setE2eePairModal(null)}
+                    style={{ background: 'transparent', border: '1px solid var(--hairline)', padding: '7px 14px', borderRadius: 'var(--r-pill)', fontSize: 12.5, cursor: 'pointer', color: 'var(--ink)' }}>
+                    Cancel
+                  </button>
+                  <button disabled={e2eePairingLoading || !e2eePairingMnemonic.trim()}
+                    onClick={async () => {
+                      setE2eePairingLoading(true); setE2eePairingError(null);
+                      try {
+                        await e2eePair(e2eePairModal!, e2eePairingMnemonic.trim());
+                        setE2eePairModal(null);
+                      } catch (err) {
+                        setE2eePairingError(err instanceof Error ? err.message : 'Pairing failed');
+                      }
+                      setE2eePairingLoading(false);
+                    }}
+                    style={{ background: 'var(--clay)', color: '#fff', border: 'none', padding: '7px 18px', borderRadius: 'var(--r-pill)', fontSize: 12.5, fontWeight: 500, cursor: e2eePairingLoading ? 'wait' : 'pointer', opacity: e2eePairingLoading ? 0.6 : 1 }}>
+                    {e2eePairingLoading ? 'Pairing…' : 'Pair'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {showAdd && (
             <div style={{ marginTop: pairs.length > 0 ? 24 : 0, padding: 20, background: 'var(--paper)', border: '1px solid var(--hairline)', borderRadius: 'var(--r-3)' }}>
@@ -221,7 +325,7 @@ export default function PairsScene({ pairs, account, onBack, onPairsChange }: {
 
 // ── PairRow ───────────────────────────────────────────────────────────────────
 
-function PairRow({ pair, syncing, syncElapsed, lastDuration, deleting, onSync, onDelete }: {
+function PairRow({ pair, syncing, syncElapsed, lastDuration, deleting, onSync, onDelete, onE2eeInit, e2eeInitLoading, onE2eePair, onE2eeDisable }: {
   pair: PairDto;
   syncing: boolean;
   syncElapsed: number;
@@ -229,6 +333,10 @@ function PairRow({ pair, syncing, syncElapsed, lastDuration, deleting, onSync, o
   deleting: boolean;
   onSync: () => void;
   onDelete: () => void;
+  onE2eeInit?: () => void;
+  e2eeInitLoading?: boolean;
+  onE2eePair?: () => void;
+  onE2eeDisable?: () => void;
 }) {
   const [h, setH] = useState(false);
 
@@ -262,6 +370,11 @@ function PairRow({ pair, syncing, syncElapsed, lastDuration, deleting, onSync, o
                 VFS
               </div>
             )}
+            {pair.e2ee_enabled && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 10, fontFamily: 'var(--mono)', background: 'var(--forest)', color: '#fff', borderRadius: 3, padding: '1px 5px', letterSpacing: '0.06em' }}>
+                <Icon name="shield" size={9} color="#fff" /> E2EE
+              </div>
+            )}
           </div>
         </div>
 
@@ -289,6 +402,24 @@ function PairRow({ pair, syncing, syncElapsed, lastDuration, deleting, onSync, o
             }
           </button>
 
+          {!pair.e2ee_enabled && onE2eeInit && (
+            <button onClick={onE2eeInit} disabled={e2eeInitLoading} title={e2eeInitLoading ? 'Enabling E2EE… (RSA keygen takes ~2 s)' : 'Enable E2EE'}
+              style={{ background: 'transparent', border: '1px solid var(--hairline)', padding: '6px 10px', borderRadius: 'var(--r-pill)', fontSize: 12, cursor: e2eeInitLoading ? 'wait' : 'pointer', color: 'var(--forest)', display: 'flex', alignItems: 'center', gap: 4, opacity: e2eeInitLoading ? 0.6 : 1 }}>
+              {e2eeInitLoading ? <SpinDot color="var(--forest)" /> : <Icon name="shield" size={13} color="var(--forest)" />}
+            </button>
+          )}
+          {pair.e2ee_enabled && onE2eePair && (
+            <button onClick={onE2eePair} title="Pair another device"
+              style={{ background: 'transparent', border: '1px solid var(--hairline)', padding: '6px 10px', borderRadius: 'var(--r-pill)', fontSize: 12, cursor: 'pointer', color: 'var(--forest)', display: 'flex', alignItems: 'center' }}>
+              <Icon name="shield" size={13} color="var(--forest)" />
+            </button>
+          )}
+          {pair.e2ee_enabled && onE2eeDisable && (
+            <button onClick={onE2eeDisable} title="Disable E2EE"
+              style={{ background: 'transparent', border: '1px solid var(--hairline)', padding: '6px 10px', borderRadius: 'var(--r-pill)', fontSize: 12, cursor: 'pointer', color: 'var(--clay)', display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
+              <Icon name="shield" size={11} color="var(--clay)" />Off
+            </button>
+          )}
           <button onClick={onDelete} disabled={!!deleting}
             style={{ background: 'transparent', border: '1px solid var(--hairline)', padding: '6px 10px', borderRadius: 'var(--r-pill)', fontSize: 12, cursor: deleting ? 'wait' : 'pointer', color: 'var(--clay)', opacity: deleting ? 0.5 : 1, display: 'flex', alignItems: 'center', transition: 'opacity 0.12s' }}>
             <Icon name="trash" size={13} color="var(--clay)" />

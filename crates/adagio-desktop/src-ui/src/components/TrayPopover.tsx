@@ -40,15 +40,22 @@ export default function TrayPopover() {
   const isPaused = status?.status === 'paused';
   const isSyncing = status?.status === 'syncing';
 
+  const isMaintenance = status?.status === 'maintenance';
+  const isUnreachable = status?.status === 'unreachable';
+
   const statusLabel = isSyncing
     ? `SYNCING ${status!.active_file_count} FILE${status!.active_file_count !== 1 ? 'S' : ''}`
     : isPaused ? 'PAUSED'
     : status?.status === 'error' ? 'ERROR'
+    : isMaintenance ? 'MAINTENANCE'
+    : isUnreachable ? 'UNREACHABLE'
     : 'IN SYNC';
 
   const statusColor = isSyncing ? 'var(--warn)'
     : isPaused ? 'var(--ink-muted)'
     : status?.status === 'error' ? 'var(--danger)'
+    : isMaintenance ? 'var(--warn)'
+    : isUnreachable ? 'var(--danger)'
     : 'var(--good)';
 
   const lastSyncFmt = status?.last_sync_at
@@ -162,6 +169,12 @@ function StatusHeadline({ status }: { status: SyncStatusDto | null }) {
   }
   if (status?.status === 'error') {
     return <div style={{ fontSize: 28, fontWeight: 500, lineHeight: 1.1, letterSpacing: '-0.04em', color: 'var(--danger)' }}>Error</div>;
+  }
+  if (status?.status === 'maintenance') {
+    return <div style={{ fontSize: 28, fontWeight: 500, lineHeight: 1.1, letterSpacing: '-0.04em', color: 'var(--warn)' }}>Maintenance</div>;
+  }
+  if (status?.status === 'unreachable') {
+    return <div style={{ fontSize: 28, fontWeight: 500, lineHeight: 1.1, letterSpacing: '-0.04em', color: 'var(--danger)' }}>Unreachable</div>;
   }
   return (
     <div style={{ fontSize: 28, fontWeight: 500, lineHeight: 1.1, letterSpacing: '-0.04em' }}>

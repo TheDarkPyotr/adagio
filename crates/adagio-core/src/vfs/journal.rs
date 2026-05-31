@@ -14,7 +14,10 @@ impl SqliteJournal {
     /// remote_* columns — never touches state, cached_at, last_accessed_at, or
     /// cache_bytes. This is the correct call for the metadata-sync loop so that
     /// locally-available and pinned states are never overwritten by a poll cycle.
-    pub async fn sync_vfs_remote_metadata(&self, entry: &VfsCacheEntry) -> Result<(), JournalError> {
+    pub async fn sync_vfs_remote_metadata(
+        &self,
+        entry: &VfsCacheEntry,
+    ) -> Result<(), JournalError> {
         sqlx::query(
             "INSERT INTO vfs_cache_metadata
              (pair_id, path, remote_size, remote_etag, remote_mtime,
@@ -32,7 +35,7 @@ impl SqliteJournal {
         .bind(entry.remote_mtime.to_rfc3339())
         .execute(self.pool())
         .await
-        .map_err(|e| JournalError::Db(e.into()))?;
+        .map_err(JournalError::Db)?;
         Ok(())
     }
 
@@ -83,7 +86,7 @@ impl SqliteJournal {
         .bind(entry.cache_bytes as i64)
         .execute(self.pool())
         .await
-        .map_err(|e| JournalError::Db(e.into()))?;
+        .map_err(JournalError::Db)?;
 
         Ok(())
     }
@@ -101,7 +104,7 @@ impl SqliteJournal {
         .bind(&pair_id.0)
         .fetch_all(self.pool())
         .await
-        .map_err(|e| JournalError::Db(e.into()))?;
+        .map_err(JournalError::Db)?;
 
         rows.iter().map(row_to_entry).collect()
     }
@@ -121,7 +124,7 @@ impl SqliteJournal {
         .bind(path)
         .fetch_optional(self.pool())
         .await
-        .map_err(|e| JournalError::Db(e.into()))?;
+        .map_err(JournalError::Db)?;
 
         row.as_ref().map(row_to_entry).transpose()
     }
@@ -144,7 +147,7 @@ impl SqliteJournal {
         .bind(limit as i64)
         .fetch_all(self.pool())
         .await
-        .map_err(|e| JournalError::Db(e.into()))?;
+        .map_err(JournalError::Db)?;
 
         rows.iter().map(row_to_entry).collect()
     }
@@ -162,7 +165,7 @@ impl SqliteJournal {
         .bind(path)
         .fetch_optional(self.pool())
         .await
-        .map_err(|e| JournalError::Db(e.into()))?;
+        .map_err(JournalError::Db)?;
 
         Ok(row.is_some())
     }
@@ -182,7 +185,7 @@ impl SqliteJournal {
         .bind(pinned_at.to_rfc3339())
         .execute(self.pool())
         .await
-        .map_err(|e| JournalError::Db(e.into()))?;
+        .map_err(JournalError::Db)?;
         Ok(())
     }
 
@@ -193,7 +196,7 @@ impl SqliteJournal {
             .bind(path)
             .execute(self.pool())
             .await
-            .map_err(|e| JournalError::Db(e.into()))?;
+            .map_err(JournalError::Db)?;
         Ok(())
     }
 
@@ -211,7 +214,7 @@ impl SqliteJournal {
         .bind(&pair_id.0)
         .fetch_one(self.pool())
         .await
-        .map_err(|e| JournalError::Db(e.into()))?;
+        .map_err(JournalError::Db)?;
 
         Ok((row.0 as u64, row.1 as u64, row.2 as u64, row.3 as u64))
     }
@@ -223,7 +226,7 @@ impl SqliteJournal {
             .bind(path)
             .execute(self.pool())
             .await
-            .map_err(|e| JournalError::Db(e.into()))?;
+            .map_err(JournalError::Db)?;
         Ok(())
     }
 }
@@ -234,33 +237,16 @@ fn row_to_entry(row: &sqlx::sqlite::SqliteRow) -> Result<VfsCacheEntry, JournalE
     use crate::types::{PairId, RelativePath};
     use sqlx::Row;
 
-    let pair_id_str: String = row
-        .try_get("pair_id")
-        .map_err(|e| JournalError::Db(e.into()))?;
-    let path_str: String = row
-        .try_get("path")
-        .map_err(|e| JournalError::Db(e.into()))?;
-    let remote_size: i64 = row
-        .try_get("remote_size")
-        .map_err(|e| JournalError::Db(e.into()))?;
-    let remote_etag: Option<String> = row
-        .try_get("remote_etag")
-        .map_err(|e| JournalError::Db(e.into()))?;
-    let remote_mtime_str: String = row
-        .try_get("remote_mtime")
-        .map_err(|e| JournalError::Db(e.into()))?;
-    let state_str: String = row
-        .try_get("state")
-        .map_err(|e| JournalError::Db(e.into()))?;
-    let cached_at_str: Option<String> = row
-        .try_get("cached_at")
-        .map_err(|e| JournalError::Db(e.into()))?;
-    let last_accessed_str: Option<String> = row
-        .try_get("last_accessed_at")
-        .map_err(|e| JournalError::Db(e.into()))?;
-    let cache_bytes: i64 = row
-        .try_get("cache_bytes")
-        .map_err(|e| JournalError::Db(e.into()))?;
+    let pair_id_str: String = row.try_get("pair_id").map_err(JournalError::Db)?;
+    let path_str: String = row.try_get("path").map_err(JournalError::Db)?;
+    let remote_size: i64 = row.try_get("remote_size").map_err(JournalError::Db)?;
+    let remote_etag: Option<String> = row.try_get("remote_etag").map_err(JournalError::Db)?;
+    let remote_mtime_str: String = row.try_get("remote_mtime").map_err(JournalError::Db)?;
+    let state_str: String = row.try_get("state").map_err(JournalError::Db)?;
+    let cached_at_str: Option<String> = row.try_get("cached_at").map_err(JournalError::Db)?;
+    let last_accessed_str: Option<String> =
+        row.try_get("last_accessed_at").map_err(JournalError::Db)?;
+    let cache_bytes: i64 = row.try_get("cache_bytes").map_err(JournalError::Db)?;
 
     let remote_mtime = remote_mtime_str
         .parse::<DateTime<Utc>>()
@@ -354,6 +340,8 @@ mod tests {
             vfs_enabled: false,
             vfs_cache_max_bytes: 20 * 1024 * 1024 * 1024,
             vfs_eviction_threshold_bytes: 5 * 1024 * 1024 * 1024,
+            e2ee_enabled: false,
+            e2ee_account_id: None,
         };
         journal.register_pair(&acct, &pair).await.unwrap();
     }

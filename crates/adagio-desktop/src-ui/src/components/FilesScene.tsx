@@ -24,9 +24,10 @@ interface ContextMenuState {
   file: FileStatusDto & { kind: string };
 }
 
-export default function FilesScene({ pairId, isVfsPair, localRoot, serverHost, currentPath, onPathChange, onShare, onNew, syncStatus, favorites, onToggleFavorite }: {
+export default function FilesScene({ pairId, isVfsPair, isE2eePair, localRoot, serverHost, currentPath, onPathChange, onShare, onNew, syncStatus, favorites, onToggleFavorite, highlightFile }: {
   pairId: string | null;
   isVfsPair?: boolean;
+  isE2eePair?: boolean;
   localRoot?: string;
   serverHost: string;
   currentPath: string;
@@ -36,6 +37,8 @@ export default function FilesScene({ pairId, isVfsPair, localRoot, serverHost, c
   syncStatus?: SyncStatusDto | null;
   favorites?: Map<string, FileStatusDto>;
   onToggleFavorite?: (file: FileStatusDto) => void;
+  /** Filename to auto-select after the directory loads (from a search result). */
+  highlightFile?: string | null;
 }) {
   const [files, setFiles] = useState<FileStatusDto[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
@@ -46,12 +49,15 @@ export default function FilesScene({ pairId, isVfsPair, localRoot, serverHost, c
 
   useEffect(() => { setSelected(null); setCtxMenu(null); }, [currentPath]);
 
-  // Dismiss context menu on click outside
+  // Dismiss context menu on click outside.
+  // Bubbling phase (no capture) so the menu div's stopPropagation can block
+  // this listener when the click is inside the menu, preventing the menu from
+  // unmounting before the button's click event fires.
   useEffect(() => {
     if (!ctxMenu) return;
     const dismiss = () => setCtxMenu(null);
-    window.addEventListener('mousedown', dismiss, true);
-    return () => window.removeEventListener('mousedown', dismiss, true);
+    window.addEventListener('mousedown', dismiss);
+    return () => window.removeEventListener('mousedown', dismiss);
   }, [ctxMenu]);
 
   useEffect(() => {
@@ -67,8 +73,13 @@ export default function FilesScene({ pairId, isVfsPair, localRoot, serverHost, c
     try {
       const items = await listSyncedFiles(pairId, currentPath);
       setFiles(items);
+      // Auto-select the file from a search result navigation.
+      if (highlightFile) {
+        const idx = items.findIndex(f => f.name === highlightFile);
+        if (idx !== -1) setSelected(idx);
+      }
     } catch {}
-  }, [pairId, currentPath]);
+  }, [pairId, currentPath, highlightFile]);
 
   useEffect(() => {
     setLoading(true);
@@ -131,6 +142,11 @@ export default function FilesScene({ pairId, isVfsPair, localRoot, serverHost, c
               }
             </React.Fragment>
           ))}
+          {isE2eePair && (
+            <span title="End-to-end encrypted" style={{ display: 'flex', alignItems: 'center', marginLeft: 4 }}>
+              <Icon name="shield" size={13} color="var(--forest)" />
+            </span>
+          )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <FlatBtn icon="plus" label="New" onClick={onNew} />
@@ -148,6 +164,24 @@ export default function FilesScene({ pairId, isVfsPair, localRoot, serverHost, c
           }} disabled={selected === null} />
         </div>
       </div>
+
+      {/* E2EE read-only badge — shown for legacy v1.x encrypted folders */}
+      {isE2eePair && files.some(f => f.status === 'sync' && f.name?.includes('Encrypted folder')) && (
+        <div style={{ flexShrink: 0, padding: '6px 22px', background: 'color-mix(in srgb, var(--forest) 10%, var(--paper))', borderBottom: '1px solid var(--hairline)', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'var(--body)', fontSize: 12.5, color: 'var(--forest)' }}>
+          <Icon name="shield" size={13} color="currentColor" />
+          End-to-end encrypted folder — sync to view files.
+        </div>
+      )}
+
+      {/* server-error banner — shown for unreachable / maintenance */}
+      {(syncStatus?.status === 'unreachable' || syncStatus?.status === 'maintenance') && (
+        <div style={{ flexShrink: 0, padding: '7px 22px', background: syncStatus.status === 'unreachable' ? 'color-mix(in srgb, var(--danger) 12%, var(--paper))' : 'color-mix(in srgb, var(--warn) 12%, var(--paper))', borderBottom: '1px solid var(--hairline)', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'var(--body)', fontSize: 12.5, color: syncStatus.status === 'unreachable' ? 'var(--danger)' : 'var(--warn)' }}>
+          <Icon name="warn" size={13} color="currentColor" />
+          {syncStatus.status === 'unreachable'
+            ? 'Server unreachable — check your connection or VPN. Sync will retry automatically.'
+            : 'Server in maintenance mode — sync will resume automatically.'}
+        </div>
+      )}
 
       {/* table */}
       <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>

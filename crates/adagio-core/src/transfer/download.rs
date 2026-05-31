@@ -98,6 +98,9 @@ pub async fn download_file(
             }
             crate::error::ClientError::Transient(m) => TransferError::Transient(m),
             crate::error::ClientError::Permanent(m) => TransferError::Permanent(m),
+            crate::error::ClientError::Maintenance => {
+                TransferError::Transient("server in maintenance mode".into())
+            }
         })?;
 
     let mut stream = stream;

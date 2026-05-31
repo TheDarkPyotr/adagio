@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Icon, SpinDot } from './shared';
 import type { SyncStatusDto, DaemonStatusDto, BandwidthStatusDto, NetworkStatusDto, NetworkAction, CustomPaletteDto } from '../tauri';
 import { setPalette as ipcSetPalette, pauseSync, resumeSync, getDaemonStatus, startDaemon, stopDaemon, setStartAtLogin, getBandwidthStatus, setBandwidthLimits, clearBandwidthLimits, getNetworkStatus, setNetworkPolicy, addBlockedSsid, removeBlockedSsid, saveCustomPalette, deleteCustomPalette } from '../tauri';
-import { deriveTokens } from '../paletteUtils';
+import { deriveTokens, applyCustomPaletteTokens } from '../paletteUtils';
 
 type Section = 'appearance' | 'sync' | 'about';
 
@@ -247,6 +247,11 @@ export default function SettingsScene({ palette, onPalette, syncStatus, onBack, 
                     setCustomSaving(true); setCustomError(null);
                     try {
                       const saved = await saveCustomPalette(customName.trim(), customCream, customInk, customAccent, editingId);
+                      // Apply tokens immediately from the fresh saved data.
+                      // handlePalette reads from React state which hasn't flushed
+                      // yet at this point, so relying on it would apply stale or
+                      // missing palette data.
+                      applyCustomPaletteTokens(saved);
                       const updated = editingId
                         ? customPalettes.map(p => p.id === editingId ? saved : p)
                         : [...customPalettes, saved];
@@ -274,9 +279,11 @@ export default function SettingsScene({ palette, onPalette, syncStatus, onBack, 
               <SettingsRow
                 title="Sync status"
                 desc={
-                  syncStatus?.status === 'paused' ? 'Paused — no files will be transferred.' :
-                  syncStatus?.status === 'syncing' ? `Syncing ${syncStatus.active_file_count} file${syncStatus.active_file_count !== 1 ? 's' : ''}` :
-                  syncStatus?.status === 'error'   ? 'Error — check the activity log.' :
+                  syncStatus?.status === 'paused'      ? 'Paused — no files will be transferred.' :
+                  syncStatus?.status === 'syncing'     ? `Syncing ${syncStatus.active_file_count} file${syncStatus.active_file_count !== 1 ? 's' : ''}` :
+                  syncStatus?.status === 'error'       ? 'Error — check the activity log.' :
+                  syncStatus?.status === 'maintenance'  ? 'Server in maintenance mode — sync will resume automatically.' :
+                  syncStatus?.status === 'unreachable'  ? 'Server unreachable — check your connection or VPN.' :
                   'Up to date'
                 }
               >

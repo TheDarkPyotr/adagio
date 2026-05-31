@@ -219,6 +219,75 @@ pub async fn list_accounts(state: State<'_, AppState>) -> Result<serde_json::Val
         .map_err(|e| e.to_string())
 }
 
+/// Fetch the Nextcloud profile avatar for `account_id` and return it as a
+/// `"data:{mime};base64,{…}"` string suitable for use as an `<img src>`.
+///
+/// Returns `null` (JS `None`) when credentials are missing or the request
+/// fails — callers should fall back to the account initial letter.
+#[tauri::command]
+pub async fn get_account_avatar(
+    account_id: String,
+    state: State<'_, AppState>,
+) -> Result<Option<String>, String> {
+    let cfg = crate::config::load_config(&state.config_path);
+    let saved = match cfg.accounts.iter().find(|a| a.id == account_id) {
+        Some(a) => a.clone(),
+        None => return Ok(None),
+    };
+
+    let key = saved.keychain_service_key.clone();
+    let password = match tokio::task::spawn_blocking(move || {
+        adagio_nextcloud::auth::retrieve_credentials(&key)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?
+    {
+        Some(p) => p,
+        None => return Ok(None),
+    };
+
+    let url = format!(
+        "{}/index.php/avatar/{}/64",
+        saved.server_url.trim_end_matches('/'),
+        saved.username
+    );
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .user_agent("adagio-desktop/0.1")
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let resp = match client
+        .get(&url)
+        .basic_auth(&saved.username, Some(&password))
+        .send()
+        .await
+    {
+        Ok(r) if r.status().is_success() => r,
+        _ => return Ok(None),
+    };
+
+    let content_type = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("image/png")
+        .split(';')
+        .next()
+        .unwrap_or("image/png")
+        .trim()
+        .to_string();
+
+    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
+
+    use base64::Engine as _;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+
+    Ok(Some(format!("data:{content_type};base64,{b64}")))
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -378,6 +447,8 @@ mod tests {
             vfs_enabled: false,
             vfs_cache_max_bytes: 20 * 1024 * 1024 * 1024,
             vfs_eviction_threshold_bytes: 5 * 1024 * 1024 * 1024,
+            e2ee_enabled: false,
+            e2ee_account_id: None,
             bulk_upload_threshold_files: 50,
         });
         save_config(&config_path, &cfg).unwrap();

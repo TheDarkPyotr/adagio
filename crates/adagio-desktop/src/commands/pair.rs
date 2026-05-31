@@ -45,8 +45,12 @@ pub struct CreatePairRequest {
     pub vfs_eviction_threshold_bytes: u64,
 }
 
-fn default_vfs_cache_bytes() -> u64 { 20 * 1024 * 1024 * 1024 }
-fn default_vfs_eviction_bytes() -> u64 { 5 * 1024 * 1024 * 1024 }
+fn default_vfs_cache_bytes() -> u64 {
+    20 * 1024 * 1024 * 1024
+}
+fn default_vfs_eviction_bytes() -> u64 {
+    5 * 1024 * 1024 * 1024
+}
 
 fn default_scan_interval() -> u64 {
     7200
@@ -316,6 +320,8 @@ mod tests {
             vfs_enabled: false,
             vfs_cache_max_bytes: 20 * 1024 * 1024 * 1024,
             vfs_eviction_threshold_bytes: 5 * 1024 * 1024 * 1024,
+            e2ee_enabled: false,
+            e2ee_account_id: None,
         });
         save_config(&config_path, &loaded).unwrap();
 
@@ -348,6 +354,8 @@ mod tests {
             vfs_enabled: false,
             vfs_cache_max_bytes: 20 * 1024 * 1024 * 1024,
             vfs_eviction_threshold_bytes: 5 * 1024 * 1024 * 1024,
+            e2ee_enabled: false,
+            e2ee_account_id: None,
         });
         save_config(&config_path, &cfg).unwrap();
 
@@ -389,6 +397,8 @@ mod tests {
             vfs_enabled: false,
             vfs_cache_max_bytes: 20 * 1024 * 1024 * 1024,
             vfs_eviction_threshold_bytes: 5 * 1024 * 1024 * 1024,
+            e2ee_enabled: false,
+            e2ee_account_id: None,
         };
 
         let (journal, _) = make_journal().await;
@@ -426,6 +436,8 @@ mod tests {
             vfs_enabled: false,
             vfs_cache_max_bytes: 20 * 1024 * 1024 * 1024,
             vfs_eviction_threshold_bytes: 5 * 1024 * 1024 * 1024,
+            e2ee_enabled: false,
+            e2ee_account_id: None,
         };
 
         let (journal, _) = make_journal().await;
@@ -463,6 +475,8 @@ mod tests {
             vfs_enabled: false,
             vfs_cache_max_bytes: 20 * 1024 * 1024 * 1024,
             vfs_eviction_threshold_bytes: 5 * 1024 * 1024 * 1024,
+            e2ee_enabled: false,
+            e2ee_account_id: None,
         };
 
         let (journal, pool) = make_journal().await;

@@ -26,6 +26,10 @@ export const removeAccount = (accountId: string): Promise<void> =>
 export const listAccounts = (): Promise<AccountDto[]> =>
   invoke('list_accounts');
 
+/** Fetch the Nextcloud avatar for an account as a `data:` URL, or null on failure. */
+export const getAccountAvatar = (accountId: string): Promise<string | null> =>
+  invoke('get_account_avatar', { accountId });
+
 /** Run the complete OAuth2 browser-based account connection flow. */
 export const connectAccountOAuth2 = (serverUrl: string): Promise<AccountDto> =>
   invoke('connect_account_oauth2', { serverUrl });
@@ -40,6 +44,7 @@ export interface PairDto {
   scan_interval_secs: number;
   selective_paths: string[];
   vfs_enabled: boolean;
+  e2ee_enabled?: boolean;
 }
 
 export interface CreatePairRequest {
@@ -66,12 +71,14 @@ export const getExcludePatterns = (): Promise<string[]> =>
 // ── Sync status ───────────────────────────────────────────────────────────────
 
 export interface SyncStatusDto {
-  status: 'idle' | 'syncing' | 'paused' | 'error';
+  status: 'idle' | 'syncing' | 'paused' | 'error' | 'maintenance' | 'unreachable';
   active_file_count: number;
   total_bytes: number;
   transferred_bytes: number;
   eta_seconds: number | null;
   last_sync_at: number | null;
+  /** Pair IDs that have E2EE enabled. */
+  e2ee_pairs?: string[];
 }
 
 export const getStatus = (): Promise<SyncStatusDto> =>
@@ -99,11 +106,58 @@ export interface ActivityEntryDto {
   kind: 'edit' | 'share' | 'sync' | 'conflict';
 }
 
+export interface SectionCounts {
+  total: number;
+  recent: number;
+}
+
+export const getSectionCounts = (pairId?: string): Promise<SectionCounts> =>
+  invoke('get_section_counts', { pairId: pairId ?? null });
+
 export const getActivityLog = (
   limit?: number,
   filter?: 'edit' | 'share' | 'sync' | 'conflict',
 ): Promise<ActivityEntryDto[]> =>
   invoke('get_activity_log', { limit, filter });
+
+export interface FileSearchResult {
+  pair_id: string;
+  path: string;
+  filename: string;
+}
+
+// ── Local file creation / upload ──────────────────────────────────────────────
+
+/** Create a sub-directory inside the sync folder. */
+export const createLocalFolder = (
+  localRoot: string,
+  relPath: string,
+  name: string,
+): Promise<void> => invoke('create_local_folder', { localRoot, relPath, name });
+
+/** Create a text file (e.g. Markdown) with optional initial content. */
+export const createLocalFile = (
+  localRoot: string,
+  relPath: string,
+  name: string,
+  content = '',
+): Promise<void> => invoke('create_local_file', { localRoot, relPath, name, content });
+
+export interface UploadEntry {
+  name: string;
+  relSubpath?: string;
+  content: number[];
+}
+
+/** Write one or more binary files into the sync folder. Returns the count written. */
+export const writeLocalFiles = (
+  localRoot: string,
+  relPath: string,
+  files: UploadEntry[],
+): Promise<number> => invoke('write_local_files', { localRoot, relPath, files });
+
+export const searchFiles = (query: string, limit?: number): Promise<FileSearchResult[]> =>
+  invoke('search_files', { query, limit });
 
 // ── File browser ──────────────────────────────────────────────────────────────
 
@@ -115,6 +169,8 @@ export interface FileStatusDto {
   mtime: number | null;
   status: 'ok' | 'sync' | 'cloud' | 'pin' | 'conflict';
   etag?: string;
+  /** True when this file is in an E2EE-enabled pair. */
+  e2ee?: boolean;
   share_count?: number;
   item_count?: number;
 }
@@ -360,3 +416,30 @@ export const setVfsPin = (pairId: string, path: string, pinned: boolean): Promis
 
 export const evictVfsFile = (pairId: string, path: string): Promise<void> =>
   invoke('evict_vfs_file', { pairId, path });
+
+// ── E2EE ──────────────────────────────────────────────────────────────────────
+
+export interface E2eeStatusDto {
+  pair_id: string;
+  enabled: boolean;
+  metadata_version: string | null;
+  counter: number;
+  key_fingerprint: string | null;
+  encrypted_file_count: number;
+}
+
+/** Initialise E2EE for a pair. Returns the one-time BIP-39 mnemonic. NEVER LOG THIS. */
+export const e2eeInit = (pairId: string): Promise<string> =>
+  invoke('e2ee_init', { pairId });
+
+/** Pair this device using the 12-word mnemonic. */
+export const e2eePair = (pairId: string, mnemonic: string): Promise<void> =>
+  invoke('e2ee_pair', { pairId, mnemonic });
+
+/** Return E2EE status for a pair. */
+export const e2eeStatus = (pairId: string): Promise<E2eeStatusDto> =>
+  invoke('e2ee_status', { pairId });
+
+/** Disable E2EE for a pair: deletes server metadata and clears local state. */
+export const e2eeDisable = (pairId: string): Promise<void> =>
+  invoke('e2ee_disable', { pairId });

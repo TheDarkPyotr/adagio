@@ -5,6 +5,7 @@ pub mod config;
 pub mod conflict;
 pub mod cycle;
 pub mod detection;
+pub mod e2ee;
 pub mod error;
 pub mod journal;
 pub mod network;

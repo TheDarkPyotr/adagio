@@ -1,7 +1,5 @@
 use crate::error::CliError;
-use crate::output::{
-    cyan, dim, format_bytes, print_json, print_ok, print_table_header, print_table_row,
-};
+use crate::output::{dim, format_bytes, print_json, print_ok, print_table_header, print_table_row};
 use adagio_ipc::{DaemonClient, DaemonRequest};
 use std::sync::Arc;
 
@@ -142,7 +140,7 @@ async fn evict(
     let pid = require_pair_id(pair_id)?;
     if all {
         // Evict by listing all locally-available entries.
-        let stats = client
+        let _stats = client
             .request(DaemonRequest::GetVfsStats {
                 pair_id: pid.clone(),
             })

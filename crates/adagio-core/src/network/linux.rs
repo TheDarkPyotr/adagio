@@ -13,7 +13,7 @@ impl NetworkDetector for LinuxDetector {
 
     fn is_on_battery(&self) -> bool {
         is_on_battery_via_upower()
-            .or_else(|| is_on_battery_via_sysfs())
+            .or_else(is_on_battery_via_sysfs)
             .unwrap_or(false)
     }
 

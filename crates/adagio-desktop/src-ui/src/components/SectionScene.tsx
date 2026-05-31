@@ -47,7 +47,7 @@ function tagColor(tag: string): string {
 export default function SectionScene({
   section, pairId,
   favorites, allTaggedFiles, pathTags,
-  onToggleFavorite, onAddTag, onRemoveTag, onShare, onOpenFolder,
+  onToggleFavorite, onAddTag, onRemoveTag, onShare, onOpenFolder, onSharedCount,
 }: {
   section: FilterSection;
   pairId: string | null;
@@ -59,6 +59,7 @@ export default function SectionScene({
   onRemoveTag: (path: string, tag: string) => void;
   onShare: (path: string) => void;
   onOpenFolder: (path: string) => void;
+  onSharedCount?: (count: number) => void;
 }) {
   // flat file list built by BFS traversal — used for 'recent' and 'shared'
   const [allFiles, setAllFiles] = useState<FileStatusDto[]>([]);
@@ -111,6 +112,12 @@ export default function SectionScene({
     const all = Array.from(allTaggedFiles.values());
     displayed = tagFilter ? all.filter(f => pathTags[f.path]?.includes(tagFilter)) : all;
   }
+
+  // Notify parent of shared count once the BFS completes so sidebar badge is accurate.
+  const sharedCount = section === 'shared' ? displayed.length : 0;
+  React.useEffect(() => {
+    if (section === 'shared') onSharedCount?.(sharedCount);
+  }, [section, sharedCount, onSharedCount]);
 
   // Tag sidebar data
   const allTags = section === 'tags'

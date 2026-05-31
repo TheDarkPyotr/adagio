@@ -10,9 +10,36 @@ export interface SidebarAccount {
   host: string;
   initial: string;
   color: string;
+  avatar_url?: string;
 }
 
-export default function Sidebar({ selected, onSelect, accounts, activeAccountId, onSwitchAccount, onAddAccount, onRemoveAccount, pairs, activePairId, onSelectPair, syncStatus }: {
+function AccountAvatar({ initial, color, avatarUrl, size, radius }: {
+  initial: string; color: string; avatarUrl?: string; size: number; radius: number;
+}) {
+  if (avatarUrl) {
+    return (
+      <img
+        src={avatarUrl}
+        alt={initial}
+        style={{ width: size, height: size, borderRadius: radius, objectFit: 'cover', flexShrink: 0, display: 'block' }}
+      />
+    );
+  }
+  return (
+    <div style={{ width: size, height: size, borderRadius: radius, background: color, color: 'var(--cream)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--body)', fontWeight: 600, fontSize: Math.round(size * 0.47), letterSpacing: '-0.04em', flexShrink: 0 }}>
+      {initial}
+    </div>
+  );
+}
+
+function fmtCount(n: number): string | undefined {
+  if (n <= 0) return undefined;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+export default function Sidebar({ selected, onSelect, accounts, activeAccountId, onSwitchAccount, onAddAccount, onRemoveAccount, pairs, activePairId, onSelectPair, syncStatus, totalFiles, recentFiles, favoriteFiles, sharedFiles, taggedFiles }: {
   selected: Section;
   onSelect: (s: Section) => void;
   accounts: SidebarAccount[];
@@ -24,6 +51,11 @@ export default function Sidebar({ selected, onSelect, accounts, activeAccountId,
   activePairId: string | null;
   onSelectPair: (id: string) => void;
   syncStatus: SyncStatusDto | null;
+  totalFiles?: number;
+  recentFiles?: number;
+  favoriteFiles?: number;
+  sharedFiles?: number;
+  taggedFiles?: number;
 }) {
   const [dropOpen, setDropOpen] = useState(false);
   const dropRef = useRef<HTMLDivElement>(null);
@@ -45,7 +77,7 @@ export default function Sidebar({ selected, onSelect, accounts, activeAccountId,
         <button
           onClick={() => setDropOpen(o => !o)}
           style={{ width: '100%', background: dropOpen ? 'var(--cream)' : 'var(--cream-2)', border: '1px solid var(--hairline)', borderRadius: 'var(--r-2)', padding: 10, display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', textAlign: 'left' }}>
-          <div style={{ width: 30, height: 30, borderRadius: 8, background: acc.color, color: 'var(--cream)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--body)', fontWeight: 600, fontSize: 14, letterSpacing: '-0.04em', flexShrink: 0 }}>{acc.initial}</div>
+          <AccountAvatar initial={acc.initial} color={acc.color} avatarUrl={acc.avatar_url} size={30} radius={8} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{acc.name}</div>
             <div style={{ fontSize: 11, color: 'var(--ink-muted)', fontFamily: 'var(--mono)', letterSpacing: '0.02em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{acc.host}</div>
@@ -79,11 +111,11 @@ export default function Sidebar({ selected, onSelect, accounts, activeAccountId,
       </div>
 
       <SidebarSection label="Library">
-        <SidebarItem icon="folder" label="All files" badge="3.2k" id="all" selected={selected} onSelect={onSelect} />
-        <SidebarItem icon="star" label="Favorites" badge="14" id="fav" selected={selected} onSelect={onSelect} />
-        <SidebarItem icon="clock" label="Recent" id="recent" selected={selected} onSelect={onSelect} />
-        <SidebarItem icon="people" label="Shared" badge="8" id="shared" selected={selected} onSelect={onSelect} />
-        <SidebarItem icon="tag" label="Tagged" id="tags" selected={selected} onSelect={onSelect} />
+        <SidebarItem icon="folder" label="All files" badge={fmtCount(totalFiles ?? 0)} id="all" selected={selected} onSelect={onSelect} />
+        <SidebarItem icon="star" label="Favorites" badge={fmtCount(favoriteFiles ?? 0)} id="fav" selected={selected} onSelect={onSelect} />
+        <SidebarItem icon="clock" label="Recent" badge={fmtCount(recentFiles ?? 0)} id="recent" selected={selected} onSelect={onSelect} />
+        <SidebarItem icon="people" label="Shared" badge={fmtCount(sharedFiles ?? 0)} id="shared" selected={selected} onSelect={onSelect} />
+        <SidebarItem icon="tag" label="Tagged" badge={fmtCount(taggedFiles ?? 0)} id="tags" selected={selected} onSelect={onSelect} />
       </SidebarSection>
 
       <SidebarSection label="Pinned folders">
@@ -98,6 +130,7 @@ export default function Sidebar({ selected, onSelect, accounts, activeAccountId,
               status={isSyncing ? 'sync' : 'ok'}
               active={isActive}
               isVfs={pair.vfs_enabled}
+              isE2ee={pair.e2ee_enabled ?? false}
               onClick={() => { onSelectPair(pair.id); onSelect('all'); }}
             />
           );
@@ -125,7 +158,7 @@ function DropAccountRow({ account, active, onSelect, onRemove }: {
       onMouseLeave={() => setHovered(false)}
       onClick={onSelect}
       style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', cursor: 'pointer', background: active ? 'var(--cream-2)' : hovered ? 'color-mix(in srgb, var(--ink) 4%, transparent)' : 'transparent', transition: 'background 0.08s' }}>
-      <div style={{ width: 26, height: 26, borderRadius: 7, background: account.color, color: 'var(--cream)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, fontSize: 12, flexShrink: 0 }}>{account.initial}</div>
+      <AccountAvatar initial={account.initial} color={account.color} avatarUrl={account.avatar_url} size={26} radius={7} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{account.name}</div>
         <div style={{ fontSize: 10.5, color: 'var(--ink-muted)', fontFamily: 'var(--mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{account.host}</div>
@@ -174,7 +207,7 @@ function SidebarItem({ icon, label, badge, id, selected, onSelect }: {
   );
 }
 
-function PinnedFolder({ name, status, active, isVfs, onClick }: { name: string; status: 'ok' | 'sync'; active?: boolean; isVfs?: boolean; onClick?: () => void }) {
+function PinnedFolder({ name, status, active, isVfs, isE2ee, onClick }: { name: string; status: 'ok' | 'sync'; active?: boolean; isVfs?: boolean; isE2ee?: boolean; onClick?: () => void }) {
   const [h, setH] = useState(false);
   return (
     <div
@@ -184,6 +217,7 @@ function PinnedFolder({ name, status, active, isVfs, onClick }: { name: string; 
       <div style={{ width: 4, height: 4, borderRadius: 2, background: status === 'sync' ? 'var(--clay)' : 'var(--good)', flexShrink: 0 }}/>
       <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: active ? 500 : 400 }}>{name}</span>
       {isVfs && <span style={{ fontSize: 9, fontFamily: 'var(--mono)', background: 'var(--clay)', color: '#fff', borderRadius: 3, padding: '1px 4px', letterSpacing: '0.04em', flexShrink: 0 }}>VFS</span>}
+      {isE2ee && <Icon name="shield" size={11} color="var(--forest)" />}
       {status === 'sync' && <SpinDot color="var(--clay)" />}
     </div>
   );

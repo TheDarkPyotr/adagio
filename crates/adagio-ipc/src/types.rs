@@ -1,7 +1,11 @@
 use serde::{Deserialize, Serialize};
 
-fn default_vfs_cache_bytes() -> u64 { 20 * 1024 * 1024 * 1024 }
-fn default_vfs_eviction_bytes() -> u64 { 5 * 1024 * 1024 * 1024 }
+fn default_vfs_cache_bytes() -> u64 {
+    20 * 1024 * 1024 * 1024
+}
+fn default_vfs_eviction_bytes() -> u64 {
+    5 * 1024 * 1024 * 1024
+}
 
 // ── Request (client → daemon) ─────────────────────────────────────────────────
 
@@ -34,6 +38,13 @@ pub enum DaemonRequest {
         limit: Option<u32>,
         filter: Option<String>,
     },
+    /// Full-text search across synced file paths in the journal.
+    SearchFiles {
+        query: String,
+        limit: Option<u32>,
+    },
+    /// Return sidebar section counts for a given pair (or all pairs if None).
+    GetSectionCounts { pair_id: Option<String> },
     /// Return items currently in error state.
     GetErrorItems { pair_id: String },
 
@@ -152,6 +163,16 @@ pub enum DaemonRequest {
     },
     /// Evict a locally-available file or directory tree.
     EvictVfsFile { pair_id: String, path: String },
+
+    // ── E2EE ─────────────────────────────────────────────────────────────────
+    /// Initialise E2EE for a pair. Returns a one-time mnemonic.
+    E2eeInit { pair_id: String },
+    /// Pair this device by decrypting the server-stored private key with `mnemonic`.
+    E2eePair { pair_id: String, mnemonic: String },
+    /// Return E2EE status for a pair.
+    E2eeStatus { pair_id: String },
+    /// Remove E2EE from a pair (delete server metadata, clear local state).
+    E2eeDisable { pair_id: String },
 }
 
 // ── Response (daemon → client) ────────────────────────────────────────────────
