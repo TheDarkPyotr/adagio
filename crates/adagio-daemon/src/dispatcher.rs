@@ -1765,6 +1765,7 @@ impl MockDaemonState {
                 config_path,
                 network_policy: policy,
                 network_monitor: monitor,
+                e2ee_triggers: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             },
         };
         (state, dir)
