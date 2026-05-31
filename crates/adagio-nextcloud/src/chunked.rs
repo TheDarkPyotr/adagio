@@ -6,7 +6,7 @@ pub use adagio_core::transfer::chunked::upload_chunked;
 mod tests {
     use super::*;
     use adagio_core::remote::mock::MockRemoteClient;
-    use adagio_core::transfer::{TransferOptions, TransferProgress};
+    use adagio_core::transfer::TransferOptions;
     use adagio_core::types::{LocalPath, RemotePath};
     use std::fs;
     use tempfile::TempDir;

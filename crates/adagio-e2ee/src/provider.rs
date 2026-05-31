@@ -669,7 +669,7 @@ impl E2eeProvider for NcE2eeClient {
             .account_credentials
             .account_id_for_pair(pair_id)
             .await?;
-        let (ocs, nc_username) = self.ocs_client(&account_id).await?;
+        let (ocs, _nc_username) = self.ocs_client(&account_id).await?;
 
         // Fetch folder_id to delete the server-side metadata.
         if let Some((folder_id, _, _)) = load_folder_state(&self.journal, &pair_id.0).await? {

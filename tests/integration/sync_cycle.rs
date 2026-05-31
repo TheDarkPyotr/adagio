@@ -320,6 +320,8 @@ fn make_pair_with_exclusions(
         vfs_cache_max_bytes: 20 * 1024 * 1024 * 1024,
         vfs_eviction_threshold_bytes: 5 * 1024 * 1024 * 1024,
         bulk_upload_threshold_files: 50,
+        e2ee_enabled: false,
+        e2ee_account_id: None,
     }
 }
 
