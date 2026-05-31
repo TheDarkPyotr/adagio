@@ -30,7 +30,7 @@ This guide gets a developer from zero to running tests and the desktop app local
 ## Clone and Build
 
 ```bash
-git clone https://github.com/<org>/adagio.git
+git clone https://github.com/TheDarkPyotr/adagio.git
 cd adagio
 
 # Install Node dependencies for the Svelte frontend

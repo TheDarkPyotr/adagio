@@ -1,4 +1,5 @@
 # adagio
+![Adagio Banner](docs/adr/adagio_banner.png)
 
 A high-performance, cross-platform Nextcloud Desktop sync client written in Rust.
 
