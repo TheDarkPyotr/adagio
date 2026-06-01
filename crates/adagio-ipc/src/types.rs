@@ -39,10 +39,7 @@ pub enum DaemonRequest {
         filter: Option<String>,
     },
     /// Full-text search across synced file paths in the journal.
-    SearchFiles {
-        query: String,
-        limit: Option<u32>,
-    },
+    SearchFiles { query: String, limit: Option<u32> },
     /// Return sidebar section counts for a given pair (or all pairs if None).
     GetSectionCounts { pair_id: Option<String> },
     /// Return items currently in error state.

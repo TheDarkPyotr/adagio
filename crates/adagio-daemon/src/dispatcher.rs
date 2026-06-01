@@ -29,7 +29,8 @@ pub struct DaemonProcess {
     /// Live network state — updated by the NetworkMonitor poll loop.
     pub network_monitor: Arc<NetworkMonitor>,
     /// Manual-trigger senders for E2EE sync runners (keyed by pair ID).
-    pub e2ee_triggers: Arc<tokio::sync::Mutex<std::collections::HashMap<PairId, tokio::sync::mpsc::Sender<()>>>>,
+    pub e2ee_triggers:
+        Arc<tokio::sync::Mutex<std::collections::HashMap<PairId, tokio::sync::mpsc::Sender<()>>>>,
 }
 
 /// Route a `DaemonRequest` to the appropriate engine/journal call and return
@@ -151,12 +152,11 @@ pub async fn dispatch(req: DaemonRequest, state: &DaemonProcess) -> Result<Daemo
                      WHERE status IN ('synced', 'conflict') ORDER BY updated_at DESC LIMIT ?"
                 }
             };
-            let rows: Vec<(String, String, String, String)> =
-                sqlx::query_as(sql)
-                    .bind(n)
-                    .fetch_all(state.journal.pool())
-                    .await
-                    .map_err(|e| e.to_string())?;
+            let rows: Vec<(String, String, String, String)> = sqlx::query_as(sql)
+                .bind(n)
+                .fetch_all(state.journal.pool())
+                .await
+                .map_err(|e| e.to_string())?;
             let dtos: Vec<serde_json::Value> = rows
                 .into_iter()
                 .map(|(_pair_id, path, status, updated_at_str)| {
@@ -1292,9 +1292,14 @@ pub async fn dispatch(req: DaemonRequest, state: &DaemonProcess) -> Result<Daemo
                 .map_err(|e| format!("E2EE step 5 failed (canonical_inner_json): {e}"))?;
             let init_signature = cms_sign(&init_inner_json, &privkey, &cert_pem)
                 .map_err(|e| format!("E2EE step 5 failed (cms_sign): {e}"))?;
-            let init_token = ocs.lock_folder(&folder_id, 1).await
+            let init_token = ocs
+                .lock_folder(&folder_id, 1)
+                .await
                 .map_err(|e| format!("E2EE step 5 failed (lock_folder): {e}"))?;
-            match ocs.post_metadata(&folder_id, &outer_json, &init_token, &init_signature).await {
+            match ocs
+                .post_metadata(&folder_id, &outer_json, &init_token, &init_signature)
+                .await
+            {
                 Ok(_) => {}
                 Err(e) if e.to_string().contains("conflict") => {
                     tracing::info!(pair_id = %pair_id, "E2EE step 5: metadata already exists");
@@ -1304,7 +1309,8 @@ pub async fn dispatch(req: DaemonRequest, state: &DaemonProcess) -> Result<Daemo
                     return Err(format!("E2EE step 5 failed (post_metadata): {e}"));
                 }
             }
-            ocs.unlock_folder(&folder_id, &init_token).await
+            ocs.unlock_folder(&folder_id, &init_token)
+                .await
                 .map_err(|e| format!("E2EE step 5 failed (unlock_folder): {e}"))?;
 
             tracing::info!(pair_id = %pair_id, "E2EE step 5/6 complete: metadata ready on server");

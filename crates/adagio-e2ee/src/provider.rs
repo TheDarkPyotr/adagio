@@ -181,7 +181,10 @@ impl NcE2eeClient {
     ) -> Result<(E2eeOcsClient, String), E2eeError> {
         let (server_url, username, password) =
             self.account_credentials.credentials(account_id).await?;
-        Ok((E2eeOcsClient::new(server_url, username.clone(), password), username))
+        Ok((
+            E2eeOcsClient::new(server_url, username.clone(), password),
+            username,
+        ))
     }
 
     async fn load_privkey(&self, account_id: &AccountId) -> Result<RsaPrivateKey, E2eeError> {
@@ -264,13 +267,7 @@ impl E2eeProvider for NcE2eeClient {
             key_checksums: vec![metadata_key_checksum(&metadata_key)],
             ..Default::default()
         };
-        let outer = build_outer(
-            &init_meta,
-            &metadata_key,
-            &nc_username,
-            &cert_pem,
-            &pub_key,
-        )?;
+        let outer = build_outer(&init_meta, &metadata_key, &nc_username, &cert_pem, &pub_key)?;
         let outer_json = serde_json::to_string(&outer)?;
         // V2 API: lock first, then POST metadata with token + signature.
         let init_inner = canonical_inner_json(&init_meta)?;
@@ -621,8 +618,8 @@ impl E2eeProvider for NcE2eeClient {
         let metadata_key = crate::keys::generate_metadata_key();
 
         let state = load_folder_state(&self.journal, &pair_id.0).await?;
-        let (folder_id, _, counter) = state
-            .ok_or_else(|| E2eeError::Other("no folder state for pair".into()))?;
+        let (folder_id, _, counter) =
+            state.ok_or_else(|| E2eeError::Other("no folder state for pair".into()))?;
 
         let outer = crate::metadata::build_outer(
             metadata,
@@ -712,12 +709,17 @@ impl NcE2eeClient {
             return Ok(vec![]);
         }
 
-        let account_id = self.account_credentials.account_id_for_pair(pair_id).await?;
+        let account_id = self
+            .account_credentials
+            .account_id_for_pair(pair_id)
+            .await?;
         let (ocs, nc_username) = self.ocs_client(&account_id).await?;
 
-        let state = load_folder_state(&self.journal, &pair_id.0).await?.ok_or_else(|| {
-            E2eeError::Other(format!("no E2EE folder state for pair {}", pair_id.0))
-        })?;
+        let state = load_folder_state(&self.journal, &pair_id.0)
+            .await?
+            .ok_or_else(|| {
+                E2eeError::Other(format!("no E2EE folder state for pair {}", pair_id.0))
+            })?;
         let (folder_id, metadata_version, counter) = state;
 
         if metadata_version == "1.0" || metadata_version == "1" {
@@ -729,7 +731,9 @@ impl NcE2eeClient {
         for (filename, mime, plaintext) in &files {
             match self.encrypt_file(pair_id, filename, mime, plaintext).await {
                 Ok((ciphertext, uuid, entry)) => encrypted.push((uuid, entry, ciphertext)),
-                Err(e) => warn!(pair_id = %pair_id, file = %filename, error = %e, "E2EE: encrypt failed"),
+                Err(e) => {
+                    warn!(pair_id = %pair_id, file = %filename, error = %e, "E2EE: encrypt failed")
+                }
             }
         }
         if encrypted.is_empty() {
@@ -793,8 +797,7 @@ impl NcE2eeClient {
             updated.key_checksums = vec![metadata_key_checksum(&metadata_key)];
         }
 
-        let outer = match build_outer(&updated, &metadata_key, &nc_username, &cert_pem, &pub_key)
-        {
+        let outer = match build_outer(&updated, &metadata_key, &nc_username, &cert_pem, &pub_key) {
             Ok(o) => o,
             Err(e) => {
                 let _ = ocs.unlock_folder(&folder_id, &token).await;

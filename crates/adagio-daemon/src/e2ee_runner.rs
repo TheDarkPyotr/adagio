@@ -116,7 +116,9 @@ pub async fn run_e2ee_cycle(
         Ok(mut entries) => {
             while let Ok(Some(entry)) = entries.next_entry().await {
                 let file_name = entry.file_name().to_string_lossy().to_string();
-                let Ok(meta) = entry.metadata().await else { continue };
+                let Ok(meta) = entry.metadata().await else {
+                    continue;
+                };
                 if !meta.is_file() || name_to_uuid.contains_key(&file_name) {
                     continue;
                 }
@@ -125,7 +127,9 @@ pub async fn run_e2ee_cycle(
                         let mime = mime_for(&file_name);
                         files_to_upload.push((file_name, mime, bytes));
                     }
-                    Err(e) => warn!(pair_id = %pair_id, file = %file_name, error = %e, "E2EE: read failed"),
+                    Err(e) => {
+                        warn!(pair_id = %pair_id, file = %file_name, error = %e, "E2EE: read failed")
+                    }
                 }
             }
         }
@@ -179,7 +183,9 @@ pub async fn run_e2ee_cycle(
                         downloaded += 1;
                         record_sync(journal, pair_id, &file_entry.filename).await;
                     }
-                    Err(e) => warn!(pair_id = %pair_id, file = %file_entry.filename, error = %e, "E2EE: write failed"),
+                    Err(e) => {
+                        warn!(pair_id = %pair_id, file = %file_entry.filename, error = %e, "E2EE: write failed")
+                    }
                 }
             }
             Err(e) => warn!(pair_id = %pair_id, uuid = %uuid, error = %e, "E2EE: decrypt failed"),
@@ -191,7 +197,10 @@ pub async fn run_e2ee_cycle(
     let uploaded = if !files_to_upload.is_empty() {
         let dav_folder = remote_root.as_str().trim_start_matches('/');
         let names: Vec<String> = files_to_upload.iter().map(|(n, _, _)| n.clone()).collect();
-        match e2ee.upload_locked(pair_id, dav_folder, files_to_upload).await {
+        match e2ee
+            .upload_locked(pair_id, dav_folder, files_to_upload)
+            .await
+        {
             Ok(uuids) => {
                 // Record journal entries for successfully uploaded files.
                 // upload_locked returns UUIDs; we write one entry per file in the input list.
