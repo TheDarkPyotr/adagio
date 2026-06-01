@@ -32,7 +32,7 @@ pub struct NetworkMonitor {
 }
 
 impl NetworkMonitor {
-    /// Create a new monitor. Call [`run`] to start the poll loop.
+    /// Create a new monitor. Call [`Self::run`] to start the poll loop.
     pub fn new(
         detector: Arc<dyn NetworkDetector>,
         policy: Arc<RwLock<NetworkPolicy>>,
