@@ -416,7 +416,7 @@ function PairRow({ pair, syncing, syncElapsed, lastDuration, deleting, onSync, o
           )}
           {pair.e2ee_enabled && onE2eeDisable && (
             <button onClick={onE2eeDisable} title="Disable E2EE"
-              style={{ background: 'transparent', border: '1px solid var(--hairline)', padding: '6px 10px', borderRadius: 'var(--r-pill)', fontSize: 12, cursor: 'pointer', color: 'var(--clay)', display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
+              style={{ background: 'transparent', border: '1px solid var(--hairline)', padding: '6px 10px', borderRadius: 'var(--r-pill)', cursor: 'pointer', color: 'var(--clay)', display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
               <Icon name="shield" size={11} color="var(--clay)" />Off
             </button>
           )}
