@@ -512,7 +512,7 @@ mod tests {
         let _m = srv
             .mock(
                 "POST",
-                "/ocs/v2.php/apps/end_to_end_encryption/api/v1/lock/folder-42",
+                "/ocs/v2.php/apps/end_to_end_encryption/api/v2/lock/folder-42",
             )
             .with_status(200)
             .with_header("Content-Type", "application/json")
