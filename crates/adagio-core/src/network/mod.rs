@@ -249,7 +249,6 @@ mod tests {
             on_battery: NetworkAction::Throttle,
             throttle_kbps: 200,
             blocked_ssids: vec!["BlockedNet".to_string()],
-            ..Default::default()
         };
         // Not metered, not on battery, different SSID.
         let state = NetworkState {

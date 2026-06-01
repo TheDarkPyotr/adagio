@@ -856,8 +856,10 @@ mod tests {
     #[test]
     fn sync_metadata_roundtrip() {
         let mk = generate_metadata_key();
-        let mut original = E2eeMetadata::default();
-        original.counter = 5;
+        let mut original = E2eeMetadata {
+            counter: 5,
+            ..Default::default()
+        };
         original.files.insert(
             "abc".to_string(),
             E2eeFileEntry {

@@ -286,7 +286,7 @@ fn row_to_entry(row: &sqlx::sqlite::SqliteRow) -> Result<VfsCacheEntry, JournalE
 mod tests {
     use super::*;
     use crate::journal::sqlite::SqliteJournal;
-    use crate::types::{AccountId, PairId, PairStatus, RelativePath};
+    use crate::types::{PairId, RelativePath};
     use crate::vfs::types::VfsCacheEntry;
 
     async fn make_journal() -> SqliteJournal {
@@ -384,7 +384,7 @@ mod tests {
         for i in 0..5 {
             let mut entry = VfsCacheEntry::new_cloud_only(
                 pair_id.clone(),
-                RelativePath::new(&format!("file-{i}.bin")),
+                RelativePath::new(format!("file-{i}.bin")),
                 100,
                 None,
                 base,

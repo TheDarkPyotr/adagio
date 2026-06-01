@@ -1,7 +1,6 @@
 use adagio_core::remote::mock::MockRemoteClient;
 use adagio_core::transfer::{download::download_file, upload::upload_single, TransferOptions};
 use adagio_core::types::{LocalPath, RemotePath};
-use bytes::Bytes;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use tempfile::TempDir;
 use tokio::sync::mpsc;
@@ -14,7 +13,6 @@ fn bench_upload_throughput(c: &mut Criterion) {
 
     for &size_mb in &[1usize, 10, 50] {
         let data: Vec<u8> = (0..size_mb * MB).map(|i| (i % 256) as u8).collect();
-        let data_bytes = Bytes::from(data.clone());
         group.throughput(Throughput::Bytes((size_mb * MB) as u64));
 
         group.bench_with_input(
@@ -31,9 +29,16 @@ fn bench_upload_throughput(c: &mut Criterion) {
                     let remote = RemotePath::new("bench/payload.bin");
                     let (tx, _rx) = mpsc::channel(8);
 
-                    upload_single(&client, &local, &remote, &TransferOptions::default(), tx)
-                        .await
-                        .expect("upload should succeed");
+                    upload_single(
+                        &client,
+                        &local,
+                        &remote,
+                        &TransferOptions::default(),
+                        tx,
+                        None,
+                    )
+                    .await
+                    .expect("upload should succeed");
                 });
             },
         );
@@ -72,6 +77,7 @@ fn bench_download_throughput(c: &mut Criterion) {
                             None,
                             &TransferOptions::default(),
                             tx,
+                            None,
                         )
                         .await
                         .expect("download should succeed");

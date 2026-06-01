@@ -328,8 +328,10 @@ mod tests {
     }
 
     fn sample_metadata() -> E2eeMetadata {
-        let mut m = E2eeMetadata::default();
-        m.counter = 1;
+        let mut m = E2eeMetadata {
+            counter: 1,
+            ..Default::default()
+        };
         m.files.insert(
             "abc123".to_string(),
             E2eeFileEntry {

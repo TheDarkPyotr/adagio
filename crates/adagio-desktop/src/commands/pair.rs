@@ -227,6 +227,84 @@ pub async fn get_exclude_patterns(state: State<'_, AppState>) -> Result<serde_js
         .map_err(|e| e.to_string())
 }
 
+#[cfg(test)]
+async fn list_files_internal(
+    pair: &SyncPair,
+    sub: &str,
+    journal: &dyn Journal,
+) -> Result<Vec<FileStatusDto>, String> {
+    let local_root = &pair.local_root.0;
+    let target_dir = if sub.is_empty() {
+        local_root.clone()
+    } else {
+        local_root.join(sub)
+    };
+
+    let read_dir =
+        std::fs::read_dir(&target_dir).map_err(|e| format!("cannot read {:?}: {e}", target_dir))?;
+
+    let mut entries: Vec<FileStatusDto> = Vec::new();
+    for entry in read_dir {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let file_name = entry.file_name().to_string_lossy().to_string();
+        let meta = entry.metadata().map_err(|e| e.to_string())?;
+        let is_dir = meta.is_dir();
+
+        let mtime: Option<i64> = meta.modified().ok().and_then(|t| {
+            t.duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .map(|d| d.as_millis() as i64)
+        });
+
+        let rel = if sub.is_empty() {
+            file_name.clone()
+        } else {
+            format!("{}/{}", sub.trim_end_matches('/'), file_name)
+        };
+
+        let rel_path = RelativePath::new(&rel);
+        let journal_entry = journal.get(&pair.id, &rel_path).await.ok().flatten();
+
+        let status = match &journal_entry {
+            Some(e) => journal_status_to_frontend(&e.status).to_string(),
+            None => "ok".to_string(),
+        };
+        let etag = journal_entry.as_ref().and_then(|e| e.etag.clone());
+
+        let item_count: Option<u32> = if is_dir {
+            std::fs::read_dir(entry.path())
+                .ok()
+                .map(|d| d.count() as u32)
+        } else {
+            None
+        };
+
+        entries.push(FileStatusDto {
+            path: format!("/{rel}"),
+            name: file_name,
+            is_dir,
+            size: Some(if is_dir {
+                dir_size(&entry.path())
+            } else {
+                meta.len()
+            }),
+            mtime,
+            status,
+            etag,
+            share_count: None,
+            item_count,
+        });
+    }
+
+    entries.sort_by(|a, b| match (b.is_dir, a.is_dir) {
+        (true, false) => std::cmp::Ordering::Greater,
+        (false, true) => std::cmp::Ordering::Less,
+        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+    });
+
+    Ok(entries)
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -234,7 +312,6 @@ mod tests {
     use super::*;
     use crate::config::{save_config, SavedConfig, SavedPair};
     use adagio_core::journal::sqlite::SqliteJournal;
-    use adagio_core::journal::Journal as _;
     use adagio_core::types::{
         AccountId, JournalEntry, LocalPath, PairId, PairStatus, RelativePath, RemotePath, SyncPair,
         SyncStatus,
@@ -509,82 +586,4 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].status, "ok");
     }
-}
-
-#[cfg(test)]
-async fn list_files_internal(
-    pair: &SyncPair,
-    sub: &str,
-    journal: &dyn Journal,
-) -> Result<Vec<FileStatusDto>, String> {
-    let local_root = &pair.local_root.0;
-    let target_dir = if sub.is_empty() {
-        local_root.clone()
-    } else {
-        local_root.join(sub)
-    };
-
-    let read_dir =
-        std::fs::read_dir(&target_dir).map_err(|e| format!("cannot read {:?}: {e}", target_dir))?;
-
-    let mut entries: Vec<FileStatusDto> = Vec::new();
-    for entry in read_dir {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let file_name = entry.file_name().to_string_lossy().to_string();
-        let meta = entry.metadata().map_err(|e| e.to_string())?;
-        let is_dir = meta.is_dir();
-
-        let mtime: Option<i64> = meta.modified().ok().and_then(|t| {
-            t.duration_since(std::time::UNIX_EPOCH)
-                .ok()
-                .map(|d| d.as_millis() as i64)
-        });
-
-        let rel = if sub.is_empty() {
-            file_name.clone()
-        } else {
-            format!("{}/{}", sub.trim_end_matches('/'), file_name)
-        };
-
-        let rel_path = RelativePath::new(&rel);
-        let journal_entry = journal.get(&pair.id, &rel_path).await.ok().flatten();
-
-        let status = match &journal_entry {
-            Some(e) => journal_status_to_frontend(&e.status).to_string(),
-            None => "ok".to_string(),
-        };
-        let etag = journal_entry.as_ref().and_then(|e| e.etag.clone());
-
-        let item_count: Option<u32> = if is_dir {
-            std::fs::read_dir(entry.path())
-                .ok()
-                .map(|d| d.count() as u32)
-        } else {
-            None
-        };
-
-        entries.push(FileStatusDto {
-            path: format!("/{rel}"),
-            name: file_name,
-            is_dir,
-            size: Some(if is_dir {
-                dir_size(&entry.path())
-            } else {
-                meta.len()
-            }),
-            mtime,
-            status,
-            etag,
-            share_count: None,
-            item_count,
-        });
-    }
-
-    entries.sort_by(|a, b| match (b.is_dir, a.is_dir) {
-        (true, false) => std::cmp::Ordering::Greater,
-        (false, true) => std::cmp::Ordering::Less,
-        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-    });
-
-    Ok(entries)
 }

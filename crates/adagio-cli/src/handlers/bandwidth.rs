@@ -140,7 +140,6 @@ async fn run_clear(client: &Arc<DaemonClient>, json: bool) -> Result<(), CliErro
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::cli::{BandwidthCommand, Cli, Commands};
     use clap::Parser;
 

@@ -57,7 +57,7 @@ impl TrackingClient {
     }
 
     async fn range_requested(&self) -> Option<ByteRange> {
-        self.range_requested.lock().await.clone()
+        *self.range_requested.lock().await
     }
 }
 
@@ -108,7 +108,7 @@ impl RemoteClient for TrackingClient {
         _path: &RemotePath,
         range: Option<ByteRange>,
     ) -> Result<ByteStream, ClientError> {
-        *self.range_requested.lock().await = range.clone();
+        *self.range_requested.lock().await = range;
         let slice: Vec<u8> = match &range {
             Some(r) => {
                 let start = r.start as usize;

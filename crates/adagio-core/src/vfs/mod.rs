@@ -477,7 +477,6 @@ pub fn free_disk_bytes() -> u64 {
 mod tests {
     use super::*;
     use crate::journal::sqlite::SqliteJournal;
-    use crate::journal::Journal as _;
     use crate::types::{AccountId, PairId, PairStatus};
     use async_trait::async_trait;
     use chrono::Utc;
@@ -660,7 +659,7 @@ mod tests {
     #[tokio::test]
     async fn metadata_sync_preserves_locally_available_state() {
         use crate::remote::mock::MockRemoteClient;
-        use crate::vfs::types::{VfsCacheEntry, VfsState};
+        use crate::vfs::types::VfsState;
         use chrono::Utc;
 
         let journal = make_journal().await;

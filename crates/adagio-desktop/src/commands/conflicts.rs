@@ -196,7 +196,7 @@ mod tests {
             json.contains("\"conflict_kind\""),
             "missing conflict_kind in: {json}"
         );
-        assert_eq!(dto.is_dir, true);
+        assert!(dto.is_dir);
         assert_eq!(dto.conflict_kind, "renamed_both_sides");
     }
 }

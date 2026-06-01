@@ -472,7 +472,10 @@ mod tests {
     async fn get_server_key_returns_json() {
         let mut srv = mockito::Server::new_async().await;
         let _m = srv
-            .mock("GET", mockito::Matcher::Regex(r".*/server-key$".to_string()))
+            .mock(
+                "GET",
+                mockito::Matcher::Regex(r".*/server-key$".to_string()),
+            )
             .with_status(200)
             .with_header("Content-Type", "application/json")
             .with_body(r#"{"ocs":{"data":{"public-key":"PEM..."}}}"#)
@@ -488,7 +491,10 @@ mod tests {
     async fn get_private_key_returns_blob() {
         let mut srv = mockito::Server::new_async().await;
         let _m = srv
-            .mock("GET", mockito::Matcher::Regex(r".*/private-key$".to_string()))
+            .mock(
+                "GET",
+                mockito::Matcher::Regex(r".*/private-key$".to_string()),
+            )
             .with_status(200)
             .with_header("Content-Type", "application/json")
             .with_body(r#"{"ocs":{"data":{"private-key":"ciphertext|nonce|salt"}}}"#)
@@ -504,7 +510,10 @@ mod tests {
     async fn lock_folder_returns_token() {
         let mut srv = mockito::Server::new_async().await;
         let _m = srv
-            .mock("POST", mockito::Matcher::Regex(r".*/lock/folder-42$".to_string()))
+            .mock(
+                "POST",
+                mockito::Matcher::Regex(r".*/lock/folder-42$".to_string()),
+            )
             .match_header("X-NC-E2EE-COUNTER", "1")
             .match_header("OCS-APIREQUEST", "true")
             .with_status(200)

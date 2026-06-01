@@ -255,19 +255,11 @@ mod tests {
     #[test]
     fn status_label_has_correct_visual_width() {
         // Strip ANSI codes from status_label and check length.
-        for (status, expected) in [("idle", "idle"), ("syncing", "syncing"), ("error", "error")] {
+        for (status, _expected) in [("idle", "idle"), ("syncing", "syncing"), ("error", "error")] {
             let label = status_label(status, 10);
-            // Count only printable chars (ignore ESC sequences).
-            let plain: String = label
-                .chars()
-                .skip_while(|c| *c == '\x1b')
-                .collect::<String>()
-                .chars()
-                .filter(|c| *c != '\x1b')
-                .collect();
+            let plain = strip_ansi(&label);
             // The label string before escapes should be padded to 10.
-            let visible_len = expected.len() + (10 - expected.len()); // = 10
-            assert_eq!(visible_len, 10);
+            assert_eq!(plain.chars().count(), 10);
         }
     }
 }
