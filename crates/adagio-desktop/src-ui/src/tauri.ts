@@ -443,3 +443,85 @@ export const e2eeStatus = (pairId: string): Promise<E2eeStatusDto> =>
 /** Disable E2EE for a pair: deletes server metadata and clears local state. */
 export const e2eeDisable = (pairId: string): Promise<void> =>
   invoke('e2ee_disable', { pairId });
+
+// ── Onboarding ────────────────────────────────────────────────────────────────
+
+/** Result of probing a Nextcloud server URL (step 2). */
+export interface ServerProbeDto {
+  reachable: boolean;
+  maintenance: boolean;
+  /** Human-readable version string, e.g. `"28.0.1"`. */
+  version: string;
+  /** `true` when major version ≥ 16 (Login Flow v2 supported). */
+  version_ok: boolean;
+  /** `true` when major version ≥ 20 (per-folder E2EE stable). */
+  e2ee_available: boolean;
+  tls_valid: boolean;
+  /** Round-trip latency of the `/status.php` probe in milliseconds. */
+  latency_ms: number;
+  error: string | null;
+}
+
+/** Probe a candidate Nextcloud server URL without authenticating. */
+export const probeServer = (serverUrl: string): Promise<ServerProbeDto> =>
+  invoke('probe_server', { serverUrl });
+
+/** Payload returned immediately when a Login Flow v2 session starts (step 3). */
+export interface AuthFlowInitDto {
+  /** Last 8 chars of the login token formatted as "XXXX · XXXX". */
+  display_code: string;
+  /** Full login URL opened in the browser and encoded in the QR. */
+  login_url: string;
+  /** Inline SVG string of the QR code matrix. */
+  qr_svg: string;
+  /** Unix timestamp (seconds) when the 5-minute countdown expires. */
+  expires_at: number;
+}
+
+/** Start a Nextcloud Login Flow v2 session. Opens the browser automatically. */
+export const beginAuthFlow = (serverUrl: string): Promise<AuthFlowInitDto> =>
+  invoke('begin_auth_flow', { serverUrl });
+
+/** Listen for successful Login Flow v2 completion. */
+export const listenAuthFlowComplete = (
+  cb: (payload: { account: AccountDto }) => void,
+): Promise<UnlistenFn> =>
+  listen<{ account: AccountDto }>('adagio://auth-flow-complete', (e) => cb(e.payload));
+
+/** Listen for Login Flow v2 session expiry (5-minute timeout). */
+export const listenAuthFlowExpired = (cb: () => void): Promise<UnlistenFn> =>
+  listen('adagio://auth-flow-expired', () => cb());
+
+/** Open the OS native folder-picker dialog. Returns `null` if the user cancels. */
+export const pickFolder = (): Promise<string | null> =>
+  invoke('pick_folder');
+
+/** Sync preferences chosen during onboarding (step 4). */
+export interface OnboardingPrefsInput {
+  local_folder: string;
+  vfs_enabled: boolean;
+  pin_pinned_folders: boolean;
+  smart_bandwidth: boolean;
+  watch_external_edits: boolean;
+}
+
+/** Create the first sync pair and persist onboarding preferences. */
+export const completeOnboarding = (
+  accountId: string,
+  prefs: OnboardingPrefsInput,
+): Promise<PairDto> =>
+  invoke('complete_onboarding', { accountId, prefs });
+
+/** Remote account storage statistics (step 5). */
+export interface RemoteStatsDto {
+  /** Total quota in bytes. */
+  total_bytes: number;
+  /** Bytes already used. */
+  used_bytes: number;
+  /** Total remote file count; `null` until a remote tree scan completes. */
+  file_count: number | null;
+}
+
+/** Fetch remote storage quota for a connected account. */
+export const getAccountRemoteStats = (accountId: string): Promise<RemoteStatsDto> =>
+  invoke('get_account_remote_stats', { accountId });

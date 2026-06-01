@@ -1,14 +1,14 @@
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan at
-`specs/013-e2ee-encryption/plan.md`.
+`specs/014-onboarding-account-setup/plan.md`.
 
 Key artifacts for this feature:
-- Spec: `specs/013-e2ee-encryption/spec.md`
-- Research & decisions: `specs/013-e2ee-encryption/research.md`
-- Data model: `specs/013-e2ee-encryption/data-model.md`
-- IPC contract: `specs/013-e2ee-encryption/contracts/e2ee-ipc.md`
-- Dev setup: `specs/013-e2ee-encryption/quickstart.md`
+- Spec: `specs/014-onboarding-account-setup/spec.md`
+- Research & decisions: `specs/014-onboarding-account-setup/research.md`
+- Data model: `specs/014-onboarding-account-setup/data-model.md`
+- IPC contract: `specs/014-onboarding-account-setup/contracts/onboarding-ipc.md`
+- Dev setup: `specs/014-onboarding-account-setup/quickstart.md`
 <!-- SPECKIT END -->
 
 ## Current status (branch `013-e2ee-encryption`)

@@ -118,6 +118,7 @@ mod tests {
         AppState {
             daemon: adagio_ipc::DaemonClient::new_stub(),
             config_path: dir.path().join("config.json"),
+            auth_flow: crate::auth_flow::AuthFlowSlot::default(),
         }
     }
 

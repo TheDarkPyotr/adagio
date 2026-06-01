@@ -21,6 +21,8 @@ adagio-nextcloud = { path = "../adagio-nextcloud" }
 adagio-ipc = { path = "../adagio-ipc" }
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
+qrcode = "0.14"
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -44,3 +46,4 @@ tauri-build = { version = "2", features = [] }
 tokio = { workspace = true }
 tempfile = "3"
 sqlx = { workspace = true }
+mockito = "1"

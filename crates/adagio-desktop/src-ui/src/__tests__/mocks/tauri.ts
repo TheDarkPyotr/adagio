@@ -51,6 +51,27 @@ const defaultInvoke = (cmd: string): Promise<unknown> => {
     case 'list_custom_palettes': return Promise.resolve([]);
     case 'save_custom_palette': return Promise.resolve({ id: 'custom-test', name: 'Test', cream: '#f5f1ea', ink: '#15171a', accent: '#c8542a' });
     case 'delete_custom_palette': return Promise.resolve();
+    // ── Onboarding ──────────────────────────────────────────────────────────
+    case 'probe_server': return Promise.resolve({
+      reachable: true, maintenance: false, version: '28.0.1', version_ok: true,
+      e2ee_available: true, tls_valid: true, latency_ms: 50, error: null,
+    });
+    case 'begin_auth_flow': return Promise.resolve({
+      display_code: 'AB12 · CD34',
+      login_url: 'https://nc.test/index.php/login/v2/flow/token',
+      qr_svg: '<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>',
+      expires_at: Math.floor(Date.now() / 1000) + 300,
+    });
+    case 'pick_folder': return Promise.resolve('/home/user/Adagio');
+    case 'get_account_remote_stats': return Promise.resolve({
+      total_bytes: 107_374_182_400,
+      used_bytes: 5_368_709_120,
+      file_count: null,
+    });
+    case 'complete_onboarding': return Promise.resolve({
+      id: 'pair-1', account_id: 'acc-1', local_root: '/home/user/Adagio',
+      remote_root: '/', scan_interval_secs: 7200, selective_paths: [], vfs_enabled: false,
+    });
     default: return Promise.resolve(null);
   }
 };

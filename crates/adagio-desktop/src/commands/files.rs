@@ -1,7 +1,7 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Validate that the resolved path stays inside `base` (prevents path traversal).
-fn safe_join(base: &PathBuf, rel: &str, name: &str) -> Result<PathBuf, String> {
+fn safe_join(base: &Path, rel: &str, name: &str) -> Result<PathBuf, String> {
     let candidate = base
         .join(rel.trim_start_matches('/'))
         .join(name.trim_start_matches('/'));
@@ -10,7 +10,9 @@ fn safe_join(base: &PathBuf, rel: &str, name: &str) -> Result<PathBuf, String> {
     let resolved = if let Ok(p) = candidate.canonicalize() {
         p
     } else if let Some(parent) = candidate.parent() {
-        let parent_canon = parent.canonicalize().unwrap_or_else(|_| parent.to_path_buf());
+        let parent_canon = parent
+            .canonicalize()
+            .unwrap_or_else(|_| parent.to_path_buf());
         parent_canon.join(candidate.file_name().unwrap_or_default())
     } else {
         candidate.clone()

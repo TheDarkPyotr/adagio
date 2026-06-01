@@ -5,6 +5,7 @@ pub mod daemon;
 pub mod e2ee;
 pub mod files;
 pub mod network;
+pub mod onboarding;
 pub mod pair;
 pub mod prefs;
 pub mod sharing;

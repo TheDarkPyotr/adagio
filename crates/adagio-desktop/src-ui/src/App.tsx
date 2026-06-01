@@ -245,10 +245,23 @@ export default function App() {
     if (next.length === 0) setOnboarded(false);
   };
 
+  // Called when onboarding or add-account wizard finishes successfully.
+  // Refreshes both accounts and pairs so the sidebar reflects the new pair immediately.
+  const handleOnboardingComplete = useCallback(async () => {
+    try {
+      const [accs, ps] = await Promise.all([listAccounts(), listPairs()]);
+      setAccounts(accs);
+      setPairs(ps);
+      setActiveAccountId(prev => prev ?? accs[0]?.id ?? null);
+    } catch {}
+    setOnboarded(true);
+  }, []);
+
   const handleAddAccountComplete = () => {
     const prevIds = new Set(accounts.map(a => a.id));
-    listAccounts().then(accs => {
+    Promise.all([listAccounts(), listPairs()]).then(([accs, ps]) => {
       setAccounts(accs);
+      setPairs(ps);
       const newAcc = accs.find(a => !prevIds.has(a.id));
       if (newAcc) setActiveAccountId(newAcc.id);
       setView('main');
@@ -268,7 +281,7 @@ export default function App() {
     return (
       <div style={{ width: '100%', height: '100vh', position: 'relative', overflow: 'hidden', borderRadius: 'inherit' }}>
         <Chrome>
-          <OnboardingWizard onComplete={() => setOnboarded(true)} />
+          <OnboardingWizard onComplete={handleOnboardingComplete} />
         </Chrome>
       </div>
     );
@@ -293,7 +306,7 @@ export default function App() {
         }}
       >
         {view === 'add-account' ? (
-          <OnboardingWizard onComplete={handleAddAccountComplete} />
+          <OnboardingWizard onComplete={() => handleAddAccountComplete()} />
         ) : view === 'settings' ? (
           <SettingsScene
             palette={palette}

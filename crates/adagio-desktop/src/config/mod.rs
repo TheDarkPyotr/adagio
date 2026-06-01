@@ -5,6 +5,27 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::{info, warn};
 
+/// User preferences captured during the onboarding wizard.
+///
+/// Stored inside [`SavedConfig`] so they survive restarts. All fields default
+/// to the recommended safe values when the key is absent (backwards-compatible).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct OnboardingPrefs {
+    /// Enable Virtual Filesystem (on-demand files) for the first pair.
+    #[serde(default)]
+    pub vfs_enabled: bool,
+    /// Pin the "Pinned Folders" section in the sidebar by default.
+    #[serde(default)]
+    pub pin_pinned_folders: bool,
+    /// Pause sync automatically on metered / battery-constrained networks.
+    #[serde(default)]
+    pub smart_bandwidth: bool,
+    /// Watch for edits made by external apps (inotify / FSEvents) and sync
+    /// immediately rather than waiting for the next scheduled scan.
+    #[serde(default)]
+    pub watch_external_edits: bool,
+}
+
 /// On-disk representation of all user configuration.
 ///
 /// Written atomically (write temp + rename) to `config.json` in the platform
@@ -30,6 +51,9 @@ pub struct SavedConfig {
     /// User-defined custom color palettes.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub custom_palettes: Vec<CustomPaletteEntry>,
+    /// Preferences captured during the onboarding wizard.
+    #[serde(default)]
+    pub onboarding_prefs: OnboardingPrefs,
 }
 
 /// A user-defined colour palette stored alongside built-in themes.
@@ -239,6 +263,66 @@ mod tests {
         }
     }
 
+    // ── T007: OnboardingPrefs tests ───────────────────────────────────────────
+
+    #[test]
+    fn onboarding_prefs_defaults_to_all_false() {
+        let prefs = OnboardingPrefs::default();
+        assert!(!prefs.vfs_enabled);
+        assert!(!prefs.pin_pinned_folders);
+        assert!(!prefs.smart_bandwidth);
+        assert!(!prefs.watch_external_edits);
+    }
+
+    #[test]
+    fn onboarding_prefs_round_trips_through_json() {
+        let prefs = OnboardingPrefs {
+            vfs_enabled: true,
+            pin_pinned_folders: false,
+            smart_bandwidth: true,
+            watch_external_edits: false,
+        };
+        let json = serde_json::to_string(&prefs).unwrap();
+        let loaded: OnboardingPrefs = serde_json::from_str(&json).unwrap();
+        assert!(loaded.vfs_enabled);
+        assert!(!loaded.pin_pinned_folders);
+        assert!(loaded.smart_bandwidth);
+        assert!(!loaded.watch_external_edits);
+    }
+
+    #[test]
+    fn onboarding_prefs_absent_from_legacy_config_defaults_correctly() {
+        // A config written before onboarding_prefs was added has no such key.
+        // The #[serde(default)] attribute must fill in defaults without error.
+        let json = r#"{"version":1,"accounts":[],"pairs":[]}"#;
+        let cfg: SavedConfig = serde_json::from_str(json).unwrap();
+        assert!(
+            !cfg.onboarding_prefs.vfs_enabled,
+            "legacy config should default to false"
+        );
+    }
+
+    #[test]
+    fn saved_config_preserves_onboarding_prefs_on_round_trip() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("config.json");
+        let cfg = SavedConfig {
+            onboarding_prefs: OnboardingPrefs {
+                vfs_enabled: true,
+                pin_pinned_folders: true,
+                smart_bandwidth: false,
+                watch_external_edits: true,
+            },
+            ..Default::default()
+        };
+        save_config(&path, &cfg).unwrap();
+        let loaded = load_config(&path);
+        assert!(loaded.onboarding_prefs.vfs_enabled);
+        assert!(loaded.onboarding_prefs.pin_pinned_folders);
+        assert!(!loaded.onboarding_prefs.smart_bandwidth);
+        assert!(loaded.onboarding_prefs.watch_external_edits);
+    }
+
     // ── T009: SavedConfig round-trip tests ────────────────────────────────────
 
     #[test]
@@ -263,6 +347,7 @@ mod tests {
             palette: None,
             network_policy: Default::default(),
             custom_palettes: vec![],
+            onboarding_prefs: Default::default(),
         };
         save_config(&path, &cfg).unwrap();
         let loaded = load_config(&path);
@@ -315,6 +400,7 @@ mod tests {
             palette: None,
             network_policy: Default::default(),
             custom_palettes: vec![],
+            onboarding_prefs: Default::default(),
         };
         save_config(&path, &cfg).unwrap();
         let raw = fs::read_to_string(&path).unwrap();

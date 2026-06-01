@@ -1,3 +1,4 @@
+pub mod auth_flow;
 pub mod commands;
 pub mod config;
 pub mod lifecycle;
@@ -12,6 +13,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // ── Register AppState SYNCHRONOUSLY with a stub DaemonClient.
             //
@@ -26,6 +28,7 @@ pub fn run() {
             let app_state = state::AppState {
                 daemon: stub_daemon.clone(),
                 config_path: config_dir.join("config.json"),
+                auth_flow: crate::auth_flow::AuthFlowSlot::default(),
             };
             app.manage(app_state);
 
@@ -197,6 +200,11 @@ pub fn run() {
             commands::network::add_blocked_ssid,
             commands::network::remove_blocked_ssid,
             commands::network::list_blocked_ssids,
+            commands::onboarding::probe_server,
+            commands::onboarding::begin_auth_flow,
+            commands::onboarding::pick_folder,
+            commands::onboarding::get_account_remote_stats,
+            commands::onboarding::complete_onboarding,
         ])
         .run(tauri::generate_context!())
         .expect("error running Tauri application");

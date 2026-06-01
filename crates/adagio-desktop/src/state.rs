@@ -13,6 +13,12 @@ pub struct AppState {
     pub daemon: Arc<DaemonClient>,
     /// Path to the config directory (used for UI preferences such as palette).
     pub config_path: PathBuf,
+    /// In-progress Login Flow v2 session, if one is active.
+    ///
+    /// Shared via `Arc<Mutex<...>>` so closures in the background poll task can
+    /// hold a clone of the slot and clear it when the session completes.
+    /// `None` when no auth flow is running.
+    pub auth_flow: crate::auth_flow::AuthFlowSlot,
 }
 
 impl AppState {
@@ -27,6 +33,7 @@ impl AppState {
         Ok(Self {
             daemon,
             config_path,
+            auth_flow: crate::auth_flow::AuthFlowSlot::default(),
         })
     }
 }
@@ -49,6 +56,7 @@ mod tests {
         let _type_check = |s: &AppState| {
             let _path: &PathBuf = &s.config_path;
             let _client: &Arc<DaemonClient> = &s.daemon;
+            let _auth: &crate::auth_flow::AuthFlowSlot = &s.auth_flow;
         };
     }
 
