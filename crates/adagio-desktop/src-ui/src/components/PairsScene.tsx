@@ -92,12 +92,15 @@ export default function PairsScene({ pairs, account, onBack, onPairsChange, daem
     setDeleting(null);
   };
 
-  const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncErrors, setSyncErrors] = useState<Record<string, string>>({});
+
+  const clearSyncError = (id: string) =>
+    setSyncErrors(prev => { const n = { ...prev }; delete n[id]; return n; });
 
   const handleSync = async (id: string) => {
-    setSyncError(null);
-    try { await triggerSync(id); } catch {
-      setSyncError('Cannot sync — the sync daemon is not running.');
+    clearSyncError(id);
+    try { await triggerSync(id); } catch (err) {
+      setSyncErrors(prev => ({ ...prev, [id]: String(err) }));
       return;
     }
 
@@ -158,17 +161,6 @@ export default function PairsScene({ pairs, account, onBack, onPairsChange, daem
               : 'Sync is not running — Sync Now is unavailable.'}
           </div>
         )}
-        {syncError && (
-          <div style={{
-            marginBottom: 20, padding: '10px 16px',
-            background: 'var(--clay)', color: '#fff',
-            borderRadius: 'var(--r-2)', fontSize: 13,
-            display: 'flex', alignItems: 'center', gap: 10,
-          }}>
-            <Icon name="warn" size={15} color="#fff" />
-            {syncError}
-          </div>
-        )}
         <div style={{ maxWidth: 560 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
             <h2 style={SECTION_H2}>Sync pairs</h2>
@@ -197,6 +189,7 @@ export default function PairsScene({ pairs, account, onBack, onPairsChange, daem
               lastDuration={lastDuration[pair.id] ?? null}
               deleting={deleting === pair.id}
               syncDisabled={daemonState !== 'connected'}
+              syncError={syncErrors[pair.id] ?? null}
               onSync={() => handleSync(pair.id)}
               onDelete={() => handleDelete(pair.id)}
               onE2eeInit={async () => {
@@ -356,13 +349,14 @@ export default function PairsScene({ pairs, account, onBack, onPairsChange, daem
 
 // ── PairRow ───────────────────────────────────────────────────────────────────
 
-function PairRow({ pair, syncing, syncElapsed, lastDuration, deleting, syncDisabled, onSync, onDelete, onE2eeInit, e2eeInitLoading, onE2eePair, onE2eeDisable }: {
+function PairRow({ pair, syncing, syncElapsed, lastDuration, deleting, syncDisabled, syncError, onSync, onDelete, onE2eeInit, e2eeInitLoading, onE2eePair, onE2eeDisable }: {
   pair: PairDto;
   syncing: boolean;
   syncElapsed: number;
   lastDuration: number | null;
   deleting: boolean;
   syncDisabled?: boolean;
+  syncError?: string | null;
   onSync: () => void;
   onDelete: () => void;
   onE2eeInit?: () => void;
@@ -385,7 +379,7 @@ function PairRow({ pair, syncing, syncElapsed, lastDuration, deleting, syncDisab
 
   return (
     <div onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
-      style={{ padding: '16px 18px', background: h ? 'var(--paper-2)' : 'var(--paper)', border: '1px solid var(--hairline)', borderRadius: 'var(--r-3)', marginBottom: 10, transition: 'background 0.12s' }}>
+      style={{ padding: '16px 18px', background: h ? 'var(--paper-2)' : 'var(--paper)', border: `1px solid ${syncError ? 'var(--clay)' : 'var(--hairline)'}`, borderRadius: 'var(--r-3)', marginBottom: 10, transition: 'background 0.12s, border-color 0.12s' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
@@ -460,6 +454,12 @@ function PairRow({ pair, syncing, syncElapsed, lastDuration, deleting, syncDisab
           </button>
         </div>
       </div>
+      {syncError && (
+        <div style={{ marginTop: 10, padding: '7px 10px', background: 'var(--clay)', color: '#fff', borderRadius: 'var(--r-2)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Icon name="warn" size={13} color="#fff" />
+          {syncError}
+        </div>
+      )}
     </div>
   );
 }
