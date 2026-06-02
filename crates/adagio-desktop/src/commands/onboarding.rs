@@ -543,29 +543,12 @@ async fn finalise_auth(
     app: &tauri::AppHandle,
 ) -> Result<(), String> {
     use crate::state::AppState;
-    use adagio_core::types::AccountId;
     use adagio_ipc::DaemonRequest;
     use tauri::{Emitter, Manager};
 
-    let id = AccountId::new();
-    let id_str = id.0.clone();
-
-    // Store app-password in OS keychain.
-    let creds_json = serde_json::to_string(&serde_json::json!({
-        "app_password": creds.app_password
-    }))
-    .map_err(|e| e.to_string())?;
-
-    let creds_json_clone = creds_json.clone();
-    let id_str_clone = id_str.clone();
-    tokio::task::spawn_blocking(move || {
-        adagio_nextcloud::auth::store_credentials(&id_str_clone, &creds_json_clone)
-    })
-    .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| e.to_string())?;
-
-    // Register account with daemon.
+    // Register account with daemon. The daemon stores the app-password in the
+    // keychain under its own key; build_client passes it verbatim to basic auth,
+    // so secret must be the raw password — not a JSON wrapper.
     let state = app.state::<AppState>();
     let resp = state
         .daemon
@@ -573,7 +556,7 @@ async fn finalise_auth(
             server_url: creds.server.clone(),
             username: creds.login_name.clone(),
             display_name: creds.login_name.clone(),
-            secret: creds_json,
+            secret: creds.app_password.clone(),
         })
         .await
         .map_err(|e| e.to_string())?;
@@ -584,9 +567,9 @@ async fn finalise_auth(
         "Login Flow v2 account registered"
     );
 
-    // Emit success event.
+    // Emit success event with the account id assigned by the daemon.
     let account_dto = serde_json::json!({
-        "id": resp["id"].as_str().unwrap_or(&id_str),
+        "id": resp["id"].as_str().unwrap_or(""),
         "display_name": resp["display_name"].as_str().unwrap_or(&creds.login_name),
         "server_url": resp["server_url"].as_str().unwrap_or(&creds.server),
         "username": resp["username"].as_str().unwrap_or(&creds.login_name),
