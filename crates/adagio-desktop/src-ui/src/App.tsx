@@ -421,7 +421,7 @@ export default function App() {
       {/* T056 — Daemon reconnection banner / error overlay */}
       {daemonState === 'stopped' && (
         <div data-testid="daemon-stopped-banner" style={{
-          position: 'fixed', top: 0, left: 0, right: 0,
+          position: 'fixed', top: 44, left: 0, right: 0,
           background: 'var(--clay)', color: '#fff',
           padding: '8px 20px', fontSize: 13, zIndex: 2000,
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16,
@@ -442,7 +442,7 @@ export default function App() {
       )}
       {daemonState === 'reconnecting' && (
         <div data-testid="reconnecting-banner" style={{
-          position: 'fixed', top: 0, left: 0, right: 0,
+          position: 'fixed', top: 44, left: 0, right: 0,
           background: 'var(--clay)', color: '#fff',
           padding: '8px 16px', fontSize: 13, textAlign: 'center', zIndex: 2000,
         }}>
