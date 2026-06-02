@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { MarkSlur, Icon, SpinDot } from './shared';
 import {
   probeServer, beginAuthFlow, pickFolder, getAccountRemoteStats, completeOnboarding,
-  listenAuthFlowComplete, listenAuthFlowExpired, getStatus,
+  listenAuthFlowComplete, listenAuthFlowExpired, getStatus, resumeSync,
 } from '../tauri';
 import type { ServerProbeDto, AuthFlowInitDto, RemoteStatsDto, SyncStatusDto } from '../tauri';
 
@@ -205,10 +205,13 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
         smart_bandwidth: smartBandwidth,
         watch_external_edits: watchExternal,
       })
-        .then(pair => {
+        .then(async pair => {
           if (!live) return;
           setPairId(pair.id ?? null);
           setPairCreating(false);
+          // Ensure sync is running — engine may be paused from a prior session.
+          const s = await getStatus().catch(() => null);
+          if (s?.status === 'paused') resumeSync().catch(() => {});
         })
         .catch(e => {
           if (!live) return;
@@ -560,9 +563,11 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
                   remoteStats.file_count === 0 ? (
                     'No files yet · '
                   ) : remoteStats.file_count !== null ? (
-                    `${remoteStats.file_count.toLocaleString()} files · ${formatBytes(remoteStats.total_bytes)} · `
-                  ) : (
+                    `${remoteStats.file_count.toLocaleString()} files · ${remoteStats.total_bytes !== null ? formatBytes(remoteStats.total_bytes) + ' · ' : formatBytes(remoteStats.used_bytes) + ' used · '}`
+                  ) : remoteStats.total_bytes !== null ? (
                     `${formatBytes(remoteStats.used_bytes)} used of ${formatBytes(remoteStats.total_bytes)} · `
+                  ) : (
+                    `${formatBytes(remoteStats.used_bytes)} used · `
                   )
                 ) : (
                   'Fetching remote info… '
@@ -595,7 +600,12 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                       <span style={{ fontSize: 13.5, fontWeight: 500 }}>Initial sync</span>
                       <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--ink-muted)' }}>
-                        {syncStatus ? (syncStatus.status === 'syncing' ? 'Syncing…' : syncStatus.status === 'idle' ? 'Up to date' : syncStatus.status) : 'Starting…'}
+                        {syncStatus
+                      ? syncStatus.status === 'syncing' ? 'Syncing…'
+                        : syncStatus.status === 'idle'   ? 'Up to date'
+                        : syncStatus.status === 'paused' ? 'Resuming…'
+                        : syncStatus.status
+                      : 'Starting…'}
                       </span>
                     </div>
                     <div style={{ height: 6, background: 'var(--cream-2)', borderRadius: 3, overflow: 'hidden' }}>

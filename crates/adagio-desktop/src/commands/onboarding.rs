@@ -55,8 +55,8 @@ pub struct AuthFlowInitDto {
 /// Remote account storage statistics.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RemoteStatsDto {
-    /// Total quota in bytes (`quota.total` from OCS).
-    pub total_bytes: u64,
+    /// Total quota in bytes, or `null` when the account has unlimited quota.
+    pub total_bytes: Option<u64>,
     /// Bytes already used (`quota.used` from OCS).
     pub used_bytes: u64,
     /// Total remote file count; `null` until a remote tree scan completes.
@@ -396,8 +396,9 @@ pub async fn get_account_remote_stats(
     let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
 
     let quota = &body["ocs"]["data"]["quota"];
-    let total_bytes = quota["total"].as_u64().unwrap_or(0);
-    let used_bytes = quota["used"].as_u64().unwrap_or(0);
+    // Nextcloud returns -3 (or any negative) for unlimited quota; treat as None.
+    let total_bytes = quota["total"].as_i64().filter(|&v| v > 0).map(|v| v as u64);
+    let used_bytes = quota["used"].as_i64().unwrap_or(0).max(0) as u64;
 
     debug!(
         account_id = %account_id,
@@ -407,7 +408,7 @@ pub async fn get_account_remote_stats(
     );
 
     Ok(RemoteStatsDto {
-        total_bytes,
+        total_bytes, // None = unlimited
         used_bytes,
         file_count: None,
     })
@@ -672,7 +673,7 @@ mod tests {
     #[test]
     fn remote_stats_dto_serialises_correctly() {
         let dto = RemoteStatsDto {
-            total_bytes: 107_374_182_400,
+            total_bytes: Some(107_374_182_400),
             used_bytes: 5_368_709_120,
             file_count: None,
         };

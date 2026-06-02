@@ -514,8 +514,8 @@ export const completeOnboarding = (
 
 /** Remote account storage statistics (step 5). */
 export interface RemoteStatsDto {
-  /** Total quota in bytes. */
-  total_bytes: number;
+  /** Total quota in bytes, or `null` for unlimited quota. */
+  total_bytes: number | null;
   /** Bytes already used. */
   used_bytes: number;
   /** Total remote file count; `null` until a remote tree scan completes. */
