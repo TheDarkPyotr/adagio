@@ -208,7 +208,20 @@ export default function App() {
   };
 
   const [activePairId, setActivePairId] = useState<string | null>(null);
-  const activePair = pairs.find(p => p.id === activePairId) ?? pairs[0] ?? null;
+
+  // When the active account changes, reset the active pair to the first pair
+  // belonging to that account so the file view reflects the new account.
+  React.useEffect(() => {
+    if (!activeAccountId) return;
+    const firstPair = pairs.find(p => p.account_id === activeAccountId) ?? null;
+    setActivePairId(firstPair?.id ?? null);
+    setFilePath('/');
+    setHighlightFile(null);
+  }, [activeAccountId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // activePair must belong to the active account; never leak a pair from another.
+  const accountPairs = pairs.filter(p => p.account_id === (activeAccountId ?? accounts[0]?.id));
+  const activePair = accountPairs.find(p => p.id === activePairId) ?? accountPairs[0] ?? null;
 
   // Fetch sidebar counts whenever the active pair changes, then every 30 s.
   React.useEffect(() => {
@@ -334,7 +347,7 @@ export default function App() {
               onSwitchAccount={setActiveAccountId}
               onAddAccount={() => setView('add-account')}
               onRemoveAccount={handleRemoveAccount}
-              pairs={pairs}
+              pairs={accountPairs}
               activePairId={activePair?.id ?? null}
               onSelectPair={handleSelectPair}
               syncStatus={syncStatus}
