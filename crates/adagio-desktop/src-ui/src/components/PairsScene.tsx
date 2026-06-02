@@ -99,7 +99,21 @@ export default function PairsScene({ pairs, account, onBack, onPairsChange, daem
 
   const handleSync = async (id: string) => {
     clearSyncError(id);
-    try { await triggerSync(id); } catch (err) {
+
+    // If we already know the daemon is down, fail immediately.
+    if (daemonState !== null && daemonState !== 'connected') {
+      setSyncErrors(prev => ({ ...prev, [id]: 'Sync daemon is not running.' }));
+      return;
+    }
+
+    // Race the IPC call against a 4 s timeout so a hung connection still
+    // surfaces an error instead of silently spinning forever.
+    const timeout = new Promise<never>((_, rej) =>
+      setTimeout(() => rej(new Error('Sync daemon is not responding.')), 4000),
+    );
+    try {
+      await Promise.race([triggerSync(id), timeout]);
+    } catch (err) {
       setSyncErrors(prev => ({ ...prev, [id]: String(err) }));
       return;
     }
