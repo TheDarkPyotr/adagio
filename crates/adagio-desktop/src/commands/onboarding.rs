@@ -283,10 +283,9 @@ pub async fn begin_auth_flow(
         server_url_clone.clone(),
         deadline,
         move |creds| {
-            // Store credentials and emit auth-flow-complete.
-            // We reuse the same keychain storage logic as connect_account_oauth2.
-            let rt = tokio::runtime::Handle::current();
-            rt.block_on(async move {
+            // We're inside a tokio::spawn task — block_on would panic here.
+            // Spawn a new task to run the async finalisation instead.
+            tokio::spawn(async move {
                 match finalise_auth(creds, &server_url_clone, &app_complete).await {
                     Ok(_) => {}
                     Err(e) => {
@@ -295,7 +294,6 @@ pub async fn begin_auth_flow(
                             app_complete.emit("adagio://auth-flow-expired", serde_json::json!({}));
                     }
                 }
-                // Clear auth flow slot
                 if let Ok(mut slot) = state_complete.lock() {
                     *slot = None;
                 }
@@ -433,12 +431,20 @@ pub async fn complete_onboarding(
     use crate::config::{load_config, save_config, OnboardingPrefs};
     use adagio_ipc::DaemonRequest;
 
+    // Expand leading ~ to the user's home directory.
+    let local_folder = expand_tilde(&prefs.local_folder);
+
+    // Create the sync folder so the engine can scan it immediately.
+    tokio::fs::create_dir_all(&local_folder)
+        .await
+        .map_err(|e| format!("Cannot create sync folder '{}': {e}", local_folder))?;
+
     // Create the sync pair.
     let pair_resp = state
         .daemon
         .request(DaemonRequest::CreatePair {
             account_id: account_id.clone(),
-            local_root: prefs.local_folder.clone(),
+            local_root: local_folder.clone(),
             remote_root: "/".to_string(),
             vfs_enabled: prefs.vfs_enabled,
             vfs_cache_max_bytes: 20 * 1024 * 1024 * 1024,
@@ -512,6 +518,22 @@ fn generate_qr_svg(url: &str) -> Result<String, String> {
         .build();
 
     Ok(svg_str)
+}
+
+/// Expand a leading `~` to the user's home directory.
+fn expand_tilde(path: &str) -> String {
+    if path == "~" || path.starts_with("~/") || path.starts_with("~\\") {
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .unwrap_or_default();
+        if path == "~" {
+            home
+        } else {
+            format!("{}/{}", home, &path[2..])
+        }
+    } else {
+        path.to_string()
+    }
 }
 
 /// Finalise a completed Login Flow v2 session: store credentials and notify daemon.
