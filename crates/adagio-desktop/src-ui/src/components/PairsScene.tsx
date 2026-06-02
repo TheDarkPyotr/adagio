@@ -3,11 +3,12 @@ import { Icon, SpinDot } from './shared';
 import type { PairDto, AccountDto, SyncStatusDto } from '../tauri';
 import { createPair, deletePair, getStatus, triggerSync, e2eeInit, e2eePair, e2eeDisable } from '../tauri';
 
-export default function PairsScene({ pairs, account, onBack, onPairsChange }: {
+export default function PairsScene({ pairs, account, onBack, onPairsChange, daemonState }: {
   pairs: PairDto[];
   account: AccountDto | null;
   onBack: () => void;
   onPairsChange: (pairs: PairDto[]) => void;
+  daemonState: 'connected' | 'reconnecting' | 'stopped' | 'failed' | null;
 }) {
   const [showAdd, setShowAdd] = useState(false);
   const [localRoot, setLocalRoot] = useState('');
@@ -91,9 +92,14 @@ export default function PairsScene({ pairs, account, onBack, onPairsChange }: {
     setDeleting(null);
   };
 
+  const [syncError, setSyncError] = useState<string | null>(null);
+
   const handleSync = async (id: string) => {
-    // Trigger the cycle (returns immediately).
-    try { await triggerSync(id); } catch { return; }
+    setSyncError(null);
+    try { await triggerSync(id); } catch {
+      setSyncError('Cannot sync — the sync daemon is not running.');
+      return;
+    }
 
     // Start spinner and elapsed counter.
     syncStartRef.current = Date.now();
@@ -139,6 +145,17 @@ export default function PairsScene({ pairs, account, onBack, onPairsChange }: {
 
       {/* content */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '36px 52px' }}>
+        {(daemonState === 'stopped' || daemonState === 'reconnecting' || syncError) && (
+          <div style={{
+            marginBottom: 20, padding: '10px 16px',
+            background: 'var(--clay)', color: '#fff',
+            borderRadius: 'var(--r-2)', fontSize: 13,
+            display: 'flex', alignItems: 'center', gap: 10,
+          }}>
+            <Icon name="warn" size={15} color="#fff" />
+            {syncError ?? (daemonState === 'reconnecting' ? 'Reconnecting to sync daemon…' : 'Sync is not running — Sync Now is unavailable.')}
+          </div>
+        )}
         <div style={{ maxWidth: 560 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
             <h2 style={SECTION_H2}>Sync pairs</h2>
@@ -166,6 +183,7 @@ export default function PairsScene({ pairs, account, onBack, onPairsChange }: {
               syncElapsed={syncingPair === pair.id ? syncElapsed : 0}
               lastDuration={lastDuration[pair.id] ?? null}
               deleting={deleting === pair.id}
+              syncDisabled={daemonState !== 'connected'}
               onSync={() => handleSync(pair.id)}
               onDelete={() => handleDelete(pair.id)}
               onE2eeInit={async () => {
@@ -325,12 +343,13 @@ export default function PairsScene({ pairs, account, onBack, onPairsChange }: {
 
 // ── PairRow ───────────────────────────────────────────────────────────────────
 
-function PairRow({ pair, syncing, syncElapsed, lastDuration, deleting, onSync, onDelete, onE2eeInit, e2eeInitLoading, onE2eePair, onE2eeDisable }: {
+function PairRow({ pair, syncing, syncElapsed, lastDuration, deleting, syncDisabled, onSync, onDelete, onE2eeInit, e2eeInitLoading, onE2eePair, onE2eeDisable }: {
   pair: PairDto;
   syncing: boolean;
   syncElapsed: number;
   lastDuration: number | null;
   deleting: boolean;
+  syncDisabled?: boolean;
   onSync: () => void;
   onDelete: () => void;
   onE2eeInit?: () => void;
@@ -380,14 +399,16 @@ function PairRow({ pair, syncing, syncElapsed, lastDuration, deleting, onSync, o
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
           {/* Sync button with spinner + ETA */}
-          <button onClick={onSync} disabled={syncing}
+          <button onClick={onSync} disabled={syncing || syncDisabled}
+            title={syncDisabled ? 'Sync daemon is not running' : undefined}
             style={{
               background: syncing ? 'var(--cream-2)' : 'transparent',
               border: '1px solid var(--hairline)',
               padding: '6px 12px',
               borderRadius: 'var(--r-pill)',
               fontSize: 12,
-              cursor: syncing ? 'default' : 'pointer',
+              cursor: syncing || syncDisabled ? 'not-allowed' : 'pointer',
+              opacity: syncDisabled ? 0.45 : 1,
               color: syncing ? 'var(--clay)' : 'var(--ink-soft)',
               fontWeight: 500,
               display: 'flex',

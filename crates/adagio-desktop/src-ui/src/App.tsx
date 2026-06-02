@@ -342,6 +342,7 @@ export default function App() {
             account={activeAccount}
             onBack={() => setView('settings')}
             onPairsChange={setPairs}
+            daemonState={daemonState}
           />
         ) : (
           <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
