@@ -145,7 +145,7 @@ export default function PairsScene({ pairs, account, onBack, onPairsChange, daem
 
       {/* content */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '36px 52px' }}>
-        {(daemonState === 'stopped' || daemonState === 'reconnecting' || syncError) && (
+        {(daemonState !== 'connected' && daemonState !== null) && (
           <div style={{
             marginBottom: 20, padding: '10px 16px',
             background: 'var(--clay)', color: '#fff',
@@ -153,7 +153,20 @@ export default function PairsScene({ pairs, account, onBack, onPairsChange, daem
             display: 'flex', alignItems: 'center', gap: 10,
           }}>
             <Icon name="warn" size={15} color="#fff" />
-            {syncError ?? (daemonState === 'reconnecting' ? 'Reconnecting to sync daemon…' : 'Sync is not running — Sync Now is unavailable.')}
+            {daemonState === 'reconnecting'
+              ? 'Reconnecting to sync daemon — Sync Now is unavailable.'
+              : 'Sync is not running — Sync Now is unavailable.'}
+          </div>
+        )}
+        {syncError && (
+          <div style={{
+            marginBottom: 20, padding: '10px 16px',
+            background: 'var(--clay)', color: '#fff',
+            borderRadius: 'var(--r-2)', fontSize: 13,
+            display: 'flex', alignItems: 'center', gap: 10,
+          }}>
+            <Icon name="warn" size={15} color="#fff" />
+            {syncError}
           </div>
         )}
         <div style={{ maxWidth: 560 }}>
@@ -399,7 +412,7 @@ function PairRow({ pair, syncing, syncElapsed, lastDuration, deleting, syncDisab
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
           {/* Sync button with spinner + ETA */}
-          <button onClick={onSync} disabled={syncing || syncDisabled}
+          <button onClick={onSync} disabled={syncing}
             title={syncDisabled ? 'Sync daemon is not running' : undefined}
             style={{
               background: syncing ? 'var(--cream-2)' : 'transparent',
@@ -407,7 +420,7 @@ function PairRow({ pair, syncing, syncElapsed, lastDuration, deleting, syncDisab
               padding: '6px 12px',
               borderRadius: 'var(--r-pill)',
               fontSize: 12,
-              cursor: syncing || syncDisabled ? 'not-allowed' : 'pointer',
+              cursor: syncing ? 'not-allowed' : syncDisabled ? 'default' : 'pointer',
               opacity: syncDisabled ? 0.45 : 1,
               color: syncing ? 'var(--clay)' : 'var(--ink-soft)',
               fontWeight: 500,
