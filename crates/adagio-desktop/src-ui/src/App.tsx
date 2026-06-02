@@ -419,6 +419,27 @@ export default function App() {
         />
       )}
       {/* T056 — Daemon reconnection banner / error overlay */}
+      {daemonState === 'stopped' && (
+        <div data-testid="daemon-stopped-banner" style={{
+          position: 'fixed', top: 0, left: 0, right: 0,
+          background: 'var(--clay)', color: '#fff',
+          padding: '8px 20px', fontSize: 13, zIndex: 2000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16,
+        }}>
+          <span>Sync is not running — your files are not being updated.</span>
+          <button
+            data-testid="start-sync-btn"
+            onClick={() => { startDaemon().catch(() => {}); setDaemonState('reconnecting'); }}
+            style={{
+              background: '#fff', color: 'var(--clay)', border: 'none',
+              borderRadius: 'var(--r-1)', padding: '4px 12px',
+              fontSize: 12, fontWeight: 600, cursor: 'pointer', flexShrink: 0,
+            }}
+          >
+            Start sync
+          </button>
+        </div>
+      )}
       {daemonState === 'reconnecting' && (
         <div data-testid="reconnecting-banner" style={{
           position: 'fixed', top: 0, left: 0, right: 0,
