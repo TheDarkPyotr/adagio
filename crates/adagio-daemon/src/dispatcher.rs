@@ -11,8 +11,15 @@ use adagio_core::journal::sqlite::SqliteJournal;
 use adagio_core::journal::Journal;
 use adagio_core::network::{NetworkMonitor, NetworkPolicy};
 use adagio_core::types::PairId;
+use tokio_util::sync::CancellationToken;
 
 use crate::events::EventBroadcaster;
+
+/// Cancel token + trigger sender for one E2EE runner, stored per pair.
+pub type E2eeRunnerHandle = (CancellationToken, tokio::sync::mpsc::Sender<()>);
+/// Map of active E2EE runners keyed by pair ID.
+pub type E2eeTriggerMap =
+    Arc<tokio::sync::Mutex<std::collections::HashMap<PairId, E2eeRunnerHandle>>>;
 
 /// All the shared state that the dispatcher needs to handle RPC calls.
 pub struct DaemonProcess {
@@ -28,9 +35,10 @@ pub struct DaemonProcess {
     pub network_policy: Arc<RwLock<NetworkPolicy>>,
     /// Live network state — updated by the NetworkMonitor poll loop.
     pub network_monitor: Arc<NetworkMonitor>,
-    /// Manual-trigger senders for E2EE sync runners (keyed by pair ID).
-    pub e2ee_triggers:
-        Arc<tokio::sync::Mutex<std::collections::HashMap<PairId, tokio::sync::mpsc::Sender<()>>>>,
+    /// Handles for E2EE sync runners (keyed by pair ID).
+    /// Each entry holds the cancel token (to stop the runner) and the trigger
+    /// sender (to fire an immediate cycle).
+    pub e2ee_triggers: E2eeTriggerMap,
 }
 
 /// Route a `DaemonRequest` to the appropriate engine/journal call and return
@@ -106,7 +114,7 @@ pub async fn dispatch(req: DaemonRequest, state: &DaemonProcess) -> Result<Daemo
             // E2EE pairs run a separate runner; send to its trigger channel.
             let triggered_e2ee = {
                 let triggers = state.e2ee_triggers.lock().await;
-                if let Some(tx) = triggers.get(&pid) {
+                if let Some((_, tx)) = triggers.get(&pid) {
                     let _ = tx.try_send(());
                     true
                 } else {
@@ -378,7 +386,15 @@ pub async fn dispatch(req: DaemonRequest, state: &DaemonProcess) -> Result<Daemo
         } => {
             use adagio_core::types::PairId;
             let pid = PairId(pair_id);
+            // Stop the VFS / regular runner via the engine.
             state.engine.stop_pair(&pid).await;
+            // Cancel the E2EE runner if one is registered for this pair.
+            {
+                let mut triggers = state.e2ee_triggers.lock().await;
+                if let Some((cancel, _)) = triggers.remove(&pid) {
+                    cancel.cancel();
+                }
+            }
             {
                 let mut pairs = state.pairs.write().await;
                 pairs.remove_pair(&pid);
@@ -703,6 +719,11 @@ pub async fn dispatch(req: DaemonRequest, state: &DaemonProcess) -> Result<Daemo
             for pid in &pair_ids {
                 state.engine.stop_pair(pid).await;
                 let _ = state.journal.clear_pair(pid).await;
+                // Cancel E2EE runner for this pair if one exists.
+                let mut triggers = state.e2ee_triggers.lock().await;
+                if let Some((cancel, _)) = triggers.remove(pid) {
+                    cancel.cancel();
+                }
             }
             {
                 let mut pairs = state.pairs.write().await;
@@ -1339,16 +1360,47 @@ pub async fn dispatch(req: DaemonRequest, state: &DaemonProcess) -> Result<Daemo
             .map_err(|e| e.to_string())?;
 
             // Mark pair as E2EE-enabled in memory and on disk.
-            {
+            let updated_pair = {
                 let mut pairs = state.pairs.write().await;
                 if let Some(existing) = pairs.get_pair(&pid).cloned() {
                     let mut updated = existing;
                     updated.e2ee_enabled = true;
                     updated.e2ee_account_id = Some(aid_str.clone());
-                    pairs.register_full_pair(updated);
+                    pairs.register_full_pair(updated.clone());
+                    Some(updated)
+                } else {
+                    None
+                }
+            };
+            save_config(state).await?;
+
+            // Start the E2EE runner immediately — no daemon restart needed.
+            // Cancel any stale runner first (idempotent if called twice).
+            if let Some(pair) = updated_pair {
+                let client = crate::dispatcher::build_client(&state.accounts, &pair).await;
+                if let Some(nc_client) = client {
+                    let cred_provider = Arc::new(crate::e2ee_runner::DaemonCredentialProvider {
+                        accounts: state.accounts.clone(),
+                        pairs: state.pairs.clone(),
+                    });
+                    let e2ee_client = Arc::new(adagio_e2ee::provider::NcE2eeClient::new(
+                        cred_provider,
+                        state.journal.clone(),
+                    ));
+                    let mut triggers = state.e2ee_triggers.lock().await;
+                    // Cancel any stale runner for this pair.
+                    if let Some((old_cancel, _)) = triggers.remove(&pid) {
+                        old_cancel.cancel();
+                    }
+                    let (cancel, trigger_tx) = crate::e2ee_runner::spawn_e2ee_runner(
+                        pair,
+                        e2ee_client,
+                        Arc::new(nc_client),
+                        state.journal.clone(),
+                    );
+                    triggers.insert(pid.clone(), (cancel, trigger_tx));
                 }
             }
-            save_config(state).await?;
 
             tracing::info!(
                 pair_id = %pair_id,

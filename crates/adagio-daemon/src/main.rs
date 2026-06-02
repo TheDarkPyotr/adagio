@@ -98,11 +98,8 @@ async fn main() -> anyhow::Result<()> {
 
     let engine = Arc::new(DefaultSyncEngine::new());
     let events = EventBroadcaster::new(256);
-    let e2ee_triggers: Arc<
-        tokio::sync::Mutex<
-            std::collections::HashMap<adagio_core::types::PairId, tokio::sync::mpsc::Sender<()>>,
-        >,
-    > = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+    let e2ee_triggers: crate::dispatcher::E2eeTriggerMap =
+        Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
 
     // ── Network policy (loaded from config or defaulted) ──────────────────────
     let network_policy_val: NetworkPolicy =
@@ -143,7 +140,7 @@ async fn main() -> anyhow::Result<()> {
                         journal.clone(),
                     ));
                     tracing::info!(pair_id = %pair.id, "E2EE pair: starting encrypted sync runner");
-                    let (_, trigger_tx) = e2ee_runner::spawn_e2ee_runner(
+                    let (cancel, trigger_tx) = e2ee_runner::spawn_e2ee_runner(
                         pair.clone(),
                         e2ee_client,
                         Arc::new(nc_client),
@@ -152,7 +149,7 @@ async fn main() -> anyhow::Result<()> {
                     e2ee_triggers
                         .lock()
                         .await
-                        .insert(pair.id.clone(), trigger_tx);
+                        .insert(pair.id.clone(), (cancel, trigger_tx));
                 } else {
                     tracing::warn!(pair_id = %pair.id, "E2EE pair: no credentials, runner not started");
                 }
