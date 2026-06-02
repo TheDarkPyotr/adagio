@@ -49,7 +49,6 @@ export default function App() {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardConflicts, setWizardConflicts] = useState<ConflictDto[]>([]);
   const [daemonState, setDaemonState] = useState<'connected' | 'reconnecting' | 'stopped' | 'failed' | null>(null);
-  const { favorites, allTaggedFiles, pathTags, toggleFavorite, addTag, removeTag } = useLocalMeta();
   const [sectionCounts, setSectionCounts] = useState<SectionCounts>({ total: 0, recent: 0 });
   const [sharedCount, setSharedCount] = useState(0);
 
@@ -209,14 +208,21 @@ export default function App() {
 
   const [activePairId, setActivePairId] = useState<string | null>(null);
 
-  // When the active account changes, reset the active pair to the first pair
-  // belonging to that account so the file view reflects the new account.
+  // Favorites and tags are scoped per pair so switching accounts shows the
+  // correct set. useLocalMeta reloads from localStorage whenever activePairId changes.
+  const { favorites, allTaggedFiles, pathTags, toggleFavorite, addTag, removeTag } = useLocalMeta(activePairId);
+
+  // When the active account changes, reset to the first pair of that account
+  // and clear stale section counts so the sidebar doesn't flash old numbers.
   React.useEffect(() => {
     if (!activeAccountId) return;
     const firstPair = pairs.find(p => p.account_id === activeAccountId) ?? null;
     setActivePairId(firstPair?.id ?? null);
     setFilePath('/');
     setHighlightFile(null);
+    setSectionCounts({ total: 0, recent: 0 });
+    setSharedCount(0);
+    setSource('all');
   }, [activeAccountId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // activePair must belong to the active account; never leak a pair from another.
@@ -332,7 +338,7 @@ export default function App() {
           />
         ) : view === 'pairs' ? (
           <PairsScene
-            pairs={pairs}
+            pairs={accountPairs}
             account={activeAccount}
             onBack={() => setView('settings')}
             onPairsChange={setPairs}
