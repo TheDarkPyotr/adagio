@@ -31,9 +31,9 @@ fn is_metered_via_nlm() -> Option<bool> {
     };
     use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
 
-    let metered_mask = NLM_CONNECTION_COST_FIXED.0
-        | NLM_CONNECTION_COST_VARIABLE.0
-        | NLM_CONNECTION_COST_ROAMING.0;
+    let metered_mask = NLM_CONNECTION_COST_FIXED.0 as u32
+        | NLM_CONNECTION_COST_VARIABLE.0 as u32
+        | NLM_CONNECTION_COST_ROAMING.0 as u32;
 
     unsafe {
         let manager: INetworkListManager =
