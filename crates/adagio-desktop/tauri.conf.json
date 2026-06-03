@@ -47,18 +47,30 @@
     "active": true,
     "targets": "all",
     "icon": [
+      "icons/16x16.png",
+      "icons/24x24.png",
       "icons/32x32.png",
+      "icons/48x48.png",
+      "icons/64x64.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
+      "icons/256x256.png",
+      "icons/512x512.png",
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "externalBin": [
+      "binaries/adagio-daemon",
+      "binaries/adagio-cli"
+    ],
     "linux": {
       "deb": {
-        "depends": ["libayatana-appindicator3-1 | libappindicator3-1"]
+        "depends": ["libayatana-appindicator3-1 | libappindicator3-1"],
+        "desktopTemplate": "bundler/adagio.desktop.template"
       },
       "rpm": {
-        "depends": ["libayatana-appindicator3"]
+        "depends": ["libayatana-appindicator3"],
+        "desktopTemplate": "bundler/adagio.desktop.template"
       }
     }
   },

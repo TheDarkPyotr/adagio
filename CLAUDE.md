@@ -1,14 +1,12 @@
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan at
-`specs/015-linux-tray-support/plan.md`.
+`specs/017-release-packaging/plan.md`.
 
 Key artifacts for this feature:
-- Spec: `specs/015-linux-tray-support/spec.md`
-- Research & decisions: `specs/015-linux-tray-support/research.md`
-- Data model: `specs/015-linux-tray-support/data-model.md`
-- IPC contract: `specs/015-linux-tray-support/contracts/tray-window.md`
-- Dev setup: `specs/015-linux-tray-support/quickstart.md`
+- Spec: `specs/017-release-packaging/spec.md`
+- Research & decisions: `specs/017-release-packaging/research.md`
+- Pipeline contract: `specs/017-release-packaging/contracts/release-workflow.md`
 <!-- SPECKIT END -->
 
 ## Current status (branch `013-e2ee-encryption`)
