@@ -23,13 +23,13 @@ impl NetworkDetector for WindowsDetector {
 }
 
 fn is_metered_via_nlm() -> Option<bool> {
+    use windows::core::Interface;
     use windows::Win32::Networking::NetworkListManager::{
         IEnumNetworkConnections, INetworkConnection, INetworkConnectionCost, INetworkListManager,
         NetworkListManager, NLM_CONNECTION_COST_FIXED, NLM_CONNECTION_COST_ROAMING,
         NLM_CONNECTION_COST_VARIABLE,
     };
     use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
-    use windows_core::Interface;
 
     let metered_mask = NLM_CONNECTION_COST_FIXED.0
         | NLM_CONNECTION_COST_VARIABLE.0
