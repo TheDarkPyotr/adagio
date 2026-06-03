@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Adagio",
         "width": 900,
         "height": 650,
@@ -20,13 +21,25 @@
         "resizable": true,
         "fullscreen": false,
         "decorations": false
+      },
+      {
+        "label": "tray",
+        "title": "Adagio",
+        "url": "index.html?tray",
+        "width": 380,
+        "height": 520,
+        "visible": false,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "resizable": false,
+        "skipTaskbar": true
       }
     ],
     "security": {
       "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
     },
     "trayIcon": {
-      "iconPath": "icons/icon.png",
+      "iconPath": "icons/tray-icon.png",
       "iconAsTemplate": true
     }
   },
@@ -39,7 +52,15 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "linux": {
+      "deb": {
+        "depends": ["libayatana-appindicator3-1 | libappindicator3-1"]
+      },
+      "rpm": {
+        "depends": ["libayatana-appindicator3"]
+      }
+    }
   },
   "plugins": {
     "shell": {

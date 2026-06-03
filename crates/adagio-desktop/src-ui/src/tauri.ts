@@ -525,3 +525,10 @@ export interface RemoteStatsDto {
 /** Fetch remote storage quota for a connected account. */
 export const getAccountRemoteStats = (accountId: string): Promise<RemoteStatsDto> =>
   invoke('get_account_remote_stats', { accountId });
+
+// ── Platform ──────────────────────────────────────────────────────────────────
+
+/** Returns the current OS platform identifier. Used to display platform-appropriate
+ *  keyboard modifier labels in the tray popover (`⌘` on macOS, `Ctrl+` elsewhere). */
+export const getPlatform = (): Promise<'linux' | 'macos' | 'windows'> =>
+  invoke('get_platform');

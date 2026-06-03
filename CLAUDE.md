@@ -1,14 +1,14 @@
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan at
-`specs/014-onboarding-account-setup/plan.md`.
+`specs/015-linux-tray-support/plan.md`.
 
 Key artifacts for this feature:
-- Spec: `specs/014-onboarding-account-setup/spec.md`
-- Research & decisions: `specs/014-onboarding-account-setup/research.md`
-- Data model: `specs/014-onboarding-account-setup/data-model.md`
-- IPC contract: `specs/014-onboarding-account-setup/contracts/onboarding-ipc.md`
-- Dev setup: `specs/014-onboarding-account-setup/quickstart.md`
+- Spec: `specs/015-linux-tray-support/spec.md`
+- Research & decisions: `specs/015-linux-tray-support/research.md`
+- Data model: `specs/015-linux-tray-support/data-model.md`
+- IPC contract: `specs/015-linux-tray-support/contracts/tray-window.md`
+- Dev setup: `specs/015-linux-tray-support/quickstart.md`
 <!-- SPECKIT END -->
 
 ## Current status (branch `013-e2ee-encryption`)

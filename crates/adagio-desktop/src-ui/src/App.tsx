@@ -28,8 +28,34 @@ type View = 'main' | 'settings' | 'pairs' | 'add-account';
 
 const DEV_FORCE_ONBOARD = false; // flip to true to test onboarding
 
+function TrayRoot() {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    listCustomPalettes().then(customs => {
+      getPalette().then(name => {
+        if (name.startsWith('custom-')) {
+          const custom = customs.find(p => p.id === name);
+          if (custom) applyCustomPaletteTokens(custom);
+        } else {
+          document.documentElement.dataset.palette = name;
+        }
+        setReady(true);
+      }).catch(() => setReady(true));
+    }).catch(() => {
+      getPalette().then(name => {
+        document.documentElement.dataset.palette = name;
+        setReady(true);
+      }).catch(() => setReady(true));
+    });
+  }, []);
+
+  if (!ready) return null;
+  return <TrayPopover />;
+}
+
 export default function App() {
-  if (IS_TRAY) return <TrayPopover />;
+  if (IS_TRAY) return <TrayRoot />;
 
   const [tab, setTab] = useState<'files' | 'activity'>('files');
   const [source, setSource] = useState<Section>('all');
@@ -156,6 +182,14 @@ export default function App() {
     return () => { unlisten1?.(); unlisten2?.(); };
   }, []);
 
+  // Navigate to settings when the tray Preferences action triggers this event.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    getCurrentWebviewWindow().listen('adagio://open-settings', () => setView('settings'))
+      .then(fn => { unlisten = fn; }).catch(() => {});
+    return () => { unlisten?.(); };
+  }, []);
+
   // Global keyboard shortcuts (⌘O / ⌘B / ⌘P / ⌘, / ⌘Q)
   useEffect(() => {
     const handler = async (e: KeyboardEvent) => {
@@ -242,6 +276,16 @@ export default function App() {
     setSectionCounts({ total: 0, recent: 0 });
     setSharedCount(0);
     setSource('all');
+    // Notify the tray window so it reloads files for the new active account.
+    import('@tauri-apps/api/webviewWindow').then(({ getAllWebviewWindows }) => {
+      getAllWebviewWindows().then(wins => {
+        const tray = wins.find(w => w.label === 'tray');
+        tray?.emit('adagio://active-account-changed', {
+          accountId: activeAccountId,
+          pairId: firstPair?.id ?? null,
+        }).catch(() => {});
+      }).catch(() => {});
+    }).catch(() => {});
   }, [activeAccountId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // activePair must belong to the active account; never leak a pair from another.

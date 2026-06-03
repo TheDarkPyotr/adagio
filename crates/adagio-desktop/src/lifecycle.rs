@@ -4,6 +4,45 @@ use std::path::Path;
 use std::sync::Arc;
 use tracing::info;
 
+// ── Tray position helper ──────────────────────────────────────────────────────
+
+/// Compute the screen position for the tray popover window.
+///
+/// Positions the popover below the click point for top panels and above it for
+/// bottom taskbars. When `click` is `(0.0, 0.0)` (Wayland compositors that do
+/// not expose cursor position), falls back to the top-right corner of the
+/// primary monitor at `(screen_w - win_w - 16, 48)`.
+pub fn compute_popover_position(
+    click: (f64, f64),
+    win_size: (u32, u32),
+    screen_w: u32,
+    screen_h: u32,
+) -> (i32, i32) {
+    let (cx, cy) = click;
+    let (win_w, win_h) = win_size;
+
+    // Position (0,0): Wayland compositors that don't expose cursor position, or
+    // Linux AppIndicator synthetic events after menu activation. Fall back to
+    // top-right corner (the natural tray icon area on most Linux DEs).
+    if cx == 0.0 && cy == 0.0 {
+        tracing::debug!("tray click position is (0,0) — using top-right fallback");
+        return ((screen_w as i32) - (win_w as i32) - 16, 48);
+    }
+
+    let is_top_panel = cy < (screen_h as f64) / 2.0;
+    if is_top_panel {
+        // Popover opens below the icon (top panel, e.g. GNOME/Ubuntu).
+        let x = ((cx as i32) - (win_w as i32 / 2)).max(0);
+        let y = cy as i32 + 8;
+        (x, y)
+    } else {
+        // Popover opens above the icon (bottom taskbar, e.g. KDE Plasma default).
+        let x = ((cx as i32) - (win_w as i32 / 2)).max(0);
+        let y = ((cy as i32) - (win_h as i32) - 8).max(0);
+        (x, y)
+    }
+}
+
 /// Connect to a running `adagio-daemon` or spawn it, then upgrade the
 /// provided stub client with the real socket connection.
 ///
@@ -100,4 +139,45 @@ fn spawn_daemon_with_config(
             .spawn()?;
     }
     Ok(())
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // T003 — popover is positioned BELOW the click on a top panel.
+    #[test]
+    fn compute_tray_position_top_panel() {
+        let pos = compute_popover_position((760.0, 30.0), (380, 520), 1920, 1080);
+        // y must be greater than the click y (popover below the icon)
+        assert!(
+            pos.1 > 30,
+            "expected popover below click (top panel), got y={}",
+            pos.1
+        );
+        assert!(pos.0 >= 0, "x must not be negative");
+    }
+
+    // T004 — popover is positioned ABOVE the click on a bottom taskbar.
+    #[test]
+    fn compute_tray_position_bottom_panel() {
+        let pos = compute_popover_position((760.0, 1050.0), (380, 520), 1920, 1080);
+        // y must be less than the click y (popover above the icon)
+        assert!(
+            pos.1 < 1050,
+            "expected popover above click (bottom panel), got y={}",
+            pos.1
+        );
+        assert!(pos.0 >= 0);
+    }
+
+    // T005 — Wayland fallback when click position is (0, 0).
+    #[test]
+    fn compute_tray_position_wayland_fallback() {
+        let pos = compute_popover_position((0.0, 0.0), (380, 520), 1920, 1080);
+        assert_eq!(pos.0, 1920 - 380 - 16, "expected top-right fallback x");
+        assert_eq!(pos.1, 48, "expected top-right fallback y");
+    }
 }

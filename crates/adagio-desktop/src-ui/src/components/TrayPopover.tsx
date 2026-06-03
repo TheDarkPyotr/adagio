@@ -1,31 +1,118 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { open as shellOpen } from '@tauri-apps/plugin-shell';
-import { getAllWebviewWindows } from '@tauri-apps/api/webviewWindow';
+import { getAllWebviewWindows, getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { MarkSlur, Icon } from './shared';
-import { getStatus, getActivityLog, pauseSync, resumeSync, listPairs, listAccounts } from '../tauri';
-import type { SyncStatusDto, ActivityEntryDto } from '../tauri';
+import { getStatus, listSyncedFiles, pauseSync, resumeSync, listPairs, listAccounts, getPlatform } from '../tauri';
+import type { SyncStatusDto, FileStatusDto, PairDto } from '../tauri';
+
+interface RecentFile {
+  name: string;
+  parentFolder: string | null;
+  mtime: number;
+  status: FileStatusDto['status'];
+  fullPath: string;
+}
 
 export default function TrayPopover() {
   const [status, setStatus] = useState<SyncStatusDto | null>(null);
-  const [activity, setActivity] = useState<ActivityEntryDto[]>([]);
+  const [recentFiles, setRecentFiles] = useState<RecentFile[]>([]);
+  const [pairs, setPairs] = useState<PairDto[]>([]);
   const [localRoot, setLocalRoot] = useState<string | null>(null);
   const [serverUrl, setServerUrl] = useState<string | null>(null);
   const [pausing, setPausing] = useState(false);
+  const [platform, setPlatform] = useState<'linux' | 'macos' | 'windows'>('macos');
+
+  const [activePairId, setActivePairId] = useState<string | null>(null);
+
+  // Fetch recent files from the local filesystem via listSyncedFiles (same
+  // source as the desktop file browser). Collects files from all pairs sorted
+  // by modification time, showing the 5 most recently touched.
+  const loadRecentFiles = useCallback(async (ps: PairDto[], filterPairId?: string | null) => {
+    // If a specific pair is active (desktop switched accounts), show only that pair's files.
+    // Otherwise show the N most recently touched files across all pairs.
+    const activePairs = filterPairId ? ps.filter(p => p.id === filterPairId) : ps;
+    const all: RecentFile[] = [];
+    for (const pair of activePairs) {
+      try {
+        const files = await listSyncedFiles(pair.id, '/');
+        for (const f of files) {
+          if (!f.is_dir && f.mtime != null) {
+            // f.path starts with '/', pair.local_root has no trailing slash
+            const fullPath = pair.local_root.replace(/\/$/, '') + f.path;
+            all.push({
+              name: f.name,
+              parentFolder: null,
+              mtime: f.mtime,
+              status: f.status,
+              fullPath,
+            });
+          }
+        }
+      } catch {}
+    }
+    all.sort((a, b) => b.mtime - a.mtime);
+    setRecentFiles(all.slice(0, 5));
+  }, []);
 
   useEffect(() => {
-    const loadAll = () => {
-      getStatus().then(setStatus).catch(() => {});
-      getActivityLog(3).then(setActivity).catch(() => {});
-    };
+    const loadAll = () => { getStatus().then(setStatus).catch(() => {}); };
     loadAll();
     const t = setInterval(loadAll, 3000);
     return () => clearInterval(t);
   }, []);
 
   useEffect(() => {
-    listPairs().then(ps => { if (ps[0]) setLocalRoot(ps[0].local_root); }).catch(() => {});
+    listPairs().then(ps => {
+      setPairs(ps);
+      if (ps[0]) setLocalRoot(ps[0].local_root);
+      loadRecentFiles(ps, activePairId).catch(() => {});
+    }).catch(() => {});
     listAccounts().then(accs => { if (accs[0]) setServerUrl(accs[0].server_url); }).catch(() => {});
-  }, []);
+    getPlatform().then(setPlatform).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reload pairs and files whenever the tray popover becomes visible.
+  // This is the most reliable way to get fresh data after account switches,
+  // since it fires unconditionally on every open regardless of events.
+  useEffect(() => {
+    const handleVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      listPairs().then(ps => {
+        setPairs(ps);
+        // Use the last-known activePairId (from account-changed event) or show all.
+        // pairId read from ref below (activePairIdRef kept in sync via useEffect)
+        const pairId = activePairIdRef.current;
+        const activePair = pairId ? ps.find(p => p.id === pairId) : ps[0];
+        if (activePair) setLocalRoot(activePair.local_root);
+        loadRecentFiles(ps, pairId).catch(() => {});
+      }).catch(() => {});
+    };
+    document.addEventListener('visibilitychange', handleVisible);
+    return () => document.removeEventListener('visibilitychange', handleVisible);
+  }, [loadRecentFiles]);
+
+  // Keep a ref to activePairId so the visibility handler always sees the latest value.
+  const activePairIdRef = React.useRef<string | null>(null);
+  useEffect(() => { activePairIdRef.current = activePairId; }, [activePairId]);
+
+  // React to account switches from the main window (fires instantly when desktop switches).
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    getCurrentWebviewWindow()
+      .listen<{ accountId: string; pairId: string | null }>('adagio://active-account-changed', ({ payload }) => {
+        setActivePairId(payload.pairId);
+        listPairs().then(ps => {
+          const activePair = ps.find(p => p.id === payload.pairId)
+            ?? ps.find(p => p.account_id === payload.accountId)
+            ?? ps[0];
+          if (activePair) setLocalRoot(activePair.local_root);
+          loadRecentFiles(ps, payload.pairId).catch(() => {});
+        }).catch(() => {});
+      })
+      .then(fn => { unlisten = fn; })
+      .catch(() => {});
+    return () => { unlisten?.(); };
+  }, [loadRecentFiles]);
 
   const handlePauseResume = async () => {
     setPausing(true);
@@ -58,17 +145,24 @@ export default function TrayPopover() {
     : isUnreachable ? 'var(--danger)'
     : 'var(--good)';
 
-  const lastSyncFmt = status?.last_sync_at
-    ? new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(new Date(status.last_sync_at))
+  // last_sync_at is now set by the daemon after each sync cycle (including VFS).
+  // Never fall back to file mtime — that's when a file was modified, not when sync ran.
+  const lastSyncMs = status?.last_sync_at ?? null;
+  const lastSyncFmt = lastSyncMs
+    ? new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(new Date(lastSyncMs))
     : null;
 
   const totalGb = (status?.total_bytes ?? 0) / 1e9;
+  const mod = platform === 'macos' ? '⌘' : 'Ctrl+';
 
   return (
     <div style={{ width: 380, background: 'var(--cream)', fontFamily: 'var(--body)', color: 'var(--ink)', display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
 
-      {/* Header */}
-      <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--hairline)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--paper)', flexShrink: 0 }}>
+      {/* Header — drag region so the popover can be repositioned */}
+      <div
+        data-tauri-drag-region
+        style={{ padding: '14px 16px', borderBottom: '1px solid var(--hairline)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--paper)', flexShrink: 0, cursor: 'move', userSelect: 'none' }}
+      >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <MarkSlur size={18} fill="var(--ink)" accent="var(--clay)" />
           <span style={{ fontWeight: 500, fontSize: 16, letterSpacing: '-0.05em' }}>adagio</span>
@@ -91,13 +185,13 @@ export default function TrayPopover() {
       {/* Recent files */}
       <div style={{ flex: 1, overflow: 'hidden' }}>
         <div style={{ padding: '10px 16px 4px', fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'var(--ink-muted)' }}>
-          Recent
+          Recent files
         </div>
-        {activity.length === 0 ? (
-          <div style={{ padding: '12px 16px', fontSize: 12.5, color: 'var(--ink-muted)' }}>No recent activity.</div>
+        {recentFiles.length === 0 ? (
+          <div style={{ padding: '12px 16px', fontSize: 12.5, color: 'var(--ink-muted)' }}>No files yet.</div>
         ) : (
-          activity.map(entry => (
-            <RecentRow key={entry.id} entry={entry} />
+          recentFiles.map((f, i) => (
+            <RecentRow key={i} file={f} />
           ))
         )}
       </div>
@@ -107,32 +201,32 @@ export default function TrayPopover() {
         <ActionRow
           icon="folder-plus"
           label="Open Adagio folder"
-          kbd="⌘O"
+          kbd={`${mod}O`}
           onClick={() => localRoot && shellOpen(localRoot).catch(() => {})}
           disabled={!localRoot}
         />
         <ActionRow
           icon="globe"
           label="Open in browser"
-          kbd="⌘B"
+          kbd={`${mod}B`}
           onClick={() => serverUrl && shellOpen(serverUrl).catch(() => {})}
           disabled={!serverUrl}
         />
         <ActionRow
           icon="sync"
           label={isPaused ? 'Resume syncing' : 'Pause syncing'}
-          kbd="⌘P"
+          kbd={`${mod}P`}
           onClick={handlePauseResume}
           disabled={pausing}
         />
         <ActionRow
           icon="settings"
           label="Preferences…"
-          kbd="⌘,"
+          kbd={`${mod},`}
           onClick={async () => {
             const wins = await getAllWebviewWindows();
             const main = wins.find(w => w.label === 'main');
-            if (main) { await main.show(); await main.setFocus(); }
+            if (main) { await main.show(); await main.setFocus(); await main.emit('adagio://open-settings', {}); }
           }}
         />
       </div>
@@ -184,20 +278,25 @@ function StatusHeadline({ status }: { status: SyncStatusDto | null }) {
   );
 }
 
-function RecentRow({ entry }: { entry: ActivityEntryDto }) {
-  const iconName = entry.kind === 'share' ? 'share' : entry.kind === 'sync' ? 'sync' : 'pencil';
-  const timeAgo = formatAgo(entry.at);
-  const label = entry.kind === 'sync' && entry.target.includes('/')
-    ? `files in ${entry.target.split('/').slice(-2, -1)[0] || entry.target}/`
-    : entry.target.split('/').pop() ?? entry.target;
+function RecentRow({ file }: { file: RecentFile }) {
+  const [hovered, setHovered] = useState(false);
+  const isConflict = file.status === 'conflict';
+  const iconName = isConflict ? 'warn' : 'file';
+  const iconColor = isConflict ? 'var(--danger)' : 'var(--ink-soft)';
+  const timeAgo = formatAgo(file.mtime);
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 16px' }}>
-      <div style={{ width: 24, height: 24, borderRadius: 12, background: 'var(--paper-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        <Icon name={iconName} size={12} color="var(--ink-soft)" />
+    <div
+      onClick={() => shellOpen(file.fullPath).catch(() => {})}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 16px', cursor: 'pointer', background: hovered ? 'var(--paper-2)' : 'transparent', transition: 'background 0.1s' }}
+    >
+      <div style={{ width: 24, height: 24, borderRadius: 12, background: isConflict ? 'color-mix(in srgb, var(--danger) 12%, transparent)' : 'var(--paper-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <Icon name={iconName} size={12} color={iconColor} />
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
+        <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{file.name}</div>
         <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-muted)' }}>{timeAgo}</div>
       </div>
     </div>
