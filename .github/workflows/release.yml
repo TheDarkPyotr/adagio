@@ -76,7 +76,9 @@ jobs:
   # ─── Linux: .deb, .rpm, .tar.gz ─────────────────────────────────────────────
   build-linux:
     name: Build (Linux)
-    runs-on: ubuntu-latest
+    # ubuntu-22.04 required: linuxdeploy (AppImage toolchain) has known FUSE 2/3
+    # ABI incompatibilities on Ubuntu 24.04 (ubuntu-latest as of 2024+).
+    runs-on: ubuntu-22.04
     needs: test
     steps:
       - uses: actions/checkout@v4
@@ -149,12 +151,6 @@ jobs:
           mkdir -p crates/adagio-desktop/binaries
           cp target/release/adagio-daemon "crates/adagio-desktop/binaries/adagio-daemon-${TARGET}"
           cp target/release/adagio        "crates/adagio-desktop/binaries/adagio-cli-${TARGET}"
-
-      - name: Setup FUSE for AppImage bundler
-        run: |
-          sudo modprobe fuse
-          sudo chmod 666 /dev/fuse
-          sudo apt-get install -y libfuse2
 
       - name: Build Tauri app (deb + rpm + AppImage)
         run: |
