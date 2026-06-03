@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import Chrome from './components/Chrome';
 import ConflictWizard from './components/ConflictWizard';
 import Sidebar from './components/Sidebar';
@@ -10,7 +11,7 @@ import NewFileDialog from './components/NewFileDialog';
 import SettingsScene from './components/SettingsScene';
 import PairsScene from './components/PairsScene';
 import TrayPopover from './components/TrayPopover';
-import { listAccounts, listPairs, getStatus, getPalette, setPalette as ipcSetPalette, removeAccount, pauseSync, resumeSync, listConflicts, listenConflictDetected, listenConflictResolved, resolveConflict as ipcResolveConflict, dismissAllConflicts, listenDaemonConnectionState, startDaemon, listCustomPalettes, getAccountAvatar, getSectionCounts } from './tauri';
+import { listAccounts, listPairs, getStatus, getPalette, setPalette as ipcSetPalette, removeAccount, pauseSync, resumeSync, listConflicts, listenConflictDetected, listenConflictResolved, resolveConflict as ipcResolveConflict, dismissAllConflicts, listenDaemonConnectionState, startDaemon, getDaemonStatus, listCustomPalettes, getAccountAvatar, getSectionCounts } from './tauri';
 import type { FileSearchResult, SectionCounts } from './tauri';
 import { open as shellOpen } from '@tauri-apps/plugin-shell';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
@@ -110,6 +111,27 @@ export default function App() {
     });
   }, []);
 
+  // Poll daemon status every 3 s — primary source of truth for banners.
+  // Events (see below) give sub-second updates; the poll catches anything missed.
+  useEffect(() => {
+    const poll = () =>
+      getDaemonStatus()
+        .then(s => {
+          // When state_tx is stuck at 'failed' but the daemon came back on its
+          // own (e.g. systemd restart), a passive status read still returns
+          // 'failed' because no one called upgrade_connection yet.  Kick
+          // start_daemon so it re-opens the socket and updates state_tx.
+          if (s.connection_state === 'failed') {
+            startDaemon().catch(() => {});
+          }
+          setDaemonState(s.connection_state);
+        })
+        .catch(() => {});
+    poll();
+    const id = setInterval(poll, 3000);
+    return () => clearInterval(id);
+  }, []);
+
   // Subscribe to daemon connection state changes.
   // Re-load accounts/pairs whenever the daemon (re)connects so the UI
   // reflects data even if the initial load ran before the connection was ready.
@@ -117,10 +139,7 @@ export default function App() {
     let unlisten: (() => void) | undefined;
     listenDaemonConnectionState(({ state }) => {
       setDaemonState(state);
-      if (state === 'connected') {
-        // Daemon just connected (or reconnected): refresh all data.
-        loadInitialData();
-      }
+      if (state === 'connected') loadInitialData();
     })
       .then(fn => { unlisten = fn; }).catch(() => {});
     return () => { unlisten?.(); };
@@ -419,66 +438,73 @@ export default function App() {
           dismissAll={dismissAllConflicts}
         />
       )}
-      {/* T056 — Daemon reconnection banner / error overlay */}
-      {daemonState === 'stopped' && (
-        <div data-testid="daemon-stopped-banner" style={{
-          position: 'fixed', top: 44, left: 0, right: 0,
-          background: 'var(--clay)', color: '#fff',
-          padding: '8px 20px', fontSize: 13, zIndex: 2000,
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16,
-        }}>
-          <span>Sync is not running — your files are not being updated.</span>
-          <button
-            data-testid="start-sync-btn"
-            onClick={() => { startDaemon().catch(() => {}); setDaemonState('reconnecting'); }}
-            style={{
-              background: '#fff', color: 'var(--clay)', border: 'none',
-              borderRadius: 'var(--r-1)', padding: '4px 12px',
-              fontSize: 12, fontWeight: 600, cursor: 'pointer', flexShrink: 0,
-            }}
-          >
-            Start sync
-          </button>
-        </div>
-      )}
-      {daemonState === 'reconnecting' && (
-        <div data-testid="reconnecting-banner" style={{
-          position: 'fixed', top: 44, left: 0, right: 0,
-          background: 'var(--clay)', color: '#fff',
-          padding: '8px 16px', fontSize: 13, textAlign: 'center', zIndex: 2000,
-        }}>
-          Reconnecting to background sync…
-        </div>
-      )}
-      {daemonState === 'failed' && (
-        <div data-testid="daemon-failed-overlay" style={{
-          position: 'fixed', inset: 0,
-          background: 'rgba(0,0,0,0.6)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          zIndex: 2000,
-        }}>
-          <div style={{
-            background: 'var(--paper)', borderRadius: 'var(--r-3)',
-            padding: '28px 32px', maxWidth: 360, textAlign: 'center',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
-          }}>
-            <h2 style={{ margin: '0 0 8px', fontSize: 17 }}>Background sync stopped</h2>
-            <p style={{ margin: '0 0 20px', color: 'var(--ink-muted)', fontSize: 13 }}>
-              The sync process could not be restarted automatically.
-            </p>
-            <button
-              data-testid="restart-sync-btn"
-              onClick={() => { startDaemon().catch(() => {}); setDaemonState('reconnecting'); }}
-              style={{
-                padding: '10px 24px', background: 'var(--forest)', color: '#fff',
-                border: 'none', borderRadius: 'var(--r-2)', fontSize: 14,
-                fontWeight: 600, cursor: 'pointer',
-              }}
-            >
-              Restart sync
-            </button>
-          </div>
-        </div>
+      {/* T056 — Daemon reconnection banner / error overlay.
+          Rendered via Portal into document.body to escape any CSS overflow/
+          containment on ancestor divs that would clip position:fixed children. */}
+      {daemonState !== 'connected' && daemonState !== null && createPortal(
+        <>
+          {daemonState === 'stopped' && (
+            <div data-testid="daemon-stopped-banner" style={{
+              position: 'fixed', top: 44, left: 0, right: 0,
+              background: 'var(--clay)', color: '#fff',
+              padding: '8px 20px', fontSize: 13, zIndex: 2000,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16,
+            }}>
+              <span>Sync is not running — your files are not being updated.</span>
+              <button
+                data-testid="start-sync-btn"
+                onClick={() => { startDaemon().catch(() => {}); setDaemonState('reconnecting'); }}
+                style={{
+                  background: '#fff', color: 'var(--clay)', border: 'none',
+                  borderRadius: 'var(--r-1)', padding: '4px 12px',
+                  fontSize: 12, fontWeight: 600, cursor: 'pointer', flexShrink: 0,
+                }}
+              >
+                Start sync
+              </button>
+            </div>
+          )}
+          {daemonState === 'reconnecting' && (
+            <div data-testid="reconnecting-banner" style={{
+              position: 'fixed', top: 44, left: 0, right: 0,
+              background: 'var(--clay)', color: '#fff',
+              padding: '8px 16px', fontSize: 13, textAlign: 'center', zIndex: 2000,
+            }}>
+              Reconnecting to background sync…
+            </div>
+          )}
+          {daemonState === 'failed' && (
+            <div data-testid="daemon-failed-overlay" style={{
+              position: 'fixed', inset: 0,
+              background: 'rgba(0,0,0,0.6)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              zIndex: 2000,
+            }}>
+              <div style={{
+                background: 'var(--paper)', borderRadius: 'var(--r-3)',
+                padding: '28px 32px', maxWidth: 360, textAlign: 'center',
+                boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
+              }}>
+                <h2 style={{ margin: '0 0 8px', fontSize: 17 }}>Background sync stopped</h2>
+                <p style={{ margin: '0 0 20px', color: 'var(--ink-muted)', fontSize: 13 }}>
+                  The sync process could not be restarted automatically.
+                </p>
+                <button
+                  data-testid="restart-sync-btn"
+                  onClick={() => { startDaemon().catch(() => {}); setDaemonState('reconnecting'); }}
+                  style={{
+                    padding: '10px 24px', background: 'var(--forest)', color: '#fff',
+                    border: 'none', borderRadius: 'var(--r-2)', fontSize: 14,
+                    fontWeight: 600, cursor: 'pointer',
+                  }}
+                >
+                  Restart sync
+                </button>
+              </div>
+            </div>
+          )}
+        </>,
+        document.body,
       )}
     </div>
   );

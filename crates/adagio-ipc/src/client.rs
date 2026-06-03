@@ -238,6 +238,15 @@ impl DaemonClient {
     pub fn connection_state(&self) -> watch::Receiver<ConnectionState> {
         self.state_tx.subscribe()
     }
+
+    /// Drive the connection state to `Failed` from outside the client.
+    ///
+    /// Used by the startup path when `connect_or_upgrade` fails so that
+    /// `get_daemon_status` reflects the real state instead of staying
+    /// at the initial `Reconnecting` value.
+    pub fn mark_failed(&self) {
+        let _ = self.state_tx.send(ConnectionState::Failed);
+    }
 }
 
 /// Forward NDJSON events from the subscription connection to the broadcast channel.

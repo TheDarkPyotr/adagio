@@ -94,6 +94,9 @@ pub fn run() {
                     }
                     Err(e) => {
                         tracing::error!(error = %e, "failed to connect to adagio-daemon");
+                        // Update state_tx so get_daemon_status reflects the failure
+                        // rather than staying at the initial Reconnecting value.
+                        stub_daemon.mark_failed();
                         let _ = handle.emit(
                             "adagio://daemon-connection-state",
                             serde_json::json!({ "state": "failed" }),

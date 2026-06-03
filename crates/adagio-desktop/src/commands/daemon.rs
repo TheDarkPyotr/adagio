@@ -45,25 +45,25 @@ pub async fn get_daemon_status(state: State<'_, AppState>) -> Result<DaemonStatu
 
 /// Start the background daemon process (if not already running).
 ///
-/// Used by the Settings UI "Start background sync" button.
+/// Used by the Settings UI "Start background sync" button and the "Restart sync"
+/// button in the daemon-failed overlay.  After `reconnect_loop` gives up and sets
+/// state to `Failed`, the socket monitor task has exited — a plain IPC ping cannot
+/// reach the daemon.  We must call `connect_or_upgrade` to re-open the socket,
+/// update `state_tx` (→ Connected), and spawn a fresh monitor task.
 #[tauri::command]
 pub async fn start_daemon(state: State<'_, AppState>) -> Result<(), String> {
-    // If already connected, no-op.
     use adagio_ipc::ConnectionState;
     if state.daemon.connection_state().borrow().clone() == ConnectionState::Connected {
         return Ok(());
     }
-    // Attempt to reconnect / spawn.
-    // The DaemonClient handles spawning internally via connect_or_start.
-    // Here we just verify the connection is alive after a short retry.
-    for _ in 0..10 {
-        if let Ok(r) = state.daemon.request(DaemonRequest::Ping).await {
-            let _ = r;
-            return Ok(());
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-    }
-    Err("daemon did not start within 3 seconds".to_string())
+    let config_dir = state
+        .config_path
+        .parent()
+        .ok_or_else(|| "cannot determine config dir".to_string())?
+        .to_path_buf();
+    crate::lifecycle::connect_or_upgrade(&state.daemon, &config_dir)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Stop the background daemon process gracefully.
