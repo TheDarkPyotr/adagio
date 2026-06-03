@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "ai.neuralagent.adagio",
   "build": {
-    "frontendDist": "../src-ui/dist",
+    "frontendDist": "src-ui/dist",
     "devUrl": "http://localhost:5173",
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build"

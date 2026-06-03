@@ -156,7 +156,7 @@ jobs:
           APPIMAGE_EXTRACT_AND_RUN: "1"
         run: |
           cd crates/adagio-desktop
-          src-ui/node_modules/.bin/tauri build --bundles deb,rpm,app-image
+          src-ui/node_modules/.bin/tauri build --bundles deb,rpm,appimage
 
       - name: Validate .deb package integrity
         run: |
