@@ -1,0 +1,452 @@
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import { open as shellOpen } from '@tauri-apps/plugin-shell';
+import { Icon, FileGlyph, StatusDot, FlatBtn } from './shared';
+import type { FileStatusDto, SyncStatusDto, VfsStatsDto } from '../tauri';
+import { listSyncedFiles, getVfsStats, setVfsPin, evictVfsFile } from '../tauri';
+
+function fmtBytes(n: number | null): string {
+  if (n === null) return '—';
+  if (n >= 1e9) return (n / 1e9).toFixed(1) + ' GB';
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + ' MB';
+  if (n >= 1e3) return (n / 1e3).toFixed(0) + ' KB';
+  return n + ' B';
+}
+
+function fmtDate(ts: number | null): string {
+  if (!ts) return '';
+  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(ts));
+}
+
+interface ContextMenuState {
+  x: number;
+  y: number;
+  file: FileStatusDto & { kind: string };
+}
+
+export default function FilesScene({ pairId, isVfsPair, isE2eePair, localRoot, serverHost, currentPath, onPathChange, onShare, onNew, syncStatus, favorites, onToggleFavorite, highlightFile }: {
+  pairId: string | null;
+  isVfsPair?: boolean;
+  isE2eePair?: boolean;
+  localRoot?: string;
+  serverHost: string;
+  currentPath: string;
+  onPathChange: (path: string) => void;
+  onShare: (path: string) => void;
+  onNew?: () => void;
+  syncStatus?: SyncStatusDto | null;
+  favorites?: Map<string, FileStatusDto>;
+  onToggleFavorite?: (file: FileStatusDto) => void;
+  /** Filename to auto-select after the directory loads (from a search result). */
+  highlightFile?: string | null;
+}) {
+  const [files, setFiles] = useState<FileStatusDto[]>([]);
+  const [selected, setSelected] = useState<number | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null);
+  const [vfsStats, setVfsStats] = useState<VfsStatsDto | null>(null);
+  const [vfsAction, setVfsAction] = useState<string | null>(null);
+
+  useEffect(() => { setSelected(null); setCtxMenu(null); }, [currentPath]);
+
+  // Dismiss context menu on click outside.
+  // Bubbling phase (no capture) so the menu div's stopPropagation can block
+  // this listener when the click is inside the menu, preventing the menu from
+  // unmounting before the button's click event fires.
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const dismiss = () => setCtxMenu(null);
+    window.addEventListener('mousedown', dismiss);
+    return () => window.removeEventListener('mousedown', dismiss);
+  }, [ctxMenu]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'n') { e.preventDefault(); onNew?.(); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onNew]);
+
+  const load = useCallback(async () => {
+    if (!pairId) return;
+    try {
+      const items = await listSyncedFiles(pairId, currentPath);
+      setFiles(items);
+      // Auto-select the file from a search result navigation.
+      if (highlightFile) {
+        const idx = items.findIndex(f => f.name === highlightFile);
+        if (idx !== -1) setSelected(idx);
+      }
+    } catch {}
+  }, [pairId, currentPath, highlightFile]);
+
+  useEffect(() => {
+    setLoading(true);
+    load().finally(() => setLoading(false));
+    const t = setInterval(load, 5000);
+    return () => clearInterval(t);
+  }, [load]);
+
+  // Poll VFS stats when on a VFS pair.
+  useEffect(() => {
+    if (!pairId || !isVfsPair) { setVfsStats(null); return; }
+    const fetchStats = () => getVfsStats(pairId).then(setVfsStats).catch(() => {});
+    fetchStats();
+    const t = setInterval(fetchStats, 5000);
+    return () => clearInterval(t);
+  }, [pairId, isVfsPair]);
+
+  const handlePin = useCallback(async (path: string) => {
+    if (!pairId) return;
+    setVfsAction('pin');
+    try { await setVfsPin(pairId, path, true); await load(); } catch {}
+    setVfsAction(null);
+  }, [pairId, load]);
+
+  const handleUnpin = useCallback(async (path: string) => {
+    if (!pairId) return;
+    setVfsAction('unpin');
+    try { await setVfsPin(pairId, path, false); await load(); } catch {}
+    setVfsAction(null);
+  }, [pairId, load]);
+
+  const handleEvict = useCallback(async (path: string) => {
+    if (!pairId) return;
+    setVfsAction('evict');
+    try { await evictVfsFile(pairId, path); await load(); } catch {}
+    setVfsAction(null);
+  }, [pairId, load]);
+
+  // breadcrumb segments
+  const crumbs: { label: string; path: string }[] = [{ label: serverHost || 'Nextcloud', path: '/' }];
+  currentPath.replace(/^\//, '').split('/').filter(Boolean).reduce((acc, p) => {
+    const next = acc + '/' + p;
+    crumbs.push({ label: p, path: next });
+    return next;
+  }, '');
+
+  const localGb = files.reduce((s, f) => s + (f.size ?? 0), 0) / 1e9;
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--cream)' }}>
+      {/* breadcrumb / actions row */}
+      <div style={{ height: 52, flexShrink: 0, padding: '0 22px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--hairline)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+          {crumbs.map((c, i) => (
+            <React.Fragment key={c.path}>
+              {i > 0 && <Icon name="chevron" size={11} color="var(--ink-muted)" />}
+              {i < crumbs.length - 1
+                ? <button onClick={() => { onPathChange(c.path); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-muted)', fontSize: 13 }}>{c.label}</button>
+                : <span style={{ color: 'var(--ink)', fontWeight: 600, fontFamily: 'var(--body)', fontSize: 14, letterSpacing: '-0.02em', marginLeft: 4 }}>{c.label}</span>
+              }
+            </React.Fragment>
+          ))}
+          {isE2eePair && (
+            <span title="End-to-end encrypted" style={{ display: 'flex', alignItems: 'center', marginLeft: 4 }}>
+              <Icon name="shield" size={13} color="var(--forest)" />
+            </span>
+          )}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <FlatBtn icon="plus" label="New" onClick={onNew} />
+          {isVfsPair && selected !== null && files[selected]?.status === 'cloud' && (
+            <FlatBtn icon="cloud-dl" label="Make available offline"
+              onClick={() => handlePin(files[selected].path)} />
+          )}
+          {isVfsPair && selected !== null && files[selected]?.status === 'ok' && (
+            <FlatBtn icon="trash" label="Free up space"
+              onClick={() => handleEvict(files[selected].path)} />
+          )}
+          {!isVfsPair && <FlatBtn icon="cloud-dl" label="Make available offline" />}
+          <FlatBtn icon="share" label="Share" primary onClick={() => {
+            if (selected !== null) onShare(files[selected].path);
+          }} disabled={selected === null} />
+        </div>
+      </div>
+
+      {/* E2EE read-only badge — shown for legacy v1.x encrypted folders */}
+      {isE2eePair && files.some(f => f.status === 'sync' && f.name?.includes('Encrypted folder')) && (
+        <div style={{ flexShrink: 0, padding: '6px 22px', background: 'color-mix(in srgb, var(--forest) 10%, var(--paper))', borderBottom: '1px solid var(--hairline)', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'var(--body)', fontSize: 12.5, color: 'var(--forest)' }}>
+          <Icon name="shield" size={13} color="currentColor" />
+          End-to-end encrypted folder — sync to view files.
+        </div>
+      )}
+
+      {/* server-error banner — shown for unreachable / maintenance */}
+      {(syncStatus?.status === 'unreachable' || syncStatus?.status === 'maintenance') && (
+        <div style={{ flexShrink: 0, padding: '7px 22px', background: syncStatus.status === 'unreachable' ? 'color-mix(in srgb, var(--danger) 12%, var(--paper))' : 'color-mix(in srgb, var(--warn) 12%, var(--paper))', borderBottom: '1px solid var(--hairline)', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'var(--body)', fontSize: 12.5, color: syncStatus.status === 'unreachable' ? 'var(--danger)' : 'var(--warn)' }}>
+          <Icon name="warn" size={13} color="currentColor" />
+          {syncStatus.status === 'unreachable'
+            ? 'Server unreachable — check your connection or VPN. Sync will retry automatically.'
+            : 'Server in maintenance mode — sync will resume automatically.'}
+        </div>
+      )}
+
+      {/* table */}
+      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '38px 1fr 110px 110px 160px 80px', padding: '12px 22px', fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-muted)', borderBottom: '1px solid var(--hairline)' }}>
+          <span/><span>Name</span><span>Size</span><span>Items</span><span>Modified</span>
+          <span style={{ textAlign: 'right' }}>Status</span>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0 12px' }}>
+          {loading && files.length === 0 && <p style={{ padding: '24px 22px', textAlign: 'center', color: 'var(--ink-muted)', fontFamily: 'var(--body)', fontSize: 13 }}>Loading…</p>}
+          {!loading && files.length === 0 && <p style={{ padding: '24px 22px', textAlign: 'center', color: 'var(--ink-muted)', fontFamily: 'var(--body)', fontSize: 13 }}>This folder is empty.</p>}
+          {files.map((f, i) => {
+            const kind = f.is_dir ? 'folder' : (f.name.split('.').pop()?.toLowerCase() ?? 'file');
+            const fileWithKind = { ...f, kind };
+            return (
+              <FileRowItem
+                key={f.path}
+                file={fileWithKind}
+                selected={selected === i}
+                starred={favorites?.has(f.path) ?? false}
+                onClick={() => setSelected(i === selected ? null : i)}
+                onDblClick={() => { if (f.is_dir) onPathChange(f.path); }}
+                onShare={() => onShare(f.path)}
+                onToggleStar={onToggleFavorite ? () => onToggleFavorite(f) : undefined}
+                onContextMenu={(x, y) => { setSelected(i); setCtxMenu({ x, y, file: fileWithKind }); }}
+              />
+            );
+          })}
+        </div>
+      </div>
+
+      {/* status bar */}
+      <div style={{ height: 32, flexShrink: 0, borderTop: '1px solid var(--hairline)', background: 'var(--paper)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-muted)', letterSpacing: '0.04em' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span>{files.length} items · {selected !== null ? '1 selected' : 'nothing selected'}</span>
+          {isVfsPair && vfsStats ? (
+            <>
+              <span>·</span>
+              <span style={{ color: 'var(--ink-muted)' }}>
+                {vfsStats.cloud_only_count} cloud · {vfsStats.locally_available_count} local · {vfsStats.pinned_count} pinned
+              </span>
+              <span>·</span>
+              <span>{fmtBytes(vfsStats.cached_bytes)} / {fmtBytes(vfsStats.cache_max_bytes)} cached</span>
+              {vfsAction && <span style={{ color: 'var(--clay)' }}>· {vfsAction}…</span>}
+            </>
+          ) : (
+            <>
+              <span>·</span>
+              <span>{localGb.toFixed(1)} GB local</span>
+            </>
+          )}
+          {syncStatus?.status === 'syncing' && (
+            <>
+              <span>·</span>
+              <span style={{ color: 'var(--clay)' }}>
+                syncing {syncStatus.active_file_count} file{syncStatus.active_file_count !== 1 ? 's' : ''}
+                {syncStatus.eta_seconds != null && ` · ETA ${syncStatus.eta_seconds > 60 ? `${Math.round(syncStatus.eta_seconds / 60)}m` : `${syncStatus.eta_seconds}s`}`}
+              </span>
+            </>
+          )}
+          {syncStatus?.last_sync_at && (
+            <>
+              <span>·</span>
+              <span>last sync {new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(new Date(syncStatus.last_sync_at))}</span>
+            </>
+          )}
+        </div>
+      </div>
+
+      {ctxMenu && createPortal(
+        <ContextMenu
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          file={ctxMenu.file}
+          starred={favorites?.has(ctxMenu.file.path) ?? false}
+          serverUrl={serverHost ? `https://${serverHost}` : ''}
+          localRoot={localRoot}
+          isVfsPair={isVfsPair}
+          onShare={() => { setCtxMenu(null); onShare(ctxMenu.file.path); }}
+          onToggleStar={onToggleFavorite ? () => { setCtxMenu(null); onToggleFavorite(ctxMenu.file); } : undefined}
+          onPin={isVfsPair ? () => handlePin(ctxMenu.file.path) : undefined}
+          onUnpin={isVfsPair ? () => handleUnpin(ctxMenu.file.path) : undefined}
+          onEvict={isVfsPair ? () => handleEvict(ctxMenu.file.path) : undefined}
+          onClose={() => setCtxMenu(null)}
+        />,
+        document.body,
+      )}
+    </div>
+  );
+}
+
+function FileRowItem({ file, selected, starred, onClick, onDblClick, onShare, onToggleStar, onContextMenu }: {
+  file: FileStatusDto & { kind: string };
+  selected: boolean;
+  starred: boolean;
+  onClick: () => void;
+  onDblClick: () => void;
+  onShare: () => void;
+  onToggleStar?: () => void;
+  onContextMenu?: (x: number, y: number) => void;
+}) {
+  const [h, setH] = useState(false);
+  return (
+    <div onClick={onClick} onDoubleClick={onDblClick}
+      onContextMenu={e => { e.preventDefault(); onContextMenu?.(e.clientX, e.clientY); }}
+      onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
+      style={{ display: 'grid', gridTemplateColumns: '38px 1fr 110px 110px 160px 96px', padding: '11px 22px', alignItems: 'center', background: selected ? 'var(--paper-2)' : h ? 'color-mix(in srgb, var(--ink) 4%, transparent)' : 'transparent', cursor: 'pointer', boxShadow: selected ? 'inset 2px 0 0 var(--clay)' : 'none', fontSize: 13.5 }}>
+      <FileGlyph kind={file.kind} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+        <span style={{ color: 'var(--ink)', fontWeight: file.is_dir ? 500 : 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{file.name}</span>
+        {(file.share_count ?? 0) > 0 && (
+          <span title={`Shared with ${file.share_count}`} style={{ display: 'flex', alignItems: 'center', gap: 3, color: 'var(--ink-muted)', fontSize: 11, fontFamily: 'var(--mono)', flexShrink: 0 }}>
+            <Icon name="people" size={12} color="var(--ink-muted)" />
+            <span>{file.share_count}</span>
+          </span>
+        )}
+      </div>
+      <span style={{ color: 'var(--ink-muted)', fontSize: 12, fontFamily: 'var(--mono)' }}>{fmtBytes(file.size)}</span>
+      <span style={{ color: 'var(--ink-muted)', fontSize: 12, fontFamily: 'var(--mono)' }}>{file.item_count != null ? String(file.item_count) : '—'}</span>
+      <span style={{ color: 'var(--ink-muted)', fontSize: 12 }}>{fmtDate(file.mtime)}</span>
+      <span style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 5 }}>
+        <StatusDot status={file.status} />
+        {(h || selected) && onToggleStar && (
+          <button onClick={(e) => { e.stopPropagation(); onToggleStar(); }} title={starred ? 'Unstar' : 'Star'}
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 3, display: 'flex', borderRadius: 4, color: starred ? 'var(--clay)' : 'var(--ink-muted)' }}>
+            <Icon name="star" size={13} color={starred ? 'var(--clay)' : 'var(--ink-muted)'} strokeWidth={starred ? 2 : 1.6} />
+          </button>
+        )}
+        {(h || selected) && (
+          <button onClick={(e) => { e.stopPropagation(); onShare(); }}
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 3, color: 'var(--ink-muted)', display: 'flex', borderRadius: 4 }}>
+            <Icon name="share" size={13} />
+          </button>
+        )}
+      </span>
+    </div>
+  );
+}
+
+// ── Context Menu ──────────────────────────────────────────────────────────────
+
+function ContextMenu({ x, y, file, starred, serverUrl, localRoot, isVfsPair, onShare, onToggleStar, onPin, onUnpin, onEvict, onClose }: {
+  x: number;
+  y: number;
+  file: FileStatusDto & { kind: string };
+  starred: boolean;
+  serverUrl: string;
+  localRoot?: string;
+  isVfsPair?: boolean;
+  onShare: () => void;
+  onToggleStar?: () => void;
+  onPin?: () => void;
+  onUnpin?: () => void;
+  onEvict?: () => void;
+  onClose: () => void;
+}) {
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Clamp to viewport so the menu never clips off-screen
+  const MENU_W = 220, MENU_H = 248;
+  const left = Math.min(x, window.innerWidth - MENU_W - 8);
+  const top  = Math.min(y, window.innerHeight - MENU_H - 8);
+
+  type MenuItem =
+    | { kind: 'item'; icon: import('./shared').IconName; label: string; onClick: () => void; danger?: boolean }
+    | { kind: 'sep' };
+
+  const items: MenuItem[] = [
+    {
+      kind: 'item', icon: 'folder-plus', label: 'Open',
+      onClick: () => {
+        // file.path is relative (e.g. "/Documents/file.pdf"); prepend localRoot for absolute path.
+        const abs = localRoot
+          ? `${localRoot.replace(/\/$/, '')}/${file.path.replace(/^\//, '')}`
+          : file.path;
+        shellOpen(abs).catch(() => {});
+        onClose();
+      },
+    },
+    {
+      kind: 'item', icon: 'globe', label: 'View on server',
+      onClick: () => {
+        if (serverUrl) shellOpen(`${serverUrl}/apps/files/?dir=${encodeURIComponent(file.path)}`).catch(() => {});
+        onClose();
+      },
+    },
+    { kind: 'sep' },
+    {
+      kind: 'item', icon: 'share', label: 'Share…',
+      onClick: onShare,
+    },
+    {
+      kind: 'item', icon: 'link', label: 'Copy link',
+      onClick: () => {
+        if (serverUrl) navigator.clipboard.writeText(`${serverUrl}/apps/files/?dir=${encodeURIComponent(file.path)}`).catch(() => {});
+        onClose();
+      },
+    },
+    { kind: 'sep' },
+    {
+      kind: 'item', icon: 'star', label: starred ? 'Unstar' : 'Star',
+      onClick: () => { onToggleStar?.(); onClose(); },
+    },
+    // VFS-specific actions — shown only for VFS pairs
+    ...(isVfsPair ? [
+      { kind: 'sep' } as MenuItem,
+      ...(file.status === 'cloud' ? [{
+        kind: 'item' as const, icon: 'cloud-dl' as const, label: 'Make available offline',
+        onClick: () => { onPin?.(); onClose(); },
+      }] : []),
+      ...(file.status === 'ok' && !file.is_dir ? [{
+        kind: 'item' as const, icon: 'pin' as const, label: 'Keep always available',
+        onClick: () => { onPin?.(); onClose(); },
+      }, {
+        kind: 'item' as const, icon: 'cloud' as const, label: 'Free up space',
+        onClick: () => { onEvict?.(); onClose(); },
+      }] : []),
+      ...(file.status === 'pin' ? [{
+        kind: 'item' as const, icon: 'cloud' as const, label: 'Remove pin',
+        onClick: () => { onUnpin?.(); onClose(); },
+      }] : []),
+    ] : [{
+      kind: 'item' as const, icon: 'cloud-dl' as const, label: 'Make available offline',
+      onClick: () => { onClose(); },
+    }]),
+    { kind: 'sep' },
+    {
+      kind: 'item', icon: 'trash', label: 'Move to trash',
+      danger: true,
+      onClick: () => { onClose(); },
+    },
+  ] satisfies MenuItem[];
+
+  return (
+    <div
+      ref={menuRef}
+      onMouseDown={e => e.stopPropagation()}
+      style={{ position: 'fixed', left, top, width: MENU_W, background: 'var(--paper)', border: '1px solid var(--hairline)', borderRadius: 'var(--r-2)', boxShadow: '0 8px 24px rgba(0,0,0,0.12)', padding: '4px 0', zIndex: 9999, fontFamily: 'var(--body)', fontSize: 13 }}>
+      {items.map((item, i) => {
+        if (item.kind === 'sep') {
+          return <div key={i} style={{ height: 1, background: 'var(--hairline)', margin: '4px 0' }} />;
+        }
+        return (
+          <CtxItem key={i} icon={item.icon} label={item.label} danger={item.danger} onClick={item.onClick} />
+        );
+      })}
+    </div>
+  );
+}
+
+function CtxItem({ icon, label, danger, onClick }: {
+  icon: import('./shared').IconName;
+  label: string;
+  danger?: boolean;
+  onClick: () => void;
+}) {
+  const [h, setH] = useState(false);
+  const color = danger ? 'var(--danger, #d94f2e)' : 'var(--ink)';
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setH(true)}
+      onMouseLeave={() => setH(false)}
+      style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '7px 14px', background: h ? 'var(--paper-2)' : 'transparent', border: 'none', cursor: 'pointer', color, textAlign: 'left', transition: 'background 0.08s' }}>
+      <Icon name={icon} size={14} color={color} />
+      <span>{label}</span>
+    </button>
+  );
+}

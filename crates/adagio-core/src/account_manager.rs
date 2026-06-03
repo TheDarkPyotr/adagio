@@ -74,6 +74,8 @@ mod tests {
             username: "testuser".into(),
             keychain_service_key: "adagio/test".into(),
             created_at: Utc::now(),
+            upload_limit_kbps: 0,
+            download_limit_kbps: 0,
         }
     }
 

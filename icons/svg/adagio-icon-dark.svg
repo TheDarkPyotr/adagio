@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <title>Adagio</title>
+  <rect width="1024" height="1024" rx="215" ry="215" fill="#15171a"></rect>
+  <g transform="translate(195 195) scale(10.583333333333334)">
+    <path d="M8 42 C 18 14, 42 14, 52 42" stroke="#f5f1ea" stroke-width="3.2" stroke-linecap="round" fill="none"></path>
+    <circle cx="8" cy="42" r="5" fill="#f5f1ea"></circle>
+    <circle cx="52" cy="42" r="5" fill="#c8542a"></circle>
+  </g>
+</svg>

@@ -313,6 +313,15 @@ fn make_pair_with_exclusions(
         scan_on_startup: true,
         max_upload_concurrency: 3,
         max_download_concurrency: 3,
+        conflict_policy: ConflictPolicy::Ask,
+        bulk_upload_workers: 8,
+        bulk_upload_chunk_threshold_bytes: 10 * 1024 * 1024,
+        vfs_enabled: false,
+        vfs_cache_max_bytes: 20 * 1024 * 1024 * 1024,
+        vfs_eviction_threshold_bytes: 5 * 1024 * 1024 * 1024,
+        bulk_upload_threshold_files: 50,
+        e2ee_enabled: false,
+        e2ee_account_id: None,
     }
 }
 

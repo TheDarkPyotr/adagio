@@ -27,10 +27,12 @@ keyring = { workspace = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }
 futures = { workspace = true }
+urlencoding = "2"
 
 [dev-dependencies]
 tokio = { workspace = true }
 tempfile = "3"
+mockito = { workspace = true }
 
 [[test]]
 name = "sync_cycle"

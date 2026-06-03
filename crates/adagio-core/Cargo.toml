@@ -29,6 +29,19 @@ dashmap = { workspace = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }
 futures = { workspace = true }
+libc = { workspace = true }
+
+# Network awareness — cross-platform power and Wi-Fi detection
+battery = "0.7"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus = { version = "4" }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+    "Win32_Networking_NetworkListManager",
+    "Win32_System_Com",
+] }
 
 [dev-dependencies]
 tokio = { workspace = true }
@@ -51,6 +64,10 @@ path = "../../tests/integration/conflict.rs"
 [[test]]
 name = "error_recovery"
 path = "../../tests/integration/error_recovery.rs"
+
+[[bench]]
+name = "idle_scan"
+harness = false
 
 [[bench]]
 name = "reconciler"

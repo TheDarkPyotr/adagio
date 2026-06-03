@@ -57,7 +57,7 @@ impl TrackingClient {
     }
 
     async fn range_requested(&self) -> Option<ByteRange> {
-        self.range_requested.lock().await.clone()
+        *self.range_requested.lock().await
     }
 }
 
@@ -108,7 +108,7 @@ impl RemoteClient for TrackingClient {
         _path: &RemotePath,
         range: Option<ByteRange>,
     ) -> Result<ByteStream, ClientError> {
-        *self.range_requested.lock().await = range.clone();
+        *self.range_requested.lock().await = range;
         let slice: Vec<u8> = match &range {
             Some(r) => {
                 let start = r.start as usize;
@@ -249,9 +249,17 @@ async fn download_resumes_from_partial_temp_file() {
     std::fs::write(&tmp_path, &content[..PARTIAL]).unwrap();
 
     let (tx, _rx) = make_progress_channel();
-    let result = download_file(&client, &remote, &local_path, None, &Default::default(), tx)
-        .await
-        .expect("resumed download should succeed");
+    let result = download_file(
+        &client,
+        &remote,
+        &local_path,
+        None,
+        &Default::default(),
+        tx,
+        None,
+    )
+    .await
+    .expect("resumed download should succeed");
 
     // Only the remaining bytes should have been served.
     let served = client.bytes_served().await;
@@ -294,9 +302,17 @@ async fn download_full_when_no_partial_temp_exists() {
     let local_path = LocalPath::new(dir.path().join("fresh.bin"));
     let (tx, _rx) = make_progress_channel();
 
-    let result = download_file(&client, &remote, &local_path, None, &Default::default(), tx)
-        .await
-        .expect("fresh download should succeed");
+    let result = download_file(
+        &client,
+        &remote,
+        &local_path,
+        None,
+        &Default::default(),
+        tx,
+        None,
+    )
+    .await
+    .expect("fresh download should succeed");
 
     let served = client.bytes_served().await;
     assert_eq!(served, TOTAL as u64, "full file should be downloaded");

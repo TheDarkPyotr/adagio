@@ -1,91 +1,119 @@
-
-# Adagio
-
-Adagio is a quiet, editorial Nextcloud synchronization client for the desktop. Built with Rust and Tauri, it provides a high-performance, resource-efficient, and reliable way to keep your files in tempo across your devices.
-
+# adagio
 ![Adagio Banner](docs/adr/adagio_banner.png)
 
+A high-performance, cross-platform Nextcloud Desktop sync client written in Rust.
 
-## Core Principles
+---
 
-Adagio is built on five foundational engineering mandates defined in our project Constitution:
+## Overview
 
-1.  **Test-First (NON-NEGOTIABLE)**: Every feature begins with a failing test. We strictly enforce the Red-Green-Refactor cycle to ensure behavioral correctness and prevent regressions.
-2.  **Documentation as Code**: Documentation is a first-class deliverable. Architectural decisions are recorded as ADRs, and every feature is defined by a specification in the `specs/` directory.
-3.  **Observability**: Runtime state is always inspectable via structured logging and timing metrics. Silent failures are prohibited.
-4.  **Extensibility**: The core sync engine is decoupled from specific service implementations and the UI, allowing for future integrations (Notes, Talk, Calendar) without modifying the core infrastructure.
-5.  **Performance-Oriented**: Resource efficiency is a primary constraint. Adagio is designed to use less than 100 MB RSS at idle and under 5% CPU during steady-state background sync.
+Adagio syncs files between your devices and a Nextcloud server. It runs as a background daemon (`adagio-daemon`) and exposes a native GUI (`adagio-desktop`, built with Tauri), a CLI (`adagio-cli`), and a virtual filesystem (FUSE3 on Linux, extensible to CfAPI/FileProvider). All communication between the GUI/CLI and the daemon happens over a Unix socket using NDJSON RPC.
 
-## Key Features
+**Key properties**
 
-- **Bidirectional Sync**: Real-time change detection for local files and efficient PROPFIND-based polling for remote changes.
-- **Deterministic Reconciliation**: A three-way diff (local, remote, journal) ensures every sync cycle produces a clear, safe operation plan.
-- **Conflict Management**: Policy-driven resolution with a default "preserve both" approach that ensures no user data is ever silently discarded.
-- **Large File Support**: Nextcloud's proprietary chunked upload protocol and range-request resuming for downloads.
-- **Selective Sync**: Fine-grained control over which remote directories are materialized locally.
-- **Bandwidth Controls**: Configurable upload/download caps and time-window based scheduling.
-- **Modern UI**: An editorial design system built with Svelte 5, featuring 8 custom color palettes and a quiet, status-first interface.
-- **Secure Authentication**: OAuth2 with PKCE flow; credentials never touch the disk and are stored exclusively in OS-native keychains.
+- Conflict-aware: three resolution policies (Ask, Keep-Local, Keep-Remote) with a wizard UI
+- Bandwidth-aware: per-account upload/download limits with chunk-level token-bucket throttling
+- Network-aware: respects metered connections, battery state, and SSID blocklists
+- VFS: on-demand file delivery via FUSE3 (pin/evict for offline access)
+- E2EE: client-side AES-128-GCM encryption with BIP-39 mnemonic pairing (feature 013)
+
+---
 
 ## Architecture
 
-Adagio is organized as a Cargo workspace with three primary crates:
+```
+┌──────────────────────────────────────────────────────┐
+│  adagio-desktop (Tauri + React/TypeScript)           │
+│  adagio-cli     (clap v4)                            │
+│              │ NDJSON IPC (Unix socket)               │
+│  adagio-daemon  (tokio, background process)           │
+│    ├─ SyncEngine  (adagio-core)                      │
+│    ├─ VfsPairRunner  (adagio-vfs / FUSE3)            │
+│    └─ E2eeRunner  (adagio-e2ee)                      │
+│              │ WebDAV / OCS API                       │
+│  Nextcloud server                                     │
+└──────────────────────────────────────────────────────┘
+```
 
-- **`adagio-core`**: The headless sync engine. Contains the orchestrator, reconciler, journal (SQLite), and transfer management logic. No UI or platform-specific dependencies.
-- **`adagio-nextcloud`**: Nextcloud protocol extensions, implementing the `RemoteClient` trait for WebDAV, OCS, and proprietary chunked uploads.
-- **`adagio-desktop`**: The Tauri 2.x application shell and Svelte 5 frontend. Handles the window lifecycle, system tray integration, and IPC commands.
+### Crates
 
-## Tech Stack
+| Crate | Description |
+|-------|-------------|
+| `adagio-core` | Sync engine, journal (SQLite WAL), transfer primitives, reconciler, propagator, bandwidth |
+| `adagio-daemon` | Standalone daemon binary — IPC server, dispatcher, E2EE runner |
+| `adagio-desktop` | Tauri v2 app shell + TypeScript/React frontend |
+| `adagio-cli` | `adagio` CLI binary |
+| `adagio-ipc` | Shared IPC types: `DaemonRequest`, `DaemonResponse`, `DaemonClient` |
+| `adagio-nextcloud` | Nextcloud WebDAV client + E2EE OCS API client |
+| `adagio-e2ee` | E2EE crypto layer: AES-128-GCM, RSA-2048, BIP-39, CMS signatures |
+| `adagio-vfs` | FUSE3 virtual filesystem driver |
 
-- **Backend**: Rust (stable, edition 2021)
-- **Runtime**: Tokio (async)
-- **UI Shell**: Tauri 2.x
-- **Frontend**: Svelte 5 + TypeScript + Vite
-- **Persistence**: SQLite (via `sqlx`) for sync history, JSON for configuration
-- **Security**: `keyring` for OS-native credential storage
-- **Typography**: Geist (UI/Body), Geist Mono (Metadata), Instrument Serif (Accents)
+---
 
-## Getting Started
+## Feature status
 
-### Prerequisites
+| # | Feature | Status |
+|---|---------|--------|
+| 001 | Nextcloud file sync | ✅ Done |
+| 002 | Desktop app lifecycle | ✅ Done |
+| 003 | Account OAuth2 setup | ✅ Done |
+| 004 | UI design system | ✅ Done |
+| 005 | Conflict resolution wizard | ✅ Done |
+| 006 | Sync resource efficiency | ✅ Done |
+| 007 | Background sync daemon | ✅ Done |
+| 008 | CLI binary | ✅ Done |
+| 009 | Bandwidth throttling | ✅ Done |
+| 010 | Network awareness | ✅ Done |
+| 011 | Bulk upload driver | ✅ Done |
+| 012 | VFS on-demand files (FUSE3) | ✅ Done |
+| 013 | E2EE encryption | 🔄 In progress |
+| 014 | LAN-peer protocol | ⏳ Next |
 
-- Rust (stable, ≥ 1.78)
-- Node.js (≥ 20)
-- Tauri CLI (`cargo install tauri-cli --version "^2"`)
-- SQLite 3 development headers
+---
 
-### Build and Run
+## Requirements
 
-1.  **Clone the repository**:
-    ```bash
-    git clone https://github.com/TheDarkPyotr/adagio.git
-    cd adagio
-    ```
+- Rust stable ≥ 1.83
+- Node.js ≥ 20 (for the desktop frontend)
+- Nextcloud ≥ 28 LTS
+- For E2EE: Nextcloud End-to-End Encryption app ≥ 2.0, server-side encryption **disabled** (`occ encryption:disable`)
+- For VFS (Linux): `libfuse3-dev`, `fuse3` package
 
-2.  **Install frontend dependencies**:
-    ```bash
-    npm install --prefix crates/adagio-desktop/src-ui
-    ```
+---
 
-3.  **Run in development mode**:
-    ```bash
-    cd crates/adagio-desktop
-    cargo tauri dev
-    ```
+## Building
 
-For detailed setup instructions, including integration testing against a live Nextcloud instance in Docker, see [specs/001-nextcloud-file-sync/quickstart.md](specs/001-nextcloud-file-sync/quickstart.md).
+```bash
+# Build all crates
+cargo build --workspace
 
-## Development Workflow
+# Build and run the daemon
+cargo run -p adagio-daemon -- --config-dir ~/.config/ai.neuralagent.adagio
 
-Adagio follows a **Spec-Driven Development (SDD)** workflow:
+# Build the desktop app (requires Tauri CLI)
+cargo tauri dev
 
-1.  **Specify**: Define requirements and user scenarios in `specs/###-feature-name/spec.md`.
-2.  **Plan**: Draft a technical implementation plan and ADRs in the feature directory.
-3.  **Tasks**: Generate a task list in `tasks.md`, ensuring test tasks precede implementation.
-4.  **Implement**: Execute tasks following the red-green-refactor cycle.
+# Build the CLI
+cargo build -p adagio-cli
+```
 
-All active and completed specifications can be found in the [specs/](specs/) directory.
+---
 
-## License
+## Development workflow
 
-Source code is licensed under **AGPL-3.0**. Design system and brand assets are © .
+This project uses [SpecKit](https://github.com/anthropics/speckit) for feature development. Each feature lives in `specs/NNN-feature-name/` with a full spec, implementation plan, data model, and task list.
+
+Architecture decisions are documented in `docs/adr/`. The design system is in `handoff/DESIGN.md`.
+
+---
+
+## Project layout
+
+```
+adagio/
+├── crates/            # Rust crates (see table above)
+├── specs/             # Feature specifications (001–013, active)
+├── docs/adr/          # Architecture Decision Records
+├── handoff/           # Design system, tokens, screenshots
+└── CLAUDE.md          # Current active feature context for AI
+```

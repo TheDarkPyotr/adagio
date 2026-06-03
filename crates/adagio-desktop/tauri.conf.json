@@ -19,7 +19,7 @@
         "minHeight": 520,
         "resizable": true,
         "fullscreen": false,
-        "decorations": true
+        "decorations": false
       }
     ],
     "security": {
@@ -40,5 +40,10 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "shell": {
+      "open": "^(https?://|mailto:|tel:|file://|/).+"
+    }
   }
 }

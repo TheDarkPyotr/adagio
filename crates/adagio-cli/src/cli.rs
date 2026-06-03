@@ -1,0 +1,353 @@
+use clap::{Parser, Subcommand};
+
+/// Adagio sync client.
+///
+/// Run without arguments for an interactive live dashboard.
+/// Run with a subcommand for a one-shot operation.
+#[derive(Parser, Debug)]
+#[command(
+    name = "adagio",
+    version,
+    about = "Adagio Nextcloud sync client",
+    long_about = "Adagio Nextcloud sync client.\n\nRun without arguments for an interactive dashboard.\nRun with a subcommand for a one-shot operation."
+)]
+pub struct Cli {
+    /// Output results as JSON instead of human-readable text.
+    #[arg(long, global = true)]
+    pub json: bool,
+
+    #[command(subcommand)]
+    pub command: Option<Commands>,
+}
+
+/// Top-level subcommands.
+#[derive(Subcommand, Debug)]
+pub enum Commands {
+    /// Show sync status for all configured pairs.
+    Status,
+    /// Trigger an immediate sync cycle (all pairs, or one specific pair).
+    Sync {
+        /// Sync only this pair ID. Omit to sync all pairs.
+        pair_id: Option<String>,
+    },
+    /// Pause all sync activity.
+    Pause,
+    /// Resume sync after pause.
+    Resume,
+    /// Show recent sync activity log.
+    Activity {
+        /// Maximum number of entries to show.
+        #[arg(long, default_value = "50")]
+        limit: u32,
+        /// Filter by kind: edit, sync, or conflict.
+        #[arg(long, value_parser = ["edit", "sync", "conflict"])]
+        filter: Option<String>,
+    },
+    /// Manage sync pairs.
+    Pairs {
+        #[command(subcommand)]
+        command: PairsCommand,
+    },
+    /// Manage connected accounts.
+    Accounts {
+        #[command(subcommand)]
+        command: AccountsCommand,
+    },
+    /// Manage sync conflicts.
+    Conflicts {
+        #[command(subcommand)]
+        command: ConflictsCommand,
+    },
+    /// Control the background sync daemon.
+    Daemon {
+        #[command(subcommand)]
+        command: DaemonCommand,
+    },
+    /// Manage bandwidth limits for sync transfers.
+    Bandwidth {
+        #[command(subcommand)]
+        command: BandwidthCommand,
+    },
+    /// Manage network-awareness policy (metered, battery, SSID blocking).
+    Network {
+        #[command(subcommand)]
+        command: NetworkCommand,
+    },
+    /// Manage VFS (on-demand files) for a sync pair.
+    Vfs {
+        #[command(subcommand)]
+        command: VfsCommand,
+    },
+    /// Manage end-to-end encryption for a sync pair.
+    E2ee {
+        #[command(subcommand)]
+        command: E2eeCommand,
+    },
+}
+
+/// Subcommands for `adagio e2ee`.
+#[derive(Subcommand, Debug)]
+pub enum E2eeCommand {
+    /// Initialise E2EE for a pair and print the one-time mnemonic.
+    Init {
+        /// Pair ID to enable E2EE on.
+        #[arg(long)]
+        pair_id: Option<String>,
+    },
+    /// Pair this device with an existing E2EE key using the mnemonic.
+    Pair {
+        /// Pair ID.
+        #[arg(long)]
+        pair_id: Option<String>,
+        /// 12-word BIP-39 mnemonic (prompted securely if omitted).
+        #[arg(long)]
+        mnemonic: Option<String>,
+    },
+    /// Show E2EE status for a pair.
+    Status {
+        /// Pair ID (omit for all E2EE-enabled pairs).
+        #[arg(long)]
+        pair_id: Option<String>,
+    },
+}
+
+/// Subcommands for `adagio vfs`.
+#[derive(Subcommand, Debug)]
+pub enum VfsCommand {
+    /// Show VFS cache statistics for one or all pairs.
+    Status {
+        /// Show stats for a specific pair ID (omit for all pairs).
+        #[arg(long)]
+        pair_id: Option<String>,
+    },
+    /// Pin a path for offline access (downloads content immediately).
+    Pin {
+        /// File or directory path to pin.
+        path: String,
+        /// Pair ID (required).
+        #[arg(long)]
+        pair_id: Option<String>,
+    },
+    /// Unpin a path (content may still be cached but is now evictable).
+    Unpin {
+        /// File or directory path to unpin.
+        path: String,
+        /// Pair ID (required).
+        #[arg(long)]
+        pair_id: Option<String>,
+    },
+    /// Evict local content, returning file(s) to cloud-only state.
+    Evict {
+        /// File or directory path to evict (omit with --all to evict everything).
+        path: Option<String>,
+        /// Pair ID (required).
+        #[arg(long)]
+        pair_id: Option<String>,
+        /// Evict all locally-available content for the pair.
+        #[arg(long)]
+        all: bool,
+    },
+}
+
+/// Subcommands for `adagio network`.
+#[derive(Subcommand, Debug)]
+pub enum NetworkCommand {
+    /// Show current network state and active policy.
+    Status,
+    /// Configure network-awareness policy.
+    Set {
+        /// Action when on a metered connection: allow, throttle, or pause.
+        #[arg(long, value_parser = ["allow", "throttle", "pause"])]
+        on_metered: Option<String>,
+        /// Action when on battery power: allow, throttle, or pause.
+        #[arg(long, value_parser = ["allow", "throttle", "pause"])]
+        on_battery: Option<String>,
+        /// Shared throttle limit in Kbps (used when on-metered or on-battery is throttle).
+        #[arg(long)]
+        throttle_kbps: Option<u64>,
+    },
+    /// Add an SSID to the block list (sync pauses when connected to it).
+    BlockSsid {
+        /// The exact Wi-Fi network name to block (case-sensitive).
+        ssid: String,
+    },
+    /// Remove an SSID from the block list.
+    UnblockSsid {
+        /// The SSID to unblock.
+        ssid: String,
+    },
+    /// List all blocked SSIDs.
+    ListBlocked,
+}
+
+/// Subcommands for `adagio bandwidth`.
+#[derive(Subcommand, Debug)]
+pub enum BandwidthCommand {
+    /// Show current bandwidth limits and measured throughput.
+    Status,
+    /// Set upload and/or download speed limits (Kbps; 0 = unlimited).
+    Set {
+        /// Upload limit in Kbps (omit to keep current value).
+        #[arg(long)]
+        upload_kbps: Option<u64>,
+        /// Download limit in Kbps (omit to keep current value).
+        #[arg(long)]
+        download_kbps: Option<u64>,
+    },
+    /// Remove all bandwidth limits.
+    Clear,
+}
+
+/// Subcommands for `adagio pairs`.
+#[derive(Subcommand, Debug)]
+pub enum PairsCommand {
+    /// List all configured sync pairs.
+    List,
+    /// Add a new sync pair.
+    Add {
+        /// Local folder to sync.
+        #[arg(long)]
+        local: String,
+        /// Remote Nextcloud folder path.
+        #[arg(long)]
+        remote: String,
+        /// Account ID to use for this pair.
+        #[arg(long)]
+        account: String,
+        /// Enable VFS on-demand mode (files appear as placeholders; content downloaded on access).
+        #[arg(long, default_value_t = false)]
+        vfs: bool,
+        /// Maximum local cache size in bytes for VFS mode (default: 20 GB).
+        #[arg(long, default_value_t = 20 * 1024 * 1024 * 1024)]
+        vfs_cache_bytes: u64,
+    },
+    /// Remove a sync pair.
+    Remove {
+        /// Pair ID to remove.
+        pair_id: String,
+        /// Also delete all locally synced files.
+        #[arg(long)]
+        delete_local_files: bool,
+    },
+}
+
+/// Subcommands for `adagio accounts`.
+#[derive(Subcommand, Debug)]
+pub enum AccountsCommand {
+    /// List all connected Nextcloud accounts.
+    List,
+    /// Remove an account and all of its sync pairs.
+    Remove {
+        /// Account ID to remove.
+        account_id: String,
+    },
+}
+
+/// Subcommands for `adagio conflicts`.
+#[derive(Subcommand, Debug)]
+pub enum ConflictsCommand {
+    /// List pending (unresolved) conflicts.
+    List {
+        /// Show only conflicts for this pair ID.
+        pair_id: Option<String>,
+    },
+    /// Resolve a conflict by choosing which version to keep.
+    Resolve {
+        /// Conflict ID to resolve.
+        conflict_id: String,
+        /// Which version to keep: local, remote, or both.
+        #[arg(long, value_parser = ["local", "remote", "both"])]
+        keep: String,
+    },
+    /// Dismiss all pending conflicts without any file I/O.
+    Dismiss,
+}
+
+/// Subcommands for `adagio daemon`.
+#[derive(Subcommand, Debug)]
+pub enum DaemonCommand {
+    /// Start the background daemon (if not already running).
+    Start,
+    /// Stop the daemon gracefully (waits up to 30 s for transfers to complete).
+    Stop,
+    /// Show the daemon's current status, uptime, and version.
+    Status,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // T006-a — adagio status is parsed correctly.
+    #[test]
+    fn cli_parses_status_command() {
+        let cli = Cli::parse_from(["adagio", "status"]);
+        assert!(matches!(cli.command, Some(Commands::Status)));
+        assert!(!cli.json);
+    }
+
+    // T006-b — --json before subcommand sets json=true.
+    #[test]
+    fn cli_global_json_flag() {
+        let cli = Cli::parse_from(["adagio", "--json", "status"]);
+        assert!(cli.json);
+    }
+
+    // T006-c — --json after subcommand also sets json=true (global flag).
+    #[test]
+    fn cli_json_after_subcommand() {
+        let cli = Cli::parse_from(["adagio", "status", "--json"]);
+        assert!(cli.json);
+    }
+
+    // T006-d — conflicts resolve parses ID and --keep.
+    #[test]
+    fn cli_parses_conflicts_resolve() {
+        let cli = Cli::parse_from([
+            "adagio",
+            "conflicts",
+            "resolve",
+            "abc-123",
+            "--keep",
+            "local",
+        ]);
+        match cli.command.unwrap() {
+            Commands::Conflicts {
+                command: ConflictsCommand::Resolve { conflict_id, keep },
+            } => {
+                assert_eq!(conflict_id, "abc-123");
+                assert_eq!(keep, "local");
+            }
+            other => panic!("unexpected: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn cli_parses_sync_with_pair_id() {
+        let cli = Cli::parse_from(["adagio", "sync", "pair-abc"]);
+        match cli.command.unwrap() {
+            Commands::Sync { pair_id: Some(id) } => assert_eq!(id, "pair-abc"),
+            other => panic!("unexpected: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn cli_parses_sync_without_pair_id() {
+        let cli = Cli::parse_from(["adagio", "sync"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Sync { pair_id: None })
+        ));
+    }
+
+    #[test]
+    fn cli_parses_daemon_start() {
+        let cli = Cli::parse_from(["adagio", "daemon", "start"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Daemon {
+                command: DaemonCommand::Start
+            })
+        ));
+    }
+}

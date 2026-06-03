@@ -157,6 +157,7 @@ async fn transient_error_retries_and_eventually_succeeds() {
     // Propagator with fast backoff (1 ms base) to keep the test quick.
     let propagator = Propagator::with_backoff(fast_backoff());
     let ops = vec![SyncOp::Upload {
+        local_checksum: None,
         path: RelativePath::new("a.txt"),
     }];
     let result = propagator
@@ -203,12 +204,15 @@ async fn per_item_isolation_one_failure_does_not_block_others() {
     });
     let ops = vec![
         SyncOp::Upload {
+            local_checksum: None,
             path: RelativePath::new("a.txt"),
         },
         SyncOp::Upload {
+            local_checksum: None,
             path: RelativePath::new("b.txt"),
         },
         SyncOp::Upload {
+            local_checksum: None,
             path: RelativePath::new("c.txt"),
         },
     ];
@@ -258,6 +262,7 @@ async fn auth_required_is_detected_and_signalled() {
     let (auth_tx, mut auth_rx) = tokio::sync::watch::channel(false);
     let propagator = Propagator::with_auth_channel(fast_backoff(), auth_tx);
     let ops = vec![SyncOp::Upload {
+        local_checksum: None,
         path: RelativePath::new("x.txt"),
     }];
 

@@ -1,0 +1,32 @@
+[package]
+name = "adagio-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Adagio CLI — command-line interface for the Adagio sync daemon"
+
+[lib]
+name = "adagio_cli"
+path = "src/lib.rs"
+
+[[bin]]
+name = "adagio"
+path = "src/main.rs"
+
+[dependencies]
+adagio-ipc = { path = "../adagio-ipc" }
+clap = { workspace = true }
+tokio = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+chrono = { workspace = true }
+crossterm = "0.28"
+indicatif = "0.17"
+rpassword = "7"
+
+[dev-dependencies]
+tokio = { workspace = true }
+tempfile = "3"

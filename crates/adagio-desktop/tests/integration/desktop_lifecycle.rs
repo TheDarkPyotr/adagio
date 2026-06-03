@@ -30,6 +30,15 @@ fn make_pair(local_dir: &TempDir) -> SyncPair {
         scan_on_startup: true,
         max_upload_concurrency: 2,
         max_download_concurrency: 2,
+        conflict_policy: adagio_core::types::ConflictPolicy::Ask,
+        bulk_upload_workers: 8,
+        bulk_upload_threshold_files: 50,
+        bulk_upload_chunk_threshold_bytes: 10 * 1024 * 1024,
+        vfs_enabled: false,
+        vfs_cache_max_bytes: 20 * 1024 * 1024 * 1024,
+        vfs_eviction_threshold_bytes: 5 * 1024 * 1024 * 1024,
+        e2ee_enabled: false,
+        e2ee_account_id: None,
     }
 }
 
@@ -60,6 +69,7 @@ async fn start_pair_runner_is_registered_and_trigger_succeeds() {
             pair,
             client as Arc<dyn adagio_core::remote::RemoteClient>,
             journal,
+            None,
         )
         .await;
 
@@ -87,6 +97,7 @@ async fn stop_pair_deregisters_runner() {
             pair,
             client as Arc<dyn adagio_core::remote::RemoteClient>,
             journal,
+            None,
         )
         .await;
 
@@ -113,8 +124,10 @@ async fn multiple_pairs_start_independently() {
     let client1 = Arc::new(MockRemoteClient::new()) as Arc<dyn adagio_core::remote::RemoteClient>;
     let client2 = Arc::new(MockRemoteClient::new()) as Arc<dyn adagio_core::remote::RemoteClient>;
 
-    engine.start_pair(pair1, client1, journal.clone()).await;
-    engine.start_pair(pair2, client2, journal).await;
+    engine
+        .start_pair(pair1, client1, journal.clone(), None)
+        .await;
+    engine.start_pair(pair2, client2, journal, None).await;
 
     engine
         .trigger_pair(&id1)

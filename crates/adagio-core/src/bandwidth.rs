@@ -7,6 +7,7 @@ use tokio::time::Duration;
 /// Adds `rate` tokens (bytes) per second, capped at `burst`.
 /// `acquire(n)` returns the Duration the caller must sleep before sending `n` bytes.
 /// `rate == 0` means unlimited: acquire always returns `Duration::ZERO`.
+#[allow(missing_debug_implementations)]
 pub struct TokenBucket {
     rate: u64,
     burst: u64,
@@ -82,6 +83,69 @@ impl BandwidthSchedule {
             .iter()
             .find(|w| w.start_hour <= hour && hour < w.end_hour)
             .map(|w| w.cap_bytes_per_sec)
+    }
+}
+
+// ── ThroughputMeter ───────────────────────────────────────────────────────────
+
+/// Rolling-window byte-rate calculator.
+///
+/// Tracks bytes transferred over a configurable sliding window (default 10 s)
+/// and computes an instantaneous rate in bytes/second.
+pub struct ThroughputMeter {
+    window: std::collections::VecDeque<(std::time::Instant, u64)>,
+    window_secs: u64,
+}
+
+impl ThroughputMeter {
+    /// Create a new meter with the default 10-second window.
+    pub fn new() -> Self {
+        Self {
+            window: std::collections::VecDeque::new(),
+            window_secs: 10,
+        }
+    }
+
+    /// Record that `bytes` bytes were transferred at this instant.
+    pub fn record(&mut self, bytes: u64) {
+        self.window.push_back((std::time::Instant::now(), bytes));
+        self.evict();
+    }
+
+    /// Return the current rate in bytes/second (rolling window average).
+    pub fn rate_bytes_per_sec(&mut self) -> u64 {
+        self.evict();
+        let total: u64 = self.window.iter().map(|(_, b)| b).sum();
+        if total == 0 {
+            return 0;
+        }
+        let elapsed_secs = self
+            .window
+            .front()
+            .map(|(t, _)| t.elapsed().as_secs_f64())
+            .unwrap_or(0.0);
+        if elapsed_secs < 0.001 {
+            return total; // avoid division by near-zero
+        }
+        (total as f64 / elapsed_secs) as u64
+    }
+
+    fn evict(&mut self) {
+        let cutoff = std::time::Duration::from_secs(self.window_secs);
+        while self
+            .window
+            .front()
+            .map(|(t, _)| t.elapsed() > cutoff)
+            .unwrap_or(false)
+        {
+            self.window.pop_front();
+        }
+    }
+}
+
+impl Default for ThroughputMeter {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -175,5 +239,33 @@ mod tests {
     fn bandwidth_schedule_empty_returns_none() {
         let schedule = BandwidthSchedule::default();
         assert_eq!(schedule.cap_at_hour(12), None);
+    }
+
+    // T002-a: New meter returns zero rate.
+    #[test]
+    fn throughput_meter_empty_returns_zero() {
+        let mut m = ThroughputMeter::new();
+        assert_eq!(m.rate_bytes_per_sec(), 0);
+    }
+
+    // T002-b: After recording bytes, rate is non-zero.
+    #[test]
+    fn throughput_meter_records_bytes() {
+        let mut m = ThroughputMeter::new();
+        m.record(100_000);
+        // Rate should be non-zero immediately after recording.
+        assert!(m.rate_bytes_per_sec() > 0);
+    }
+
+    // T002-c: Entries older than window_secs are evicted.
+    #[test]
+    fn throughput_meter_evicts_old_entries() {
+        let mut m = ThroughputMeter {
+            window: std::collections::VecDeque::new(),
+            window_secs: 0, // zero-length window → all entries immediately stale
+        };
+        m.record(999_999);
+        // After eviction with 0s window, meter should be empty.
+        assert_eq!(m.rate_bytes_per_sec(), 0);
     }
 }

@@ -102,6 +102,7 @@ pub async fn resolve(
                 None,
                 &opts,
                 progress_tx.clone(),
+                None,
             )
             .await?;
 
@@ -111,7 +112,7 @@ pub async fn resolve(
                 remote_root.as_str().trim_end_matches('/'),
                 copy_path.as_str()
             ));
-            upload_single(client, &local_copy, &remote_copy, &opts, progress_tx).await?;
+            upload_single(client, &local_copy, &remote_copy, &opts, progress_tx, None).await?;
 
             ConflictResolution::BothKept {
                 conflict_copy_path: copy_path,
@@ -120,23 +121,41 @@ pub async fn resolve(
 
         // ── LocalWins ─────────────────────────────────────────────────────────
         ConflictPolicy::LocalWins => {
-            upload_single(client, &local_file, &remote_file, &opts, progress_tx).await?;
+            upload_single(client, &local_file, &remote_file, &opts, progress_tx, None).await?;
             ConflictResolution::KeptLocal
         }
 
         // ── RemoteWins ────────────────────────────────────────────────────────
         ConflictPolicy::RemoteWins => {
-            download_file(client, &remote_file, &local_file, None, &opts, progress_tx).await?;
+            download_file(
+                client,
+                &remote_file,
+                &local_file,
+                None,
+                &opts,
+                progress_tx,
+                None,
+            )
+            .await?;
             ConflictResolution::KeptRemote
         }
 
         // ── NewestWins ────────────────────────────────────────────────────────
         ConflictPolicy::NewestWins => {
             if record.local_mtime >= record.remote_mtime {
-                upload_single(client, &local_file, &remote_file, &opts, progress_tx).await?;
+                upload_single(client, &local_file, &remote_file, &opts, progress_tx, None).await?;
                 ConflictResolution::KeptLocal
             } else {
-                download_file(client, &remote_file, &local_file, None, &opts, progress_tx).await?;
+                download_file(
+                    client,
+                    &remote_file,
+                    &local_file,
+                    None,
+                    &opts,
+                    progress_tx,
+                    None,
+                )
+                .await?;
                 ConflictResolution::KeptRemote
             }
         }
@@ -144,12 +163,49 @@ pub async fn resolve(
         // ── Ask ───────────────────────────────────────────────────────────────
         ConflictPolicy::Ask => match user_choice {
             Some(ConflictSide::Local) => {
-                upload_single(client, &local_file, &remote_file, &opts, progress_tx).await?;
+                upload_single(client, &local_file, &remote_file, &opts, progress_tx, None).await?;
                 ConflictResolution::KeptLocal
             }
             Some(ConflictSide::Remote) => {
-                download_file(client, &remote_file, &local_file, None, &opts, progress_tx).await?;
+                download_file(
+                    client,
+                    &remote_file,
+                    &local_file,
+                    None,
+                    &opts,
+                    progress_tx,
+                    None,
+                )
+                .await?;
                 ConflictResolution::KeptRemote
+            }
+            // Both: preserve_both logic — rename local to conflict copy, download remote,
+            // then upload the copy. Reuses the PreserveBoth branch below.
+            Some(ConflictSide::Both) => {
+                let copy_path = conflict_copy_path(&record.path, device_name, chrono::Utc::now());
+                let local_copy = LocalPath::new(local_root.0.join(copy_path.as_str()));
+                let remote_copy = RemotePath::new(format!(
+                    "{}/{}",
+                    remote_root.as_str().trim_end_matches('/'),
+                    copy_path.as_str()
+                ));
+                tokio::fs::copy(&local_file.0, &local_copy.0)
+                    .await
+                    .map_err(|e| TransferError::Permanent(e.to_string()))?;
+                download_file(
+                    client,
+                    &remote_file,
+                    &local_file,
+                    None,
+                    &opts,
+                    progress_tx.clone(),
+                    None,
+                )
+                .await?;
+                upload_single(client, &local_copy, &remote_copy, &opts, progress_tx, None).await?;
+                ConflictResolution::BothKept {
+                    conflict_copy_path: copy_path,
+                }
             }
             None => {
                 return Err(TransferError::Permanent(
@@ -179,6 +235,45 @@ pub async fn mark_resolved(
     resolution: ConflictResolution,
 ) -> Result<(), JournalError> {
     journal.resolve_conflict(id, resolution).await
+}
+
+// ── Folder conflict helpers (T030) ────────────────────────────────────────────
+
+/// Resolve a folder rename conflict where both sides renamed differently.
+///
+/// Returns the winning `RelativePath` based on the user's choice.
+/// - `ConflictSide::Local` → returns `local_name` (remote must be renamed to match)
+/// - `ConflictSide::Remote` → returns `remote_name` (local must be renamed to match)
+/// - `ConflictSide::Both` → not accepted here; call `resolve_folder_rename_both` instead
+pub fn resolve_folder_rename(
+    local_name: &RelativePath,
+    _remote_name: &RelativePath,
+    side: ConflictSide,
+) -> RelativePath {
+    match side {
+        ConflictSide::Local => local_name.clone(),
+        ConflictSide::Remote => _remote_name.clone(),
+        ConflictSide::Both => local_name.clone(), // caller should use resolve_folder_rename_both
+    }
+}
+
+/// Resolve a folder rename conflict by keeping both names as siblings.
+///
+/// Returns `(local_path, remote_path)` — both names coexist as separate directories.
+pub fn resolve_folder_rename_both(
+    local_name: &RelativePath,
+    remote_name: &RelativePath,
+) -> (RelativePath, RelativePath) {
+    (local_name.clone(), remote_name.clone())
+}
+
+/// Compute the list of paths that will be affected by resolving a
+/// `DeletedWithContent` folder conflict in favour of the server version.
+///
+/// Returns the relative paths of all items under the server-side folder root.
+/// The caller is expected to pass the paths already known from a remote scan.
+pub fn resolve_delete_vs_content_impact(affected_paths: &[RelativePath]) -> Vec<RelativePath> {
+    affected_paths.to_vec()
 }
 
 // ── Tests (T053) ──────────────────────────────────────────────────────────────
@@ -395,6 +490,103 @@ mod tests {
             resolution: None,
             detected_at: Utc::now(),
             resolved_at: None,
+            is_dir: false,
+            conflict_kind: crate::types::ConflictKind::ContentModified,
         }
+    }
+
+    // T011 — Ask + Both performs preserve-both logic.
+    #[tokio::test]
+    async fn resolver_ask_both_runs_preserve_both_logic() {
+        use crate::remote::mock::MockRemoteClient;
+        use crate::types::{ConflictPolicy, PairId};
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().unwrap();
+        std::fs::write(dir.path().join("f.txt"), b"local content").unwrap();
+        let client = MockRemoteClient::new();
+        client.seed("remote/f.txt", b"remote content").await;
+
+        let record = make_record(
+            "f.txt",
+            ConflictPolicy::Ask,
+            ts(2024, 1, 1, 0, 0, 0),
+            ts(2024, 1, 2, 0, 0, 0),
+        );
+        let (tx, _rx) = mpsc::channel(8);
+        let journal = crate::journal::sqlite::SqliteJournal::open(&format!(
+            "sqlite://{}?mode=rwc",
+            dir.path().join("both.db").display()
+        ))
+        .await
+        .unwrap();
+
+        let outcome = resolve(
+            &record,
+            &PairId::new(),
+            &LocalPath::new(dir.path()),
+            &RemotePath::new("remote/"),
+            &client,
+            &journal,
+            "testdev",
+            Some(ConflictSide::Both),
+            tx,
+        )
+        .await
+        .unwrap();
+
+        assert!(
+            matches!(outcome.resolution, ConflictResolution::BothKept { .. }),
+            "expected BothKept, got {:?}",
+            outcome.resolution
+        );
+        // Remote content should now be at the original path.
+        let at_original = std::fs::read(dir.path().join("f.txt")).unwrap();
+        assert_eq!(at_original, b"remote content");
+        // A conflict copy containing the original local content must exist.
+        if let ConflictResolution::BothKept { conflict_copy_path } = &outcome.resolution {
+            let copy_content = std::fs::read(dir.path().join(conflict_copy_path.as_str())).unwrap();
+            assert_eq!(copy_content, b"local content");
+        }
+    }
+
+    // T012 — conflict_copy_path for a directory path has no trailing dot/extension.
+    #[test]
+    fn conflict_copy_path_for_directory_no_extension() {
+        let p = RelativePath::new("photos");
+        let at = ts(2024, 3, 15, 10, 0, 0);
+        let copy = conflict_copy_path(&p, "Desktop", at);
+        // Should not end with a dot.
+        assert!(
+            !copy.as_str().ends_with('.'),
+            "unexpected trailing dot: {}",
+            copy.as_str()
+        );
+        assert!(
+            copy.as_str()
+                .contains("(conflicted copy from Desktop 2024-03-15 10-00-00)"),
+            "unexpected format: {}",
+            copy.as_str()
+        );
+    }
+
+    // T013 — resolve_folder_rename: keep_local renames remote folder to local name.
+    #[test]
+    fn resolver_folder_rename_keep_local_wins() {
+        let local_name = RelativePath::new("Work");
+        let remote_name = RelativePath::new("Projects 2026");
+        let winner = resolve_folder_rename(&local_name, &remote_name, ConflictSide::Local);
+        assert_eq!(winner, local_name);
+    }
+
+    // T014 — resolve_folder_rename: keep_both returns both names.
+    #[test]
+    fn resolver_folder_rename_keep_both_returns_pair() {
+        let local_name = RelativePath::new("Work");
+        let remote_name = RelativePath::new("Projects 2026");
+        let (a, b) = resolve_folder_rename_both(&local_name, &remote_name);
+        assert_ne!(a.as_str(), b.as_str());
+        assert!(a.as_str() == local_name.as_str() || b.as_str() == local_name.as_str());
+        assert!(a.as_str() == remote_name.as_str() || b.as_str() == remote_name.as_str());
     }
 }

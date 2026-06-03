@@ -18,8 +18,11 @@ path = "src/main.rs"
 [dependencies]
 adagio-core = { path = "../adagio-core" }
 adagio-nextcloud = { path = "../adagio-nextcloud" }
+adagio-ipc = { path = "../adagio-ipc" }
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
+qrcode = "0.14"
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -28,6 +31,8 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 tokio = { workspace = true }
 chrono = { workspace = true }
+reqwest = { workspace = true }
+base64 = { workspace = true }
 uuid = { workspace = true }
 
 [[test]]
@@ -41,3 +46,4 @@ tauri-build = { version = "2", features = [] }
 tokio = { workspace = true }
 tempfile = "3"
 sqlx = { workspace = true }
+mockito = "1"

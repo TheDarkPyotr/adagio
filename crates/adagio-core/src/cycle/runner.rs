@@ -1,10 +1,11 @@
-use crate::cycle::SyncCycle;
+use crate::cycle::{EngineStatus, SyncCycle};
 use crate::journal::Journal;
+use crate::observability::MemorySampler;
 use crate::remote::RemoteClient;
 use crate::types::{PairId, SyncPair};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
@@ -26,10 +27,16 @@ impl PairRunner {
     /// Runs `SyncCycle::run` on startup (if `pair.scan_on_startup`) and then
     /// on each interval tick or explicit trigger. The loop exits cleanly when
     /// the returned `PairRunner` is stopped or dropped.
+    ///
+    /// If `conflict_tx` is set, the runner notifies on it whenever a new Ask-policy
+    /// conflict is recorded so the desktop layer can emit `adagio://conflict-detected`.
     pub fn spawn(
         pair: Arc<SyncPair>,
         client: Arc<dyn RemoteClient>,
         journal: Arc<dyn Journal>,
+        conflict_tx: Option<tokio::sync::mpsc::Sender<()>>,
+        memory_sampler: Arc<std::sync::Mutex<MemorySampler>>,
+        status_tx: Option<watch::Sender<EngineStatus>>,
     ) -> Self {
         let cancel = CancellationToken::new();
         let (trigger_tx, mut trigger_rx) = mpsc::channel::<()>(1);
@@ -39,12 +46,21 @@ impl PairRunner {
         let handle = tokio::spawn(async move {
             let interval_secs = pair.scan_interval_secs.max(1);
             let mut ticker = tokio::time::interval(Duration::from_secs(interval_secs));
+            // Skip missed ticks: a slow cycle never fires catch-up bursts (ADR-007).
             ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             // Consume the immediate first tick so the interval starts from now.
             ticker.tick().await;
 
             if pair.scan_on_startup {
-                run_cycle(&pair, &*client, &*journal).await;
+                run_cycle(
+                    &pair,
+                    &*client,
+                    &*journal,
+                    conflict_tx.as_ref(),
+                    &memory_sampler,
+                    status_tx.as_ref(),
+                )
+                .await;
             }
 
             loop {
@@ -56,18 +72,33 @@ impl PairRunner {
                     }
                     _ = ticker.tick() => {
                         info!(pair_id = %pair.id, "scheduled sync cycle starting");
-                        run_cycle(&pair, &*client, &*journal).await;
+                        run_cycle(&pair, &*client, &*journal, conflict_tx.as_ref(), &memory_sampler, status_tx.as_ref()).await;
                     }
                     Some(()) = trigger_rx.recv() => {
                         // Drain queued triggers so we run exactly one cycle.
                         while trigger_rx.try_recv().is_ok() {}
                         info!(pair_id = %pair.id, "triggered sync cycle starting");
-                        run_cycle(&pair, &*client, &*journal).await;
+                        run_cycle(&pair, &*client, &*journal, conflict_tx.as_ref(), &memory_sampler, status_tx.as_ref()).await;
                     }
                 }
             }
         });
 
+        Self {
+            pair_id,
+            cancel,
+            trigger_tx,
+            handle,
+        }
+    }
+
+    /// Construct a `PairRunner` from pre-built parts (used by VFS runner integration).
+    pub fn from_parts(
+        pair_id: PairId,
+        cancel: CancellationToken,
+        trigger_tx: mpsc::Sender<()>,
+        handle: tokio::task::JoinHandle<()>,
+    ) -> Self {
         Self {
             pair_id,
             cancel,
@@ -89,24 +120,45 @@ impl PairRunner {
     }
 }
 
-async fn run_cycle(pair: &SyncPair, client: &dyn RemoteClient, journal: &dyn Journal) {
+async fn run_cycle(
+    pair: &SyncPair,
+    client: &dyn RemoteClient,
+    journal: &dyn Journal,
+    conflict_tx: Option<&tokio::sync::mpsc::Sender<()>>,
+    memory_sampler: &Arc<std::sync::Mutex<MemorySampler>>,
+    status_tx: Option<&watch::Sender<EngineStatus>>,
+) {
     let cycle = SyncCycle {
         pair,
         client,
         journal,
+        conflict_tx: conflict_tx.map(|tx| tx as &tokio::sync::mpsc::Sender<()>),
+        memory_sampler: Some(memory_sampler.clone()),
     };
     match cycle.run().await {
         Ok(report) => {
+            if let Some(tx) = status_tx {
+                crate::cycle::clear_server_error_status(tx);
+            }
             info!(
                 pair_id = %pair.id,
                 uploaded = report.uploaded,
                 downloaded = report.downloaded,
                 errors = report.errors,
+                conflicts = report.conflicts,
                 "sync cycle completed"
             );
         }
         Err(e) => {
-            warn!(pair_id = %pair.id, error = %e, "sync cycle failed");
+            if let Some(tx) = status_tx {
+                crate::cycle::report_sync_error(&e, &pair.id.0, tx);
+            } else if crate::cycle::is_maintenance_error(&e) {
+                warn!(pair_id = %pair.id, "server in maintenance mode — sync paused");
+            } else if crate::cycle::is_connection_error(&e) {
+                warn!(pair_id = %pair.id, "server unreachable — sync will retry");
+            } else {
+                warn!(pair_id = %pair.id, error = %e, "sync cycle failed");
+            }
         }
     }
 }
@@ -156,6 +208,15 @@ mod tests {
             scan_on_startup: false,
             max_upload_concurrency: 3,
             max_download_concurrency: 3,
+            conflict_policy: crate::types::ConflictPolicy::Ask,
+            bulk_upload_workers: 8,
+            bulk_upload_threshold_files: 50,
+            bulk_upload_chunk_threshold_bytes: 10 * 1024 * 1024,
+            vfs_enabled: false,
+            vfs_cache_max_bytes: 20 * 1024 * 1024 * 1024,
+            vfs_eviction_threshold_bytes: 5 * 1024 * 1024 * 1024,
+            e2ee_enabled: false,
+            e2ee_account_id: None,
         })
     }
 
@@ -165,7 +226,16 @@ mod tests {
         let pair = make_pair(dir.path());
         let client = Arc::new(MockRemoteClient::new());
         let journal = make_journal().await;
-        let runner = PairRunner::spawn(pair, client, journal);
+        let runner = PairRunner::spawn(
+            pair,
+            client,
+            journal,
+            None,
+            Arc::new(std::sync::Mutex::new(
+                crate::observability::MemorySampler::new(),
+            )),
+            None,
+        );
         // stop must not panic or deadlock
         runner.stop();
     }
@@ -176,13 +246,50 @@ mod tests {
         let pair = make_pair(dir.path());
         let client = Arc::new(MockRemoteClient::new());
         let journal = make_journal().await;
-        let runner = PairRunner::spawn(pair, client, journal);
+        let runner = PairRunner::spawn(
+            pair,
+            client,
+            journal,
+            None,
+            Arc::new(std::sync::Mutex::new(
+                crate::observability::MemorySampler::new(),
+            )),
+            None,
+        );
         assert!(
             runner.trigger(),
             "trigger should succeed while runner is alive"
         );
         tokio::time::sleep(Duration::from_millis(50)).await;
         runner.stop();
+    }
+
+    // T003 — Verify MissedTickBehavior::Skip is configured on the interval.
+    // The ticker must not fire more than once per interval window when the previous
+    // cycle takes longer than the interval. We verify the behaviour indirectly:
+    // a real-time 110 ms interval with a 50 ms "cycle" running twice should
+    // only see one tick fire per window (not two back-to-back).
+    #[tokio::test]
+    async fn missed_tick_skip_does_not_fire_twice_after_slow_cycle() {
+        // Short interval for a fast test.
+        let mut ticker = tokio::time::interval(Duration::from_millis(80));
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        // Consume the immediate first tick.
+        ticker.tick().await;
+
+        // Simulate a "slow cycle" by sleeping slightly longer than 2 intervals.
+        // With Skip, only ONE tick should be pending after this sleep, not two.
+        tokio::time::sleep(Duration::from_millis(170)).await;
+
+        // Drain one tick (the pending one).
+        let _ = tokio::time::timeout(Duration::from_millis(5), ticker.tick()).await;
+
+        // The second tick must NOT be immediately ready (it should be ~80ms away).
+        let second = tokio::time::timeout(Duration::from_millis(5), ticker.tick()).await;
+        assert!(
+            second.is_err(),
+            "MissedTickBehavior::Skip must not fire a second tick immediately after a slow cycle"
+        );
     }
 
     #[tokio::test]
@@ -193,7 +300,16 @@ mod tests {
         let client = Arc::new(MockRemoteClient::new());
         let journal = make_journal().await;
         // Spawn and give the startup cycle time to complete
-        let runner = PairRunner::spawn(Arc::new(pair), client, journal);
+        let runner = PairRunner::spawn(
+            Arc::new(pair),
+            client,
+            journal,
+            None,
+            Arc::new(std::sync::Mutex::new(
+                crate::observability::MemorySampler::new(),
+            )),
+            None,
+        );
         tokio::time::sleep(Duration::from_millis(100)).await;
         runner.stop();
         // No assertion other than "didn't panic" — verifies run_cycle is called without error

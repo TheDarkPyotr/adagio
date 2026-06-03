@@ -1,93 +1,103 @@
-use crate::state::AppState;
-use adagio_nextcloud::client::NextcloudClient;
+use adagio_ipc::{transport::daemon_socket_path, DaemonClient};
+use anyhow::Result;
+use std::path::Path;
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::info;
 
-/// Spawn a `PairRunner` for every pair loaded from config.
+/// Connect to a running `adagio-daemon` or spawn it, then upgrade the
+/// provided stub client with the real socket connection.
 ///
-/// For each pair, credentials are retrieved from the OS keychain via
-/// `spawn_blocking`. Pairs with missing credentials are skipped with a warning;
-/// the remaining pairs continue to start normally.
-pub async fn start_engine_for_all_pairs(state: &AppState) {
-    let pairs = {
-        let mgr = state.pairs.read().await;
-        mgr.all_pairs().into_iter().cloned().collect::<Vec<_>>()
-    };
+/// `config_dir` is passed to the daemon as `--config-dir` so both processes
+/// use the same data directory (avoids Tauri `app_config_dir` vs XDG mismatch).
+pub async fn connect_or_upgrade(
+    stub: &Arc<DaemonClient>,
+    config_dir: &std::path::Path,
+) -> Result<()> {
+    let daemon_path = daemon_binary_path()?;
+    let socket_path = daemon_socket_path();
 
-    let accounts = match state.accounts.list() {
-        Ok(a) => a,
-        Err(e) => {
-            warn!(error = %e, "failed to list accounts for engine startup");
-            return;
-        }
-    };
-
-    for pair in pairs {
-        let account = match accounts.iter().find(|a| a.id == pair.account_id) {
-            Some(a) => a.clone(),
-            None => {
-                warn!(
-                    pair_id = %pair.id,
-                    account_id = %pair.account_id,
-                    "account not found for pair; skipping"
-                );
-                continue;
-            }
-        };
-
-        let key = account.keychain_service_key.clone();
-        let password = match tokio::task::spawn_blocking(move || {
-            adagio_nextcloud::auth::retrieve_credentials(&key)
-        })
-        .await
-        {
-            Ok(Ok(Some(pw))) => pw,
-            Ok(Ok(None)) => {
-                warn!(
-                    pair_id = %pair.id,
-                    account_id = %account.id,
-                    "no credentials in keychain; skipping pair"
-                );
-                continue;
-            }
-            Ok(Err(e)) => {
-                warn!(
-                    pair_id = %pair.id,
-                    error = %e,
-                    "keychain error retrieving credentials; skipping pair"
-                );
-                continue;
-            }
-            Err(e) => {
-                warn!(
-                    pair_id = %pair.id,
-                    error = %e,
-                    "spawn_blocking panicked retrieving credentials; skipping pair"
-                );
-                continue;
-            }
-        };
-
-        let client = Arc::new(NextcloudClient::new(
-            &account.server_url,
-            &account.username,
-            &password,
-        ));
-
-        if let Err(e) = state.journal.register_pair(&account, &pair).await {
-            warn!(pair_id = %pair.id, error = %e, "failed to register pair in journal; skipping");
-            continue;
-        }
-
-        info!(
-            pair_id = %pair.id,
-            account_id = %account.id,
-            "starting pair runner"
-        );
-
-        state
-            .engine
-            .start_pair(pair, client, state.journal.clone())
-            .await;
+    // Fast path: daemon already running.
+    if stub.upgrade_connection(&socket_path).await.is_ok() {
+        info!("upgraded to existing adagio-daemon");
+        return Ok(());
     }
+
+    // Spawn daemon with the desktop's config dir.
+    info!(daemon_path = %daemon_path.display(), config_dir = %config_dir.display(), "spawning adagio-daemon");
+    spawn_daemon_with_config(&daemon_path, config_dir)?;
+
+    // Retry for up to 5 s.
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        if stub.upgrade_connection(&socket_path).await.is_ok() {
+            info!("upgraded to newly started adagio-daemon");
+            return Ok(());
+        }
+        if tokio::time::Instant::now() >= deadline {
+            anyhow::bail!("adagio-daemon did not start within 5 seconds");
+        }
+    }
+}
+
+/// Derive the daemon binary path from the current executable's location.
+pub fn daemon_binary_path() -> Result<std::path::PathBuf> {
+    let current = std::env::current_exe()?;
+    let parent = current
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("cannot determine daemon path: no parent dir"))?;
+
+    #[cfg(windows)]
+    let daemon = parent.join("adagio-daemon.exe");
+    #[cfg(not(windows))]
+    let daemon = parent.join("adagio-daemon");
+
+    Ok(daemon)
+}
+
+/// Override daemon binary path (for testing / CI).
+pub fn daemon_binary_path_or(override_path: Option<&Path>) -> Result<std::path::PathBuf> {
+    if let Some(p) = override_path {
+        return Ok(p.to_path_buf());
+    }
+    daemon_binary_path()
+}
+
+/// Spawn the daemon as a detached process, passing the config directory.
+fn spawn_daemon_with_config(
+    daemon_path: &std::path::Path,
+    config_dir: &std::path::Path,
+) -> Result<()> {
+    #[cfg(unix)]
+    {
+        std::process::Command::new(daemon_path)
+            .arg("--config-dir")
+            .arg(config_dir)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()?;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const DETACHED_PROCESS: u32 = 0x00000008;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
+        std::process::Command::new(daemon_path)
+            .arg("--config-dir")
+            .arg(config_dir)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP)
+            .spawn()?;
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        std::process::Command::new(daemon_path)
+            .arg("--config-dir")
+            .arg(config_dir)
+            .spawn()?;
+    }
+    Ok(())
 }

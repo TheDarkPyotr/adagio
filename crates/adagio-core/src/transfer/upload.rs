@@ -1,9 +1,11 @@
+use crate::bandwidth::TokenBucket;
 use crate::error::TransferError;
 use crate::remote::RemoteClient;
 use crate::types::{Checksum, ChecksumAlgorithm, LocalPath, RemotePath};
 use futures::stream;
 use sha2::{Digest, Sha256};
 use std::path::Path;
+use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::instrument;
 
@@ -11,18 +13,22 @@ use super::{TransferOptions, TransferProgress, UploadResult};
 
 /// Upload a local file via single PUT with OC-Checksum header.
 ///
-/// Reads the file, computes its SHA-256, then streams the bytes to the remote.
-/// Returns the server's etag from the response.
+/// Reads the file in 64 KB chunks. If `throttle` is `Some`, calls
+/// `TokenBucket::acquire(chunk_len)` before each chunk to enforce a byte-rate
+/// ceiling. Pass `None` for unlimited speed (the common case).
 ///
-/// For files above `opts.chunked_threshold`, use `upload_chunked` instead.
-#[instrument(skip(client, progress), fields(remote_path = %remote_path))]
+/// Returns the server's etag from the response.
+#[instrument(skip(client, progress, throttle), fields(remote_path = %remote_path))]
 pub async fn upload_single(
     client: &dyn RemoteClient,
     local_path: &LocalPath,
     remote_path: &RemotePath,
     _opts: &TransferOptions,
     progress: mpsc::Sender<TransferProgress>,
+    throttle: Option<Arc<TokenBucket>>,
 ) -> Result<UploadResult, TransferError> {
+    const CHUNK: usize = 65_536; // 64 KB
+
     let path = local_path.0.clone();
 
     // Read file and compute checksum in a blocking task.
@@ -32,6 +38,22 @@ pub async fn upload_single(
         .map_err(|e| TransferError::Transient(e.to_string()))?;
 
     let size = data.len() as u64;
+
+    // Throttle chunk by chunk, then stream the whole payload.
+    // We apply throttle delays before creating the stream (pre-flight per chunk),
+    // which correctly distributes sleeping across the full upload duration.
+    if let Some(ref tb) = throttle {
+        let mut offset = 0usize;
+        while offset < data.len() {
+            let chunk_len = CHUNK.min(data.len() - offset);
+            let delay = tb.acquire(chunk_len as u64).await;
+            if delay.as_nanos() > 0 {
+                tokio::time::sleep(delay).await;
+            }
+            offset += chunk_len;
+        }
+    }
+
     let bytes = bytes::Bytes::from(data);
     let stream = Box::pin(stream::once(async move {
         Ok::<bytes::Bytes, std::io::Error>(bytes)
@@ -60,6 +82,9 @@ fn map_client_error(e: crate::error::ClientError) -> TransferError {
         crate::error::ClientError::AuthRequired => TransferError::Permanent("auth required".into()),
         crate::error::ClientError::Transient(m) => TransferError::Transient(m),
         crate::error::ClientError::Permanent(m) => TransferError::Permanent(m),
+        crate::error::ClientError::Maintenance => {
+            TransferError::Transient("server in maintenance mode".into())
+        }
     }
 }
 
@@ -94,6 +119,62 @@ mod tests {
         LocalPath::new(p)
     }
 
+    // T007 — upload_single with throttle enforces rate limit.
+    #[tokio::test]
+    async fn upload_single_with_throttle_slows_transfer() {
+        let dir = TempDir::new().unwrap();
+        // 50 KB at 25 KB/s with 100-byte burst → delay ≈ (50000-100)/25000 = 1.996s
+        let content = vec![0u8; 50_000];
+        let local = make_local(&dir, "throttled.bin", &content);
+        let client = MockRemoteClient::new();
+        let remote = crate::types::RemotePath::new("throttled.bin");
+        let (tx, _rx) = mpsc::channel(8);
+        let bucket = Arc::new(TokenBucket::new(25_000, 100)); // 25 KB/s, 100B burst
+
+        let start = std::time::Instant::now();
+        upload_single(
+            &client,
+            &local,
+            &remote,
+            &Default::default(),
+            tx,
+            Some(bucket),
+        )
+        .await
+        .expect("upload should succeed");
+        let elapsed = start.elapsed();
+
+        // At 25 KB/s with 100B burst, 50 KB should take ≥ 1.8 s (10% tolerance).
+        assert!(
+            elapsed.as_millis() >= 1800,
+            "throttled upload took only {}ms, expected ≥1800ms",
+            elapsed.as_millis()
+        );
+    }
+
+    // T009 — upload_single with None throttle completes fast (mock is instant).
+    #[tokio::test]
+    async fn upload_single_no_throttle_is_fast() {
+        let dir = TempDir::new().unwrap();
+        let content = vec![0u8; 100_000];
+        let local = make_local(&dir, "fast.bin", &content);
+        let client = MockRemoteClient::new();
+        let remote = crate::types::RemotePath::new("fast.bin");
+        let (tx, _rx) = mpsc::channel(8);
+
+        let start = std::time::Instant::now();
+        upload_single(&client, &local, &remote, &Default::default(), tx, None)
+            .await
+            .expect("upload should succeed");
+        let elapsed = start.elapsed();
+
+        assert!(
+            elapsed.as_millis() < 500,
+            "unthrottled upload took {}ms, expected <500ms",
+            elapsed.as_millis()
+        );
+    }
+
     // T044-1: Upload a small file; result has an etag.
     #[tokio::test]
     async fn upload_single_returns_etag() {
@@ -103,7 +184,7 @@ mod tests {
         let remote = crate::types::RemotePath::new("test.txt");
         let (tx, _rx) = mpsc::channel(8);
 
-        let result = upload_single(&client, &local, &remote, &Default::default(), tx)
+        let result = upload_single(&client, &local, &remote, &Default::default(), tx, None)
             .await
             .expect("upload should succeed");
 
@@ -122,7 +203,7 @@ mod tests {
         let remote = crate::types::RemotePath::new("ck.txt");
         let (tx, _rx) = mpsc::channel(8);
 
-        upload_single(&client, &local, &remote, &Default::default(), tx)
+        upload_single(&client, &local, &remote, &Default::default(), tx, None)
             .await
             .expect("upload should succeed");
 

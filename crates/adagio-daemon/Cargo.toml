@@ -1,0 +1,47 @@
+[package]
+name = "adagio-daemon"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Adagio background sync daemon — owns the sync engine and exposes IPC"
+
+[[bin]]
+name = "adagio-daemon"
+path = "src/main.rs"
+
+[dependencies]
+adagio-core = { path = "../adagio-core" }
+adagio-e2ee = { path = "../adagio-e2ee" }
+adagio-ipc = { path = "../adagio-ipc" }
+adagio-nextcloud = { path = "../adagio-nextcloud" }
+adagio-vfs = { path = "../adagio-vfs" }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing-appender = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+keyring = { workspace = true }
+sqlx = { workspace = true }
+async-trait = { workspace = true }
+rsa = { workspace = true }
+base64 = { workspace = true }
+
+# jemalloc returns freed pages to the OS far more aggressively than glibc,
+# preventing the RSS fragmentation that triggers the AC-3 20% growth alarm.
+[target.'cfg(not(windows))'.dependencies]
+tikv-jemallocator = "0.6"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"
+
+[dev-dependencies]
+tokio = { workspace = true }
+tempfile = "3"

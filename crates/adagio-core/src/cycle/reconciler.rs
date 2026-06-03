@@ -22,9 +22,16 @@ pub enum SyncOp {
     /// File is in sync — no action needed.
     NoOp { path: RelativePath },
     /// Local file was created or modified; upload it.
-    Upload { path: RelativePath },
+    Upload {
+        path: RelativePath,
+        local_checksum: Option<crate::types::Checksum>,
+    },
     /// Remote file was created or modified; download it.
-    Download { path: RelativePath, etag: String },
+    Download {
+        path: RelativePath,
+        etag: String,
+        remote_checksum: Option<crate::types::Checksum>,
+    },
     /// Local file was deleted; delete the remote copy.
     DeleteRemote { path: RelativePath },
     /// Remote file was deleted; delete the local copy.
@@ -36,11 +43,17 @@ pub enum SyncOp {
         remote_etag: String,
         /// mtime of the remote version (used by NewestWins).
         remote_mtime: DateTime<Utc>,
+        /// Size of the remote version in bytes.
+        remote_size: u64,
         /// Policy to apply when resolving (from the pair's configuration).
         policy: ConflictPolicy,
     },
     /// File exists on both sides with identical content; record as Synced without transfer.
-    Adopt { path: RelativePath, etag: String },
+    Adopt {
+        path: RelativePath,
+        etag: String,
+        local_checksum: Option<crate::types::Checksum>,
+    },
     /// Remote item was renamed/moved (detected via stable file ID); rename locally.
     MoveLocal {
         from: RelativePath,
@@ -58,7 +71,7 @@ impl SyncOp {
     pub fn path(&self) -> Option<&RelativePath> {
         match self {
             SyncOp::NoOp { path }
-            | SyncOp::Upload { path }
+            | SyncOp::Upload { path, .. }
             | SyncOp::Download { path, .. }
             | SyncOp::DeleteRemote { path }
             | SyncOp::DeleteLocal { path }
@@ -223,22 +236,38 @@ pub fn reconcile(
             // Category 4: local creation — new local file, no journal, no remote.
             (Some(li), None, None) => SyncOp::Upload {
                 path: li.path.clone(),
+                local_checksum: li.checksum.clone(),
             },
 
             // Category 5: remote creation — new remote file, no journal, no local.
             (None, Some(ri), None) => SyncOp::Download {
                 path: ri.path.clone(),
                 etag: ri.etag.clone(),
+                remote_checksum: ri.checksum.clone(),
             },
 
             // Category 6: local deletion — was synced (journal + remote), now gone locally.
             // If the remote also changed since the journal, this is a delete-vs-change conflict.
             (None, Some(ri), Some(j)) => {
-                if etag_differs(ri.etag.as_str(), j.etag.as_deref()) {
+                // Guard: permanent errors (e.g. path too long) should never trigger
+                // DeleteRemote or Conflict — the path was never actually synced.
+                // Emit NoOp so the remote file is left alone and the propagator
+                // doesn't re-park the same violation every cycle.
+                use crate::types::SyncStatus;
+                if j.status == SyncStatus::Error
+                    && j.error_message
+                        .as_deref()
+                        .is_some_and(|m| m.starts_with("permanent error:"))
+                {
+                    SyncOp::NoOp {
+                        path: ri.path.clone(),
+                    }
+                } else if etag_differs(ri.etag.as_str(), j.etag.as_deref()) {
                     SyncOp::Conflict {
                         path: ri.path.clone(),
                         remote_etag: ri.etag.clone(),
                         remote_mtime: ri.mtime,
+                        remote_size: ri.size,
                         policy: conflict_policy.clone(),
                     }
                 } else {
@@ -251,39 +280,76 @@ pub fn reconcile(
             // Category 7: remote deletion — was synced (journal + local), now gone remotely.
             // If the local also changed since the journal, this is a delete-vs-change conflict.
             (Some(li), None, Some(j)) => {
-                if checksum_differs(&li.checksum, j.checksum.as_ref()) {
-                    SyncOp::Conflict {
+                // Guard: if the journal entry is a permanent error (e.g. path-too-long),
+                // the remote was never actually in sync — emitting DeleteLocal would
+                // incorrectly destroy local data and the propagator would re-park the
+                // path on every cycle. Emit NoOp so the path is quietly skipped until
+                // the user resolves the underlying compat issue.
+                use crate::types::SyncStatus;
+                if j.status == SyncStatus::Error
+                    && j.error_message
+                        .as_deref()
+                        .is_some_and(|m| m.starts_with("permanent error:"))
+                {
+                    SyncOp::NoOp {
                         path: li.path.clone(),
-                        remote_etag: String::new(),
-                        remote_mtime: Utc::now(),
-                        policy: conflict_policy.clone(),
                     }
                 } else {
-                    SyncOp::DeleteLocal {
-                        path: li.path.clone(),
+                    // Only flag conflict when we have a checksum baseline confirming local change.
+                    // Without one (j.checksum = None), can't tell — DeleteLocal wins.
+                    let local_changed =
+                        j.checksum.is_some() && checksum_differs(&li.checksum, j.checksum.as_ref());
+                    if local_changed {
+                        SyncOp::Conflict {
+                            path: li.path.clone(),
+                            remote_etag: String::new(),
+                            remote_mtime: Utc::now(),
+                            remote_size: 0,
+                            policy: conflict_policy.clone(),
+                        }
+                    } else {
+                        SyncOp::DeleteLocal {
+                            path: li.path.clone(),
+                        }
                     }
                 }
             }
 
             // Both local and remote present; journal may or may not exist.
             (Some(li), Some(ri), j_opt) => {
-                // Content-match with no journal: file is already in sync by content
-                // (common after DB loss or seeding from an existing local copy).
-                // Emit Adopt to record it without any transfer.
+                // No journal: we have no baseline to detect changes from.
+                // Only treat as a genuine conflict when BOTH sides have checksums
+                // and they provably differ. Otherwise adopt conservatively.
                 if j_opt.is_none() {
-                    if let (Some(l_ck), Some(r_ck)) = (&li.checksum, &ri.checksum) {
-                        if l_ck.algorithm == r_ck.algorithm && l_ck.value == r_ck.value {
+                    match (&li.checksum, &ri.checksum) {
+                        (Some(l_ck), Some(r_ck))
+                            if l_ck.algorithm != r_ck.algorithm || l_ck.value != r_ck.value =>
+                        {
+                            // Both checksums present and different → genuine divergence.
+                            // Fall through to the local_changed / remote_changed logic.
+                        }
+                        _ => {
+                            // Checksums match, or at least one is missing.
+                            // Can't confirm divergence → adopt without transfer.
                             ops.push(SyncOp::Adopt {
                                 path: li.path.clone(),
                                 etag: ri.etag.clone(),
+                                local_checksum: li.checksum.clone(),
                             });
                             continue;
                         }
                     }
                 }
 
-                let local_changed =
-                    checksum_differs(&li.checksum, j_opt.and_then(|j| j.checksum.as_ref()));
+                // When the journal has a checksum baseline, compare against it.
+                // When no baseline exists (j.checksum = None), we can't detect local changes
+                // — treat as unchanged. Only flag true when there is genuinely no journal
+                // entry at all (j_opt = None), which means both checksums were present and
+                // differed (handled by the j_opt.is_none() block above).
+                let local_changed = match j_opt.and_then(|j| j.checksum.as_ref()) {
+                    Some(j_ck) => checksum_differs(&li.checksum, Some(j_ck)),
+                    None => j_opt.is_none(),
+                };
                 let remote_changed = etag_differs(
                     ri.etag.as_str(),
                     j_opt.map(|j| j.etag.as_deref()).unwrap_or(None),
@@ -295,16 +361,19 @@ pub fn reconcile(
                     }, // category 1
                     (true, false) => SyncOp::Upload {
                         path: li.path.clone(),
+                        local_checksum: li.checksum.clone(),
                     }, // category 2
                     (false, true) => SyncOp::Download {
                         path: li.path.clone(),
                         etag: ri.etag.clone(),
+                        remote_checksum: ri.checksum.clone(),
                     }, // category 3
                     (true, true) => SyncOp::Conflict {
                         // category 8
                         path: li.path.clone(),
                         remote_etag: ri.etag.clone(),
                         remote_mtime: ri.mtime,
+                        remote_size: ri.size,
                         policy: conflict_policy.clone(),
                     },
                 }
@@ -669,6 +738,52 @@ mod tests {
                 .iter()
                 .any(|op| matches!(op, SyncOp::DeleteLocal { .. })),
             "item excluded by selective_sync filter should produce DeleteLocal"
+        );
+    }
+
+    // Regression: permanent error on remote-only path (Category 6) must produce
+    // NoOp, not Conflict or DeleteRemote.
+    #[test]
+    fn reconcile_permanent_error_category6_produces_noop() {
+        let mut j = journal_entry("remote/path/too/long.pdf", "", "etag1", "aaaa");
+        j.status = SyncStatus::Error;
+        j.etag = Some("etag1".to_string());
+        j.error_message = Some(
+            "permanent error: path too long (300 chars, max 259): remote/path/too/long.pdf"
+                .to_string(),
+        );
+
+        // Remote has the file; local does not (never successfully downloaded).
+        let r = remote_item("remote/path/too/long.pdf", 100, "etag1", "fid1", "aaaa");
+
+        let plan = reconcile(&[], &[r], &[j], ConflictPolicy::NewestWins);
+        assert!(
+            plan.ops.iter().all(|op| matches!(op, SyncOp::NoOp { .. })),
+            "permanently-errored remote path should produce NoOp, not Conflict/DeleteRemote; got: {:?}",
+            plan.ops
+        );
+    }
+
+    // Regression: permanently-errored paths (e.g. path too long) must produce
+    // NoOp, not DeleteLocal, so they are not re-queued every cycle.
+    #[test]
+    fn reconcile_permanent_error_journal_entry_produces_noop() {
+        // Simulate a path that failed with "permanent error: path too long".
+        let mut j = journal_entry("very/long/path.txt", "", "", "aaaa");
+        j.status = SyncStatus::Error;
+        j.etag = Some("".to_string()); // never uploaded
+        j.error_message = Some(
+            "permanent error: path too long (300 chars, max 259): very/long/path.txt".to_string(),
+        );
+
+        // File still exists locally; remote doesn't have it (upload never succeeded).
+        let l = local_item("very/long/path.txt", 100, "aaaa");
+
+        let plan = reconcile(&[l], &[], &[j], ConflictPolicy::NewestWins);
+        assert!(
+            plan.ops.iter().all(|op| matches!(op, SyncOp::NoOp { .. })),
+            "permanently-errored path should produce NoOp, not DeleteLocal or Upload; got: {:?}",
+            plan.ops
         );
     }
 }

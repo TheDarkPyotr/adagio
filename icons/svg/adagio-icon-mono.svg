@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 60" width="1024" height="1024">
+  <title>Adagio (mono)</title>
+  <path d="M8 42 C 18 14, 42 14, 52 42" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" fill="none"></path>
+  <circle cx="8" cy="42" r="5" fill="currentColor"></circle>
+  <circle cx="52" cy="42" r="5" fill="currentColor"></circle>
+</svg>

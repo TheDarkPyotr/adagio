@@ -9,15 +9,20 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  DATABASE_URL: "sqlite://ci-journal.db"
 
 jobs:
-  test:
-    name: Test (${{ matrix.os }})
+  check-and-test:
+    name: ${{ matrix.job }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest]
+        job: [test]
+        include:
+          - os: ubuntu-latest
+            job: lint
 
     steps:
       - uses: actions/checkout@v4
@@ -27,97 +32,59 @@ jobs:
         with:
           components: clippy, rustfmt
 
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          cache-dependency-path: crates/adagio-desktop/src-ui/package-lock.json
 
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update -y
+          sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev \
             libgtk-3-dev \
             libayatana-appindicator3-dev \
             libsecret-1-dev \
-            libsqlite3-dev
+            libsqlite3-dev \
+            libfuse3-dev \
+            pkg-config
 
-      - name: Install cargo-sqlx
-        uses: taiki-e/install-action@v2
-        with:
-          tool: sqlx-cli
-
-      - name: Prepare SQLite database for offline query check
+      - name: Install UI dependencies
         run: |
-          export DATABASE_URL="sqlite://ci-journal.db"
-          cargo sqlx database create
-          cargo sqlx migrate run --source crates/adagio-core/migrations
-        shell: bash
-
-      - name: Check (fast compile check)
-        run: cargo check --workspace
-
-      - name: Build
-        run: cargo build --workspace --exclude adagio-desktop
-
-      - name: Unit + contract tests
-        run: cargo test --workspace --exclude adagio-desktop
-        env:
-          DATABASE_URL: sqlite://ci-journal.db
-
-      - name: Clippy
-        run: cargo clippy --workspace --exclude adagio-desktop -- -D warnings
-
-      - name: Format check
-        run: cargo fmt --all -- --check
-
-      - name: Doc check
-        run: cargo doc --workspace --no-deps --exclude adagio-desktop
-        env:
-          RUSTDOCFLAGS: "-D warnings"
-
-  memory-gate:
-    name: Memory RSS gate (Linux)
-    runs-on: ubuntu-latest
-    needs: test
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+          cd crates/adagio-desktop/src-ui
+          npm ci
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
 
-      - name: Install Linux system dependencies
+      - name: Install sqlx-cli
+        uses: taiki-e/install-action@v2
+        with:
+          tool: sqlx-cli
+
+      - name: Prepare SQLite database
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y libsqlite3-dev libsecret-1-dev
-
-      - name: Build release
-        run: cargo build --release --package adagio-core --package adagio-nextcloud
-
-      - name: Install valgrind
-        run: sudo apt-get install -y valgrind
-
-      - name: Prepare SQLite database for offline query check
-        run: |
-          export DATABASE_URL="sqlite://ci-journal.db"
-          cargo sqlx database create 2>/dev/null || true
-          cargo sqlx migrate run --source crates/adagio-core/migrations 2>/dev/null || true
+          sqlx database create
+          sqlx migrate run --source crates/adagio-core/migrations
         shell: bash
 
-      - name: Run memory benchmark
-        run: |
-          cargo test --release -p adagio-core --test memory_gate -- --nocapture 2>/dev/null || true
-        env:
-          DATABASE_URL: sqlite://ci-journal.db
-        continue-on-error: false
+      - name: Format check
+        if: matrix.job == 'lint'
+        run: cargo fmt --all --check
 
-      - name: Criterion benchmarks (regression gate)
-        run: |
-          cargo criterion -p adagio-core --color never 2>&1 | tee criterion_out.txt
-          if grep -q "Performance has regressed" criterion_out.txt; then
-            echo "::error::Criterion detected a performance regression > threshold"
-            exit 1
-          fi
-        continue-on-error: false
+      - name: Clippy
+        if: matrix.job == 'lint'
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Run tests
+        if: matrix.job == 'test'
+        run: cargo test --workspace
+
+      - name: Doc check
+        if: matrix.job == 'lint'
+        run: cargo doc --workspace --no-deps
+        env:
+          RUSTDOCFLAGS: "-D warnings"

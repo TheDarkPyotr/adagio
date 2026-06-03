@@ -1,8 +1,30 @@
+use adagio_core::network::NetworkPolicy;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::{info, warn};
+
+/// User preferences captured during the onboarding wizard.
+///
+/// Stored inside [`SavedConfig`] so they survive restarts. All fields default
+/// to the recommended safe values when the key is absent (backwards-compatible).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct OnboardingPrefs {
+    /// Enable Virtual Filesystem (on-demand files) for the first pair.
+    #[serde(default)]
+    pub vfs_enabled: bool,
+    /// Pin the "Pinned Folders" section in the sidebar by default.
+    #[serde(default)]
+    pub pin_pinned_folders: bool,
+    /// Pause sync automatically on metered / battery-constrained networks.
+    #[serde(default)]
+    pub smart_bandwidth: bool,
+    /// Watch for edits made by external apps (inotify / FSEvents) and sync
+    /// immediately rather than waiting for the next scheduled scan.
+    #[serde(default)]
+    pub watch_external_edits: bool,
+}
 
 /// On-disk representation of all user configuration.
 ///
@@ -19,6 +41,34 @@ pub struct SavedConfig {
     /// All configured sync pairs.
     #[serde(default)]
     pub pairs: Vec<SavedPair>,
+    /// Active color palette name. `None` means the frontend applies its default
+    /// (sienna, or ink if OS dark-mode is active). Never store credentials here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub palette: Option<String>,
+    /// Network awareness policy (metered/battery/SSID rules). Default = all Allow.
+    #[serde(default)]
+    pub network_policy: NetworkPolicy,
+    /// User-defined custom color palettes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub custom_palettes: Vec<CustomPaletteEntry>,
+    /// Preferences captured during the onboarding wizard.
+    #[serde(default)]
+    pub onboarding_prefs: OnboardingPrefs,
+}
+
+/// A user-defined colour palette stored alongside built-in themes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomPaletteEntry {
+    /// Unique identifier, e.g. `"custom-my-theme"`.
+    pub id: String,
+    /// Human-readable name chosen by the user.
+    pub name: String,
+    /// Background colour as a CSS hex string, e.g. `"#f5f1ea"`.
+    pub cream: String,
+    /// Text colour as a CSS hex string.
+    pub ink: String,
+    /// Accent / action colour as a CSS hex string.
+    pub accent: String,
 }
 
 /// A Nextcloud account as persisted on disk.
@@ -33,6 +83,12 @@ pub struct SavedAccount {
     pub username: String,
     /// Key used to retrieve credentials from the OS keychain.
     pub keychain_service_key: String,
+    /// Maximum upload speed in Kbps. 0 = unlimited.
+    #[serde(default)]
+    pub upload_limit_kbps: u64,
+    /// Maximum download speed in Kbps. 0 = unlimited.
+    #[serde(default)]
+    pub download_limit_kbps: u64,
 }
 
 /// A sync pair as persisted on disk.
@@ -56,6 +112,30 @@ pub struct SavedPair {
     pub selective_paths: Vec<String>,
     #[serde(default)]
     pub exclude_patterns: Vec<String>,
+    /// Number of parallel upload workers in bulk mode (default: 8).
+    #[serde(default = "default_bulk_upload_workers")]
+    pub bulk_upload_workers: u8,
+    /// Minimum pending-upload count to trigger bulk mode (default: 50).
+    #[serde(default = "default_bulk_upload_threshold_files")]
+    pub bulk_upload_threshold_files: u32,
+    /// File size in bytes above which chunked upload is used (default: 10 MiB).
+    #[serde(default = "default_bulk_upload_chunk_threshold_bytes")]
+    pub bulk_upload_chunk_threshold_bytes: u64,
+    /// Enable VFS (on-demand files) mode for this pair (default: false).
+    #[serde(default)]
+    pub vfs_enabled: bool,
+    /// Maximum bytes of cached VFS content (default: 20 GiB; 0 = unlimited).
+    #[serde(default = "default_vfs_cache_max_bytes")]
+    pub vfs_cache_max_bytes: u64,
+    /// Auto-eviction threshold: free disk minimum in bytes (default: 5 GiB).
+    #[serde(default = "default_vfs_eviction_threshold_bytes")]
+    pub vfs_eviction_threshold_bytes: u64,
+    /// Enable E2EE (end-to-end encryption) for this pair (default: false).
+    #[serde(default)]
+    pub e2ee_enabled: bool,
+    /// Nextcloud account ID associated with the E2EE key pair.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub e2ee_account_id: Option<String>,
 }
 
 fn default_scan_interval() -> u64 {
@@ -63,6 +143,21 @@ fn default_scan_interval() -> u64 {
 }
 fn default_scan_on_startup() -> bool {
     true
+}
+fn default_bulk_upload_workers() -> u8 {
+    8
+}
+fn default_bulk_upload_threshold_files() -> u32 {
+    50
+}
+fn default_bulk_upload_chunk_threshold_bytes() -> u64 {
+    10 * 1024 * 1024
+}
+fn default_vfs_cache_max_bytes() -> u64 {
+    20 * 1024 * 1024 * 1024
+}
+fn default_vfs_eviction_threshold_bytes() -> u64 {
+    5 * 1024 * 1024 * 1024
 }
 fn default_concurrency() -> usize {
     3
@@ -140,6 +235,8 @@ mod tests {
             server_url: "https://cloud.example.com".to_string(),
             username: "testuser".to_string(),
             keychain_service_key: format!("adagio/{id}"),
+            upload_limit_kbps: 0,
+            download_limit_kbps: 0,
         }
     }
 
@@ -155,7 +252,75 @@ mod tests {
             max_download_concurrency: 3,
             selective_paths: vec![],
             exclude_patterns: vec![],
+            bulk_upload_workers: 8,
+            bulk_upload_threshold_files: 50,
+            bulk_upload_chunk_threshold_bytes: 10 * 1024 * 1024,
+            vfs_enabled: false,
+            vfs_cache_max_bytes: 20 * 1024 * 1024 * 1024,
+            vfs_eviction_threshold_bytes: 5 * 1024 * 1024 * 1024,
+            e2ee_enabled: false,
+            e2ee_account_id: None,
         }
+    }
+
+    // ── T007: OnboardingPrefs tests ───────────────────────────────────────────
+
+    #[test]
+    fn onboarding_prefs_defaults_to_all_false() {
+        let prefs = OnboardingPrefs::default();
+        assert!(!prefs.vfs_enabled);
+        assert!(!prefs.pin_pinned_folders);
+        assert!(!prefs.smart_bandwidth);
+        assert!(!prefs.watch_external_edits);
+    }
+
+    #[test]
+    fn onboarding_prefs_round_trips_through_json() {
+        let prefs = OnboardingPrefs {
+            vfs_enabled: true,
+            pin_pinned_folders: false,
+            smart_bandwidth: true,
+            watch_external_edits: false,
+        };
+        let json = serde_json::to_string(&prefs).unwrap();
+        let loaded: OnboardingPrefs = serde_json::from_str(&json).unwrap();
+        assert!(loaded.vfs_enabled);
+        assert!(!loaded.pin_pinned_folders);
+        assert!(loaded.smart_bandwidth);
+        assert!(!loaded.watch_external_edits);
+    }
+
+    #[test]
+    fn onboarding_prefs_absent_from_legacy_config_defaults_correctly() {
+        // A config written before onboarding_prefs was added has no such key.
+        // The #[serde(default)] attribute must fill in defaults without error.
+        let json = r#"{"version":1,"accounts":[],"pairs":[]}"#;
+        let cfg: SavedConfig = serde_json::from_str(json).unwrap();
+        assert!(
+            !cfg.onboarding_prefs.vfs_enabled,
+            "legacy config should default to false"
+        );
+    }
+
+    #[test]
+    fn saved_config_preserves_onboarding_prefs_on_round_trip() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("config.json");
+        let cfg = SavedConfig {
+            onboarding_prefs: OnboardingPrefs {
+                vfs_enabled: true,
+                pin_pinned_folders: true,
+                smart_bandwidth: false,
+                watch_external_edits: true,
+            },
+            ..Default::default()
+        };
+        save_config(&path, &cfg).unwrap();
+        let loaded = load_config(&path);
+        assert!(loaded.onboarding_prefs.vfs_enabled);
+        assert!(loaded.onboarding_prefs.pin_pinned_folders);
+        assert!(!loaded.onboarding_prefs.smart_bandwidth);
+        assert!(loaded.onboarding_prefs.watch_external_edits);
     }
 
     // ── T009: SavedConfig round-trip tests ────────────────────────────────────
@@ -179,6 +344,10 @@ mod tests {
             version: 1,
             accounts: vec![make_account("acc-1"), make_account("acc-2")],
             pairs: vec![make_pair("pair-1", "acc-1")],
+            palette: None,
+            network_policy: Default::default(),
+            custom_palettes: vec![],
+            onboarding_prefs: Default::default(),
         };
         save_config(&path, &cfg).unwrap();
         let loaded = load_config(&path);
@@ -228,6 +397,10 @@ mod tests {
             version: 1,
             accounts: vec![make_account("acc-1")],
             pairs: vec![],
+            palette: None,
+            network_policy: Default::default(),
+            custom_palettes: vec![],
+            onboarding_prefs: Default::default(),
         };
         save_config(&path, &cfg).unwrap();
         let raw = fs::read_to_string(&path).unwrap();

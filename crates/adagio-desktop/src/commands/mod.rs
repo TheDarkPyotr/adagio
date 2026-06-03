@@ -1,4 +1,13 @@
 pub mod account;
+pub mod bandwidth;
 pub mod conflicts;
+pub mod daemon;
+pub mod e2ee;
+pub mod files;
+pub mod network;
+pub mod onboarding;
 pub mod pair;
+pub mod prefs;
+pub mod sharing;
 pub mod sync;
+pub mod vfs;
