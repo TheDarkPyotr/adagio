@@ -49,6 +49,8 @@ Thumbs.db
 # Tauri
 # Keep src-tauri/gen in source control if generated (Tauri 2.x)
 # target/ above covers the build output
+# externalBin staging directory — populated by CI before tauri build
+crates/adagio-desktop/binaries/
 
 # Criterion benchmark results
 target/criterion/

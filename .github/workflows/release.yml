@@ -1,0 +1,348 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v0.1.0) — must already be pushed to the repo'
+        required: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  DATABASE_URL: "sqlite://ci-journal.db"
+
+permissions:
+  contents: write
+
+jobs:
+  # ─── Gate: full test suite must pass before any build ───────────────────────
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: crates/adagio-desktop/src-ui/package-lock.json
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            libsecret-1-dev \
+            libsqlite3-dev \
+            libfuse3-dev \
+            pkg-config
+
+      - name: Install UI dependencies
+        run: cd crates/adagio-desktop/src-ui && npm ci
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install sqlx-cli
+        uses: taiki-e/install-action@v2
+        with:
+          tool: sqlx-cli
+
+      - name: Prepare SQLite database
+        run: |
+          sqlx database create
+          sqlx migrate run --source crates/adagio-core/migrations
+
+      - name: Run tests
+        run: cargo test --workspace
+
+  # ─── Linux: .deb, .rpm, .tar.gz ─────────────────────────────────────────────
+  build-linux:
+    name: Build (Linux)
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Set version from Cargo.toml
+        run: |
+          VERSION=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name=="adagio-desktop") | .version')
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Verify tag matches Cargo version
+        if: github.event_name == 'push'
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match Cargo version $VERSION — bump the version in Cargo.toml first"
+            exit 1
+          fi
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: crates/adagio-desktop/src-ui/package-lock.json
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            libsecret-1-dev \
+            libsqlite3-dev \
+            libfuse3-dev \
+            fuse \
+            squashfs-tools \
+            pkg-config \
+            desktop-file-utils
+
+      - name: Install UI dependencies
+        run: cd crates/adagio-desktop/src-ui && npm ci
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install sqlx-cli
+        uses: taiki-e/install-action@v2
+        with:
+          tool: sqlx-cli
+
+      - name: Prepare SQLite database
+        run: |
+          sqlx database create
+          sqlx migrate run --source crates/adagio-core/migrations
+
+      - name: Build daemon and CLI
+        run: cargo build --release -p adagio-daemon -p adagio-cli
+
+      - name: Stage external binaries for Tauri bundle
+        run: |
+          TARGET=$(rustc -vV | sed -n 's/host: //p')
+          mkdir -p crates/adagio-desktop/binaries
+          cp target/release/adagio-daemon "crates/adagio-desktop/binaries/adagio-daemon-${TARGET}"
+          cp target/release/adagio-cli   "crates/adagio-desktop/binaries/adagio-cli-${TARGET}"
+
+      - name: Build Tauri app (deb + rpm + AppImage)
+        env:
+          # GitHub Actions runners lack kernel FUSE support; this flag tells
+          # appimagetool to extract-and-run instead of mounting via FUSE.
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          cd crates/adagio-desktop
+          src-ui/node_modules/.bin/tauri build --bundles deb,rpm,app-image
+
+      - name: Validate .deb package integrity
+        run: |
+          DEB=$(find target/release/bundle/deb -name '*.deb' | head -1)
+          sudo dpkg -i "$DEB"
+          FOUND=$(dpkg -L adagio | grep -cE '(adagio-desktop|adagio-daemon|adagio-cli)') || true
+          if [ "$FOUND" -lt 3 ]; then
+            echo "::error::Installed .deb is missing one or more components (found $FOUND/3)"
+            exit 1
+          fi
+          desktop-file-validate /usr/share/applications/adagio.desktop
+          for SIZE in 16x16 24x24 32x32 48x48 64x64 128x128 256x256 512x512; do
+            test -f "/usr/share/icons/hicolor/${SIZE}/apps/adagio.png" || {
+              echo "::error::Missing icon: /usr/share/icons/hicolor/${SIZE}/apps/adagio.png"
+              exit 1
+            }
+          done
+
+      - name: Create portable tarball
+        run: |
+          mkdir -p dist/adagio-linux-amd64
+          cp target/release/adagio-desktop dist/adagio-linux-amd64/
+          cp target/release/adagio-daemon  dist/adagio-linux-amd64/
+          cp target/release/adagio-cli     dist/adagio-linux-amd64/
+          cp crates/adagio-desktop/bundler/tarball-README.txt dist/adagio-linux-amd64/README.txt
+          tar -czf "dist/adagio_${VERSION}_linux_amd64.tar.gz" -C dist adagio-linux-amd64/
+
+      - name: Collect and rename Linux artifacts
+        run: |
+          mkdir -p dist
+          cp "$(find target/release/bundle/deb      -name '*.deb'     | head -1)" \
+             "dist/adagio_${VERSION}_linux_amd64.deb"
+          cp "$(find target/release/bundle/rpm      -name '*.rpm'     | head -1)" \
+             "dist/adagio_${VERSION}_linux_x86_64.rpm"
+          cp "$(find target/release/bundle/appimage -name '*.AppImage' | head -1)" \
+             "dist/adagio_${VERSION}_linux_amd64.AppImage"
+
+      - name: Generate Linux checksums
+        run: |
+          cd dist
+          sha256sum *.deb *.rpm *.tar.gz *.AppImage > checksums-linux.txt
+          for f in *.deb *.rpm *.tar.gz *.AppImage; do sha256sum "$f" > "${f}.sha256"; done
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-artifacts
+          path: dist/
+          retention-days: 1
+
+  # ─── macOS: .dmg ─────────────────────────────────────────────────────────────
+  build-macos:
+    name: Build (macOS)
+    runs-on: macos-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Set version from Cargo.toml
+        run: |
+          VERSION=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name=="adagio-desktop") | .version')
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Verify tag matches Cargo version
+        if: github.event_name == 'push'
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match Cargo version $VERSION — bump the version in Cargo.toml first"
+            exit 1
+          fi
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: crates/adagio-desktop/src-ui/package-lock.json
+
+      - name: Install UI dependencies
+        run: cd crates/adagio-desktop/src-ui && npm ci
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install sqlx-cli
+        uses: taiki-e/install-action@v2
+        with:
+          tool: sqlx-cli
+
+      - name: Prepare SQLite database
+        run: |
+          sqlx database create
+          sqlx migrate run --source crates/adagio-core/migrations
+
+      - name: Build daemon and CLI
+        run: cargo build --release -p adagio-daemon -p adagio-cli
+
+      - name: Stage external binaries for Tauri bundle
+        run: |
+          TARGET=$(rustc -vV | sed -n 's/host: //p')
+          mkdir -p crates/adagio-desktop/binaries
+          cp target/release/adagio-daemon "crates/adagio-desktop/binaries/adagio-daemon-${TARGET}"
+          cp target/release/adagio-cli   "crates/adagio-desktop/binaries/adagio-cli-${TARGET}"
+
+      - name: Build Tauri app (dmg)
+        run: |
+          cd crates/adagio-desktop
+          src-ui/node_modules/.bin/tauri build --bundles dmg
+
+      - name: Collect and rename macOS artifacts
+        run: |
+          mkdir -p dist
+          cp "$(find target/release/bundle/dmg -name '*.dmg' | head -1)" \
+             "dist/adagio_${VERSION}_macos.dmg"
+
+      - name: Generate macOS checksums
+        run: |
+          cd dist
+          shasum -a 256 *.dmg > checksums-macos.txt
+          for f in *.dmg; do shasum -a 256 "$f" > "${f}.sha256"; done
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-artifacts
+          path: dist/
+          retention-days: 1
+
+  # ─── Publish: create GitHub Release with all artifacts ───────────────────────
+  publish:
+    name: Publish Release
+    runs-on: ubuntu-latest
+    needs: [build-linux, build-macos]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Install git-cliff
+        run: cargo install git-cliff --locked
+
+      - name: Generate per-release changelog
+        run: |
+          git cliff --current --output CHANGELOG_RELEASE.md \
+          || git cliff --unreleased --output CHANGELOG_RELEASE.md
+
+      - name: Append Gatekeeper note to macOS section
+        run: |
+          cat >> CHANGELOG_RELEASE.md << 'EOF'
+
+          ---
+          > **macOS note**: This binary is not notarized. macOS Gatekeeper may show a security warning.
+          > Right-click the app and choose **Open** to proceed. Notarization is planned for a future release.
+          EOF
+
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-artifacts
+          path: dist/
+
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-artifacts
+          path: dist/
+
+      - name: Merge checksums into single file
+        run: |
+          cd dist
+          cat checksums-linux.txt checksums-macos.txt > checksums.txt
+          rm checksums-linux.txt checksums-macos.txt
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          body_path: CHANGELOG_RELEASE.md
+          files: dist/**
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') || contains(github.event.inputs.tag, '-rc') || contains(github.event.inputs.tag, '-beta') || contains(github.event.inputs.tag, '-alpha') }}
+          make_latest: ${{ !contains(github.ref_name, '-') && !contains(github.event.inputs.tag, '-') }}

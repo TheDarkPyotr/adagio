@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name={{name}}
+GenericName=Cloud File Sync
+Comment=Sync files with your Nextcloud server
+Exec={{exec}}
+Icon={{icon}}
+Terminal=false
+Categories=Network;FileTransfer;
+StartupNotify=true
