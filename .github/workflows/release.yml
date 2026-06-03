@@ -147,7 +147,7 @@ jobs:
           TARGET=$(rustc -vV | sed -n 's/host: //p')
           mkdir -p crates/adagio-desktop/binaries
           cp target/release/adagio-daemon "crates/adagio-desktop/binaries/adagio-daemon-${TARGET}"
-          cp target/release/adagio-cli   "crates/adagio-desktop/binaries/adagio-cli-${TARGET}"
+          cp target/release/adagio        "crates/adagio-desktop/binaries/adagio-cli-${TARGET}"
 
       - name: Build Tauri app (deb + rpm + AppImage)
         env:
@@ -180,7 +180,7 @@ jobs:
           mkdir -p dist/adagio-linux-amd64
           cp target/release/adagio-desktop dist/adagio-linux-amd64/
           cp target/release/adagio-daemon  dist/adagio-linux-amd64/
-          cp target/release/adagio-cli     dist/adagio-linux-amd64/
+          cp target/release/adagio         dist/adagio-linux-amd64/adagio-cli
           cp crates/adagio-desktop/bundler/tarball-README.txt dist/adagio-linux-amd64/README.txt
           tar -czf "dist/adagio_${VERSION}_linux_amd64.tar.gz" -C dist adagio-linux-amd64/
 
@@ -266,7 +266,7 @@ jobs:
           TARGET=$(rustc -vV | sed -n 's/host: //p')
           mkdir -p crates/adagio-desktop/binaries
           cp target/release/adagio-daemon "crates/adagio-desktop/binaries/adagio-daemon-${TARGET}"
-          cp target/release/adagio-cli   "crates/adagio-desktop/binaries/adagio-cli-${TARGET}"
+          cp target/release/adagio        "crates/adagio-desktop/binaries/adagio-cli-${TARGET}"
 
       - name: Build Tauri app (dmg)
         run: |
