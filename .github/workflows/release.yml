@@ -161,15 +161,31 @@ jobs:
         run: |
           DEB=$(find target/release/bundle/deb -name '*.deb' | head -1)
           sudo dpkg -i "$DEB"
-          FOUND=$(dpkg -L adagio | grep -cE '(adagio-desktop|adagio-daemon|adagio-cli)') || true
-          if [ "$FOUND" -lt 3 ]; then
-            echo "::error::Installed .deb is missing one or more components (found $FOUND/3)"
+
+          # All installed paths for debugging
+          echo "--- installed files ---"
+          dpkg -L adagio
+
+          # Check all three binaries are present (CLI binary is named 'adagio', not 'adagio-cli')
+          for BIN in adagio-desktop adagio-daemon adagio; do
+            dpkg -L adagio | grep -qE "/${BIN}$" || {
+              echo "::error::Binary '$BIN' not found in installed package"
+              exit 1
+            }
+          done
+
+          # Find and validate desktop entry (Tauri may use identifier or product name as filename)
+          DESKTOP=$(dpkg -L adagio | grep '\.desktop$' | head -1)
+          if [ -z "$DESKTOP" ]; then
+            echo "::error::No .desktop file in installed package"
             exit 1
           fi
-          desktop-file-validate /usr/share/applications/adagio.desktop
+          desktop-file-validate "$DESKTOP"
+
+          # Check icons at all required XDG sizes
           for SIZE in 16x16 24x24 32x32 48x48 64x64 128x128 256x256 512x512; do
-            test -f "/usr/share/icons/hicolor/${SIZE}/apps/adagio.png" || {
-              echo "::error::Missing icon: /usr/share/icons/hicolor/${SIZE}/apps/adagio.png"
+            dpkg -L adagio | grep -q "hicolor/${SIZE}/apps/" || {
+              echo "::error::Missing icon size ${SIZE} in installed package"
               exit 1
             }
           done
