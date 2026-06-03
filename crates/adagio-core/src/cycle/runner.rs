@@ -37,6 +37,7 @@ impl PairRunner {
         conflict_tx: Option<tokio::sync::mpsc::Sender<()>>,
         memory_sampler: Arc<std::sync::Mutex<MemorySampler>>,
         status_tx: Option<watch::Sender<EngineStatus>>,
+        last_sync_at: Arc<tokio::sync::RwLock<Option<chrono::DateTime<chrono::Utc>>>>,
     ) -> Self {
         let cancel = CancellationToken::new();
         let (trigger_tx, mut trigger_rx) = mpsc::channel::<()>(1);
@@ -59,6 +60,7 @@ impl PairRunner {
                     conflict_tx.as_ref(),
                     &memory_sampler,
                     status_tx.as_ref(),
+                    &last_sync_at,
                 )
                 .await;
             }
@@ -72,13 +74,13 @@ impl PairRunner {
                     }
                     _ = ticker.tick() => {
                         info!(pair_id = %pair.id, "scheduled sync cycle starting");
-                        run_cycle(&pair, &*client, &*journal, conflict_tx.as_ref(), &memory_sampler, status_tx.as_ref()).await;
+                        run_cycle(&pair, &*client, &*journal, conflict_tx.as_ref(), &memory_sampler, status_tx.as_ref(), &last_sync_at).await;
                     }
                     Some(()) = trigger_rx.recv() => {
                         // Drain queued triggers so we run exactly one cycle.
                         while trigger_rx.try_recv().is_ok() {}
                         info!(pair_id = %pair.id, "triggered sync cycle starting");
-                        run_cycle(&pair, &*client, &*journal, conflict_tx.as_ref(), &memory_sampler, status_tx.as_ref()).await;
+                        run_cycle(&pair, &*client, &*journal, conflict_tx.as_ref(), &memory_sampler, status_tx.as_ref(), &last_sync_at).await;
                     }
                 }
             }
@@ -127,6 +129,7 @@ async fn run_cycle(
     conflict_tx: Option<&tokio::sync::mpsc::Sender<()>>,
     memory_sampler: &Arc<std::sync::Mutex<MemorySampler>>,
     status_tx: Option<&watch::Sender<EngineStatus>>,
+    last_sync_at: &Arc<tokio::sync::RwLock<Option<chrono::DateTime<chrono::Utc>>>>,
 ) {
     let cycle = SyncCycle {
         pair,
@@ -140,6 +143,7 @@ async fn run_cycle(
             if let Some(tx) = status_tx {
                 crate::cycle::clear_server_error_status(tx);
             }
+            *last_sync_at.write().await = Some(chrono::Utc::now());
             info!(
                 pair_id = %pair.id,
                 uploaded = report.uploaded,
@@ -235,6 +239,7 @@ mod tests {
                 crate::observability::MemorySampler::new(),
             )),
             None,
+            Arc::new(tokio::sync::RwLock::new(None)),
         );
         // stop must not panic or deadlock
         runner.stop();
@@ -255,6 +260,7 @@ mod tests {
                 crate::observability::MemorySampler::new(),
             )),
             None,
+            Arc::new(tokio::sync::RwLock::new(None)),
         );
         assert!(
             runner.trigger(),
@@ -309,6 +315,7 @@ mod tests {
                 crate::observability::MemorySampler::new(),
             )),
             None,
+            Arc::new(tokio::sync::RwLock::new(None)),
         );
         tokio::time::sleep(Duration::from_millis(100)).await;
         runner.stop();

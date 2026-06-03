@@ -85,24 +85,64 @@ pub async fn dispatch(req: DaemonRequest, state: &DaemonProcess) -> Result<Daemo
                     .map(|p| p.id.0.clone())
                     .collect()
             };
+            // Derive last-sync time: prefer the engine's in-memory value (set after
+            // each successful cycle or VFS metadata sync). On daemon restart the
+            // in-memory value is None; fall back to the most recent VFS cache entry
+            // (cached_at = when daemon last populated it) or the most recent completed
+            // transfer in the transfers table.
+            let last_sync_ms = if let Some(dt) = state.engine.last_sync_at() {
+                Some(dt.timestamp_millis())
+            } else {
+                // VFS pairs: MAX(cached_at) reflects when the last metadata sync ran.
+                let vfs_ts = sqlx::query_as::<_, (String,)>(
+                    "SELECT cached_at FROM vfs_cache_metadata \
+                     ORDER BY cached_at DESC LIMIT 1",
+                )
+                .fetch_optional(state.journal.pool())
+                .await
+                .ok()
+                .flatten()
+                .and_then(|(ts,)| chrono::DateTime::parse_from_rfc3339(&ts).ok());
+
+                // Regular pairs: most recent completed transfer.
+                let transfer_ts = sqlx::query_as::<_, (String,)>(
+                    "SELECT completed_at FROM transfers \
+                     WHERE status = 'completed' AND completed_at IS NOT NULL \
+                     ORDER BY completed_at DESC LIMIT 1",
+                )
+                .fetch_optional(state.journal.pool())
+                .await
+                .ok()
+                .flatten()
+                .and_then(|(ts,)| chrono::DateTime::parse_from_rfc3339(&ts).ok());
+
+                // Pick the more recent of the two.
+                match (vfs_ts, transfer_ts) {
+                    (Some(a), Some(b)) => Some(a.max(b).timestamp_millis()),
+                    (Some(a), None) => Some(a.timestamp_millis()),
+                    (None, Some(b)) => Some(b.timestamp_millis()),
+                    (None, None) => None,
+                }
+            };
+
             let mut status_dto = match state.engine.status() {
                 EngineStatus::Idle => {
-                    serde_json::json!({"status":"idle","active_file_count":0,"total_bytes":0,"transferred_bytes":0,"eta_seconds":null,"last_sync_at":null})
+                    serde_json::json!({"status":"idle","active_file_count":0,"total_bytes":0,"transferred_bytes":0,"eta_seconds":null,"last_sync_at":last_sync_ms})
                 }
                 EngineStatus::Syncing { pair_id } => {
-                    serde_json::json!({"status":"syncing","pair_id": pair_id.to_string(),"active_file_count":0,"total_bytes":0,"transferred_bytes":0,"eta_seconds":null,"last_sync_at":null})
+                    serde_json::json!({"status":"syncing","pair_id": pair_id.to_string(),"active_file_count":0,"total_bytes":0,"transferred_bytes":0,"eta_seconds":null,"last_sync_at":last_sync_ms})
                 }
                 EngineStatus::Paused => {
-                    serde_json::json!({"status":"paused","active_file_count":0,"total_bytes":0,"transferred_bytes":0,"eta_seconds":null,"last_sync_at":null})
+                    serde_json::json!({"status":"paused","active_file_count":0,"total_bytes":0,"transferred_bytes":0,"eta_seconds":null,"last_sync_at":last_sync_ms})
                 }
                 EngineStatus::Error(msg) => {
-                    serde_json::json!({"status":"error","error":msg,"active_file_count":0,"total_bytes":0,"transferred_bytes":0,"eta_seconds":null,"last_sync_at":null})
+                    serde_json::json!({"status":"error","error":msg,"active_file_count":0,"total_bytes":0,"transferred_bytes":0,"eta_seconds":null,"last_sync_at":last_sync_ms})
                 }
                 EngineStatus::ServerMaintenance => {
-                    serde_json::json!({"status":"maintenance","active_file_count":0,"total_bytes":0,"transferred_bytes":0,"eta_seconds":null,"last_sync_at":null})
+                    serde_json::json!({"status":"maintenance","active_file_count":0,"total_bytes":0,"transferred_bytes":0,"eta_seconds":null,"last_sync_at":last_sync_ms})
                 }
                 EngineStatus::ServerUnreachable => {
-                    serde_json::json!({"status":"unreachable","active_file_count":0,"total_bytes":0,"transferred_bytes":0,"eta_seconds":null,"last_sync_at":null})
+                    serde_json::json!({"status":"unreachable","active_file_count":0,"total_bytes":0,"transferred_bytes":0,"eta_seconds":null,"last_sync_at":last_sync_ms})
                 }
             };
             status_dto["e2ee_pairs"] = serde_json::json!(e2ee_pairs);
@@ -153,11 +193,13 @@ pub async fn dispatch(req: DaemonRequest, state: &DaemonProcess) -> Result<Daemo
                 }
                 Some("sync") | Some("edit") => {
                     "SELECT pair_id, path, status, updated_at FROM journal_entries \
-                     WHERE status = 'synced' ORDER BY updated_at DESC LIMIT ?"
+                     WHERE status IN ('synced', 'pending') ORDER BY updated_at DESC LIMIT ?"
                 }
+                // Default: all recently known files (synced, pending, conflict).
+                // Excludes 'error' and 'excluded' which are not actionable in the tray.
                 _ => {
                     "SELECT pair_id, path, status, updated_at FROM journal_entries \
-                     WHERE status IN ('synced', 'conflict') ORDER BY updated_at DESC LIMIT ?"
+                     WHERE status NOT IN ('error', 'excluded') ORDER BY updated_at DESC LIMIT ?"
                 }
             };
             let rows: Vec<(String, String, String, String)> = sqlx::query_as(sql)
@@ -167,15 +209,15 @@ pub async fn dispatch(req: DaemonRequest, state: &DaemonProcess) -> Result<Daemo
                 .map_err(|e| e.to_string())?;
             let dtos: Vec<serde_json::Value> = rows
                 .into_iter()
-                .map(|(_pair_id, path, status, updated_at_str)| {
+                .map(|(pair_id, path, status, updated_at_str)| {
                     let at = chrono::DateTime::parse_from_rfc3339(&updated_at_str)
                         .map(|dt| dt.timestamp_millis())
                         .unwrap_or(0);
                     let filename = path.rsplit('/').next().unwrap_or(&path).to_string();
-                    let (kind, verb) = if status == "conflict" {
-                        ("conflict", "conflict")
-                    } else {
-                        ("sync", "synced")
+                    let (kind, verb) = match status.as_str() {
+                        "conflict" => ("conflict", "conflict"),
+                        "pending" => ("sync", "pending"),
+                        _ => ("sync", "synced"),
                     };
                     serde_json::json!({
                         "id": uuid::Uuid::new_v4().to_string(),
@@ -184,6 +226,7 @@ pub async fn dispatch(req: DaemonRequest, state: &DaemonProcess) -> Result<Daemo
                         "target": filename,
                         "with_whom": null,
                         "where_path": path,
+                        "pair_id": pair_id,
                         "at": at,
                         "kind": kind,
                     })

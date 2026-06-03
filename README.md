@@ -79,6 +79,36 @@ Adagio syncs files between your devices and a Nextcloud server. It runs as a bac
 - For E2EE: Nextcloud End-to-End Encryption app ≥ 2.0, server-side encryption **disabled** (`occ encryption:disable`)
 - For VFS (Linux): `libfuse3-dev`, `fuse3` package
 
+### Linux Tray Requirements
+
+The system-tray icon requires the AppIndicator library at runtime:
+
+```bash
+# Ubuntu 22.04 / 24.04
+sudo apt install libayatana-appindicator3-1
+
+# Ubuntu 20.04 / Debian
+sudo apt install libappindicator3-1
+
+# Fedora
+sudo dnf install libayatana-appindicator-gtk3
+
+# Arch
+sudo pacman -S libayatana-appindicator
+```
+
+**GNOME**: The default GNOME Shell panel does not show tray icons. Install the AppIndicator extension:
+
+```bash
+sudo apt install gnome-shell-extension-appindicator   # Ubuntu
+gnome-extensions enable appindicatorsupport@rgcjonas.gmail.com
+# Log out and back in.
+```
+
+Or install from https://extensions.gnome.org/extension/615/appindicator-support/
+
+**KDE Plasma 5/6 and XFCE**: Native AppIndicator support — no extra steps needed.
+
 ---
 
 ## Building

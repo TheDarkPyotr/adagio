@@ -388,6 +388,8 @@ pub struct DefaultSyncEngine {
     memory_sampler: Arc<std::sync::Mutex<MemorySampler>>,
     /// Per-account bandwidth limits: (upload_kbps, download_kbps). 0 = unlimited.
     pub bandwidth_limits: Arc<RwLock<HashMap<AccountId, (u64, u64)>>>,
+    /// Timestamp of the most recent successfully completed sync cycle.
+    last_sync_at: Arc<RwLock<Option<chrono::DateTime<chrono::Utc>>>>,
 }
 
 impl DefaultSyncEngine {
@@ -404,6 +406,7 @@ impl DefaultSyncEngine {
             min_battery_percent: None,
             memory_sampler: Arc::new(std::sync::Mutex::new(MemorySampler::new())),
             bandwidth_limits: Arc::new(RwLock::new(HashMap::new())),
+            last_sync_at: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -420,6 +423,11 @@ impl DefaultSyncEngine {
         } else {
             limits.insert(account_id.clone(), (upload_kbps, download_kbps));
         }
+    }
+
+    /// Return the timestamp of the most recent successfully completed sync cycle, if any.
+    pub fn last_sync_at(&self) -> Option<chrono::DateTime<chrono::Utc>> {
+        self.last_sync_at.try_read().ok().and_then(|g| *g)
     }
 
     /// Spawn a `PairRunner` for `pair` and register it.
@@ -445,6 +453,7 @@ impl DefaultSyncEngine {
             conflict_tx,
             sampler,
             Some(self.status_tx.clone()),
+            self.last_sync_at.clone(),
         );
         let mut runners = self.runners.write().await;
         if let Some(old) = runners.remove(&pair_id) {
@@ -478,6 +487,7 @@ impl DefaultSyncEngine {
         ));
         let pair_id_str = pair_id.0.clone();
         let status_tx = self.status_tx.clone();
+        let last_sync_at = self.last_sync_at.clone();
 
         let cancel = CancellationToken::new();
         let (trigger_tx, mut trigger_rx) = mpsc::channel::<()>(1);
@@ -507,8 +517,13 @@ impl DefaultSyncEngine {
             ticker.tick().await; // consume immediate first tick
 
             // Run first metadata sync immediately on startup.
-            if let Err(e) = vfs_runner.run_metadata_sync().await {
-                report_sync_error(&e, &pair_id_str, &status_tx);
+            match vfs_runner.run_metadata_sync().await {
+                Ok(_) => {
+                    *last_sync_at.write().await = Some(chrono::Utc::now());
+                }
+                Err(e) => {
+                    report_sync_error(&e, &pair_id_str, &status_tx);
+                }
             }
 
             loop {
@@ -520,7 +535,10 @@ impl DefaultSyncEngine {
                     }
                     _ = ticker.tick() => {
                         match vfs_runner.run_metadata_sync().await {
-                            Ok(_) => { clear_server_error_status(&status_tx); }
+                            Ok(_) => {
+                                clear_server_error_status(&status_tx);
+                                *last_sync_at.write().await = Some(chrono::Utc::now());
+                            }
                             Err(e) => { report_sync_error(&e, &pair_id_str, &status_tx); }
                         }
                     }
@@ -528,7 +546,10 @@ impl DefaultSyncEngine {
                         while trigger_rx.try_recv().is_ok() {}
                         tracing::info!(pair_id = %pair_id_str, "VFS metadata sync triggered");
                         match vfs_runner.run_metadata_sync().await {
-                            Ok(_) => { clear_server_error_status(&status_tx); }
+                            Ok(_) => {
+                                clear_server_error_status(&status_tx);
+                                *last_sync_at.write().await = Some(chrono::Utc::now());
+                            }
                             Err(e) => { report_sync_error(&e, &pair_id_str, &status_tx); }
                         }
                     }

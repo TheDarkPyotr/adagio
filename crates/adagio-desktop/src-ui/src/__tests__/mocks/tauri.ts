@@ -72,6 +72,8 @@ const defaultInvoke = (cmd: string): Promise<unknown> => {
       id: 'pair-1', account_id: 'acc-1', local_root: '/home/user/Adagio',
       remote_root: '/', scan_interval_secs: 7200, selective_paths: [], vfs_enabled: false,
     });
+    case 'get_platform': return Promise.resolve('macos');
+    case 'list_synced_files': return Promise.resolve([]);
     default: return Promise.resolve(null);
   }
 };
@@ -96,6 +98,8 @@ vi.mock('@tauri-apps/api/webviewWindow', () => ({
     close: vi.fn().mockResolvedValue(undefined),
     show: vi.fn().mockResolvedValue(undefined),
     setFocus: vi.fn().mockResolvedValue(undefined),
+    emit: vi.fn().mockResolvedValue(undefined),
+    listen: vi.fn().mockResolvedValue(() => {}),
   }),
   getAllWebviewWindows: vi.fn().mockResolvedValue([]),
 }));
