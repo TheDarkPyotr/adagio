@@ -48,7 +48,7 @@ fn is_metered_via_nlm() -> Option<bool> {
             if let Some(conn) = buf[0].take() {
                 if let Ok(cost) = conn.cast::<INetworkConnectionCost>() {
                     if let Ok(flags) = cost.GetCost() {
-                        if flags.0 & metered_mask != 0 {
+                        if flags & metered_mask != 0 {
                             return Some(true);
                         }
                     }
