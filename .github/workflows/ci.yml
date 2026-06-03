@@ -71,13 +71,6 @@ jobs:
           sqlx migrate run --source crates/adagio-core/migrations
         shell: bash
 
-      - name: Stub externalBin placeholders for build.rs
-        run: |
-          TARGET=$(rustc -vV | sed -n 's/host: //p')
-          mkdir -p crates/adagio-desktop/binaries
-          touch "crates/adagio-desktop/binaries/adagio-daemon-${TARGET}"
-          touch "crates/adagio-desktop/binaries/adagio-cli-${TARGET}"
-
       - name: Format check
         if: matrix.job == 'lint'
         run: cargo fmt --all --check

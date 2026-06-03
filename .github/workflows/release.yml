@@ -70,13 +70,6 @@ jobs:
           sqlx database create
           sqlx migrate run --source crates/adagio-core/migrations
 
-      - name: Stub externalBin placeholders for build.rs
-        run: |
-          TARGET=$(rustc -vV | sed -n 's/host: //p')
-          mkdir -p crates/adagio-desktop/binaries
-          touch "crates/adagio-desktop/binaries/adagio-daemon-${TARGET}"
-          touch "crates/adagio-desktop/binaries/adagio-cli-${TARGET}"
-
       - name: Run tests
         run: cargo test --workspace
 
