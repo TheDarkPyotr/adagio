@@ -70,6 +70,13 @@ jobs:
           sqlx database create
           sqlx migrate run --source crates/adagio-core/migrations
 
+      - name: Stub externalBin placeholders for build.rs
+        run: |
+          TARGET=$(rustc -vV | sed -n 's/host: //p')
+          mkdir -p crates/adagio-desktop/binaries
+          touch "crates/adagio-desktop/binaries/adagio-daemon-${TARGET}"
+          touch "crates/adagio-desktop/binaries/adagio-cli-${TARGET}"
+
       - name: Run tests
         run: cargo test --workspace
 
@@ -118,6 +125,8 @@ jobs:
             libsecret-1-dev \
             libsqlite3-dev \
             libfuse3-dev \
+            fuse \
+            squashfs-tools \
             pkg-config \
             desktop-file-utils
 
@@ -147,10 +156,14 @@ jobs:
           cp target/release/adagio-daemon "crates/adagio-desktop/binaries/adagio-daemon-${TARGET}"
           cp target/release/adagio-cli   "crates/adagio-desktop/binaries/adagio-cli-${TARGET}"
 
-      - name: Build Tauri app (deb + rpm)
+      - name: Build Tauri app (deb + rpm + AppImage)
+        env:
+          # GitHub Actions runners lack kernel FUSE support; this flag tells
+          # appimagetool to extract-and-run instead of mounting via FUSE.
+          APPIMAGE_EXTRACT_AND_RUN: "1"
         run: |
           cd crates/adagio-desktop
-          src-ui/node_modules/.bin/tauri build --bundles deb,rpm
+          src-ui/node_modules/.bin/tauri build --bundles deb,rpm,app-image
 
       - name: Validate .deb package integrity
         run: |
@@ -181,16 +194,18 @@ jobs:
       - name: Collect and rename Linux artifacts
         run: |
           mkdir -p dist
-          cp "$(find target/release/bundle/deb -name '*.deb' | head -1)" \
+          cp "$(find target/release/bundle/deb      -name '*.deb'     | head -1)" \
              "dist/adagio_${VERSION}_linux_amd64.deb"
-          cp "$(find target/release/bundle/rpm -name '*.rpm' | head -1)" \
+          cp "$(find target/release/bundle/rpm      -name '*.rpm'     | head -1)" \
              "dist/adagio_${VERSION}_linux_x86_64.rpm"
+          cp "$(find target/release/bundle/appimage -name '*.AppImage' | head -1)" \
+             "dist/adagio_${VERSION}_linux_amd64.AppImage"
 
       - name: Generate Linux checksums
         run: |
           cd dist
-          sha256sum *.deb *.rpm *.tar.gz > checksums-linux.txt
-          for f in *.deb *.rpm *.tar.gz; do sha256sum "$f" > "${f}.sha256"; done
+          sha256sum *.deb *.rpm *.tar.gz *.AppImage > checksums-linux.txt
+          for f in *.deb *.rpm *.tar.gz *.AppImage; do sha256sum "$f" > "${f}.sha256"; done
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
