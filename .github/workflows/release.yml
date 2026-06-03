@@ -118,6 +118,7 @@ jobs:
             libsecret-1-dev \
             libsqlite3-dev \
             libfuse3-dev \
+            libfuse2 \
             fuse \
             squashfs-tools \
             pkg-config \
