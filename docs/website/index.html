@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Adagio — the quiet Nextcloud client</title>
+  <meta name="description" content="A minimal desktop client for Nextcloud. Virtual files on demand, per-folder end-to-end encryption, and a sync daemon that respects your battery, network, and disk. Linux, v0.1.0." />
+
+  <meta property="og:title" content="Adagio — sync, quietly." />
+  <meta property="og:description" content="A minimal Nextcloud client. Virtual files, end-to-end encryption, a quiet sync daemon. Linux · v0.1.0." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://adagio.so" />
+  <meta property="og:image" content="assets/file-browser.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- nav -->
+  <header class="nav">
+    <a class="brand" href="/" aria-label="Adagio home">
+      <svg class="mark" width="24" height="24" viewBox="0 0 60 60" fill="none" aria-hidden="true">
+        <path d="M8 42 C 18 14, 42 14, 52 42" stroke="var(--tx)" stroke-width="3" stroke-linecap="round" fill="none"/>
+        <circle cx="8" cy="42" r="5" fill="var(--tx)"/>
+        <circle cx="52" cy="42" r="5" fill="var(--el)"/>
+      </svg>
+      <span class="name">adagio</span>
+      <span class="ver">v0.1.0</span>
+    </a>
+    <nav class="nav-links" aria-label="Primary">
+      <a class="link" href="#features">Features</a>
+      <a class="link" href="#release">Release notes</a>
+      <a class="link" href="#">Docs</a>
+      <a class="link" href="#">GitHub</a>
+    </nav>
+    <a class="btn btn-el" href="#download">Download</a>
+  </header>
+
+  <main>
+    <!-- hero -->
+    <section class="hero">
+      <div>
+        <span class="kick">Desktop client for Nextcloud · Linux</span>
+        <h1>Sync,<br/><span class="el">quietly.</span></h1>
+        <p class="lede">A minimal Nextcloud client. Virtual files on demand, per-folder end-to-end encryption, and a sync daemon that respects your battery, network, and disk.</p>
+        <div class="cta">
+          <a class="btn btn-el" href="#download">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17 18a4 4 0 0 0 0-8 6 6 0 0 0-11.5 1.5A3.5 3.5 0 0 0 6.5 18H17Z"/><path d="M12 12v6m0 0-2-2m2 2 2-2"/></svg>
+            Download for Linux
+          </a>
+          <a class="btn btn-ghost" href="#">View source ↗</a>
+        </div>
+        <div class="meta">
+          <span>deb · rpm</span><span class="dot">·</span>
+          <span>written in Rust</span><span class="dot">·</span>
+          <span>AGPL-3.0</span>
+        </div>
+      </div>
+      <div class="hero-art" aria-hidden="true">
+        <svg width="300" height="300" viewBox="0 0 60 60" fill="none">
+          <path d="M8 42 C 18 14, 42 14, 52 42" stroke="var(--tx)" stroke-width="3" stroke-linecap="round" fill="none"/>
+          <circle cx="8" cy="42" r="5" fill="var(--tx)"/>
+          <circle cx="52" cy="42" r="5" fill="var(--el)"/>
+        </svg>
+      </div>
+    </section>
+
+    <!-- product -->
+    <section>
+      <div class="head">
+        <div>
+          <span class="kick">The client</span>
+          <h2 style="margin-top:18px">One window.<br/>Your whole cloud.</h2>
+        </div>
+        <p class="blurb">Browse everything on your server as if it were local. A FUSE3 filesystem fetches files the moment you open them — pin a folder to keep it offline.</p>
+      </div>
+      <div class="frame">
+        <div class="fb">
+          <!-- chrome -->
+          <div class="fb-chrome">
+            <div class="fb-brand">
+              <svg width="20" height="20" viewBox="0 0 60 60" fill="none"><path d="M8 42 C 18 14, 42 14, 52 42" stroke="#15171a" stroke-width="3" stroke-linecap="round"/><circle cx="8" cy="42" r="5" fill="#15171a"/><circle cx="52" cy="42" r="5" fill="#c8542a"/></svg>
+              <span class="w">adagio</span>
+            </div>
+            <div class="fb-pills"><button class="on">Files</button><button>Activity</button></div>
+            <div class="fb-search"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><span>Search files, people, activity…</span><span class="kbd">⌘K</span></div>
+            <div class="fb-chrome-r">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 17V11a6 6 0 1 1 12 0v6l2 2H4l2-2Z"/><path d="M10 21a2 2 0 0 0 4 0"/></svg>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg>
+              <span class="fb-ava">A</span>
+              <span class="fb-dots"><i></i><i></i><i></i></span>
+            </div>
+          </div>
+          <!-- body -->
+          <div class="fb-body">
+            <aside class="fb-side">
+              <div class="fb-acct">
+                <span class="a">A</span>
+                <div><div class="n">Luca</div><div class="h">cloud.luca.me</div></div>
+              </div>
+              <div class="fb-sec">Library</div>
+              <div class="fb-item on"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></svg></span>All files</div>
+              <div class="fb-item"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 2.6 5.5 6 .9-4.4 4.2 1 6.1L12 16.8 6.8 19.7l1-6.1L3.4 9.4l6-.9L12 3Z"/></svg></span>Favorites<span class="ct">1</span></div>
+              <div class="fb-item"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>Recent</div>
+              <div class="fb-item"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="3.5"/><path d="M3 19a6 6 0 0 1 12 0"/><circle cx="17" cy="9" r="2.5"/><path d="M16 19a5 5 0 0 1 5-5"/></svg></span>Shared</div>
+              <div class="fb-item"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13V4h9l9 9-9 9-9-9Z"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg></span>Tagged</div>
+              <div class="fb-sec" style="margin-top:8px">Pinned folders</div>
+              <div class="fb-pin"><span class="d"></span>Projects<span class="fb-vfs">VFS</span></div>
+            </aside>
+            <div class="fb-main">
+              <div class="fb-top">
+                <div class="fb-title">cloud.luca.me</div>
+                <div class="fb-acts">
+                  <button class="fb-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>New</button>
+                  <button class="fb-btn pri"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.5 11 16 7M8.5 13 16 17"/></svg>Share</button>
+                </div>
+              </div>
+              <div class="fb-cols"><span></span><span>Name</span><span>Size</span><span>Items</span><span>Modified</span><span class="r">Status</span></div>
+              <div class="fb-rows">
+                <div class="fb-row"><span></span><span class="nm"><span class="fb-folder"><svg width="22" height="18" viewBox="0 0 28 22" fill="none"><path d="M1 4a2 2 0 0 1 2-2h6l2 2h14a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V4Z" stroke="currentColor" stroke-width="1.4" fill="#efe9da"/></svg></span><span>Photographs</span></span><span class="fb-sz">0 B</span><span class="fb-it">–</span><span class="fb-md">Apr 19, 2026</span><span class="fb-st"><span class="ok"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg></span></span></div>
+                <div class="fb-row"><span></span><span class="nm"><span class="fb-folder"><svg width="22" height="18" viewBox="0 0 28 22" fill="none"><path d="M1 4a2 2 0 0 1 2-2h6l2 2h14a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V4Z" stroke="currentColor" stroke-width="1.4" fill="#efe9da"/></svg></span><span>Documents</span></span><span class="fb-sz">0 B</span><span class="fb-it">–</span><span class="fb-md">May 31, 2026</span><span class="fb-st"><span class="ok"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg></span></span></div>
+                <div class="fb-row"><span></span><span class="nm"><span class="fb-folder"><svg width="22" height="18" viewBox="0 0 28 22" fill="none"><path d="M1 4a2 2 0 0 1 2-2h6l2 2h14a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V4Z" stroke="currentColor" stroke-width="1.4" fill="#efe9da"/></svg></span><span>Projects</span></span><span class="fb-sz">0 B</span><span class="fb-it">–</span><span class="fb-md">Jan 19, 2025</span><span class="fb-st"><span class="pin"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#f5f1ea" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg></span></span></div>
+                <div class="fb-row"><span></span><span class="nm"><span class="fb-folder"><svg width="22" height="18" viewBox="0 0 28 22" fill="none"><path d="M1 4a2 2 0 0 1 2-2h6l2 2h14a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V4Z" stroke="currentColor" stroke-width="1.4" fill="#efe9da"/></svg></span><span>Music</span></span><span class="fb-sz">0 B</span><span class="fb-it">–</span><span class="fb-md">May 30, 2026</span><span class="fb-st"><span class="ok"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg></span></span></div>
+                <div class="fb-row"><span></span><span class="nm"><span class="fb-folder"><svg width="22" height="18" viewBox="0 0 28 22" fill="none"><path d="M1 4a2 2 0 0 1 2-2h6l2 2h14a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V4Z" stroke="currentColor" stroke-width="1.4" fill="#efe9da"/></svg></span><span>Backups</span></span><span class="fb-sz">0 B</span><span class="fb-it">–</span><span class="fb-md">May 27, 2026</span><span class="fb-st"><span class="cloud"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17 18a4 4 0 0 0 0-8 6 6 0 0 0-11.5 1.5A3.5 3.5 0 0 0 6.5 18H17Z"/></svg></span></span></div>
+                <div class="fb-row"><span></span><span class="nm"><span class="fb-file" style="color:#a8443a">pdf</span><span>quarterly-report.pdf</span></span><span class="fb-sz">2.4 MB</span><span class="fb-it">–</span><span class="fb-md">May 28, 2026</span><span class="fb-st"><span class="ok"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg></span></span></div>
+                <div class="fb-row"><span></span><span class="nm"><span class="fb-file" style="color:#4a4d52">md</span><span>meeting-notes.md</span></span><span class="fb-sz">7 KB</span><span class="fb-it">–</span><span class="fb-md">May 28, 2026</span><span class="fb-st"><span class="ok"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg></span></span></div>
+                <div class="fb-row"><span></span><span class="nm"><span class="fb-file" style="color:#4a4d52">txt</span><span>todo.txt</span></span><span class="fb-sz">1 KB</span><span class="fb-it">–</span><span class="fb-md">May 25, 2026</span><span class="fb-st"><span class="cloud"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17 18a4 4 0 0 0 0-8 6 6 0 0 0-11.5 1.5A3.5 3.5 0 0 0 6.5 18H17Z"/></svg></span></span></div>
+                <div class="fb-row"><span></span><span class="nm"><span class="fb-file" style="color:#7a4b8a">fig</span><span>site-mockup.fig</span></span><span class="fb-sz">48 MB</span><span class="fb-it">–</span><span class="fb-md">May 27, 2026</span><span class="fb-st"><span class="ok"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg></span></span></div>
+                <div class="fb-row"><span></span><span class="nm"><span class="fb-file" style="color:#7d6b5b">zip</span><span>archive-2025.zip</span></span><span class="fb-sz">1.2 GB</span><span class="fb-it">–</span><span class="fb-md">May 31, 2026</span><span class="fb-st"><span class="cloud"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17 18a4 4 0 0 0 0-8 6 6 0 0 0-11.5 1.5A3.5 3.5 0 0 0 6.5 18H17Z"/></svg></span></span></div>
+              </div>
+              <div class="fb-status">
+                <span class="g"><span>10 items · nothing selected</span><span>·</span><span>2 cloud · 5097 local · 17 pinned</span></span>
+                <span class="g"><span>850.8 MB / 21.5 GB cached</span><span>·</span><span>last sync 09:44 AM</span></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="frame-cap">
+        <span>adagio · file browser</span>
+        <span>linux · GNOME · 1280 × 800</span>
+      </div>
+    </section>
+
+    <!-- features -->
+    <section id="features">
+      <div class="feat-head">
+        <h2>What's in <span class="el">0.1.0</span>.</h2>
+        <span class="kick">First public release</span>
+      </div>
+      <div class="grid3">
+        <div class="cell">
+          <div class="tag">01 · Virtual file system</div>
+          <h3>On-demand, by default.</h3>
+          <p>A FUSE3 filesystem shows every file as a placeholder. Nothing touches your disk until you open it. Pin to keep offline, evict to reclaim space.</p>
+        </div>
+        <div class="cell">
+          <div class="tag">02 · Encryption</div>
+          <h3>Your keys. Not ours.</h3>
+          <p>Per-folder end-to-end encryption seals files before they leave your machine. Adagio never sees your content. Neither does your provider.</p>
+        </div>
+        <div class="cell">
+          <div class="tag">03 · Onboarding</div>
+          <h3>Connected in a minute.</h3>
+          <p>Paste your server, authorise over Nextcloud OAuth2, pick a folder. Adagio detects the rest.</p>
+        </div>
+        <div class="cell">
+          <div class="tag">04 · Sync daemon</div>
+          <h3>Always-on, never loud.</h3>
+          <p>A background daemon syncs continuously with live status and a Sync Now button that shows its ETA.</p>
+        </div>
+        <div class="cell">
+          <div class="tag">05 · Network aware</div>
+          <h3>Knows where you are.</h3>
+          <p>Throttle bandwidth up and down. Back off on metered connections, on battery, or on specific Wi-Fi networks.</p>
+        </div>
+        <div class="cell">
+          <div class="tag">06 · Multi-account</div>
+          <h3>More than one cloud.</h3>
+          <p>Switch accounts instantly — favorites, tags, pairs and counts are scoped per account. A GNOME tray keeps it a glance away.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- release notes -->
+    <section id="release">
+      <div class="rel-head">
+        <h2>Release <span class="el">0.1.0</span></h2>
+        <span class="mono" style="font-size:12px;color:var(--tx-mut)">2026-06-04 · first public release</span>
+      </div>
+      <p class="rel-sub">The honest changelog — everything below actually ships in this build.</p>
+      <div class="rel-cols">
+        <div class="rel-col">
+          <div class="h">Features</div>
+          <ul>
+            <li>Nextcloud OAuth2 account setup</li>
+            <li>VFS on-demand files — FUSE3 PathFilesystem</li>
+            <li>VFS pin / evict, coexistence, platform wiring</li>
+            <li>Per-folder end-to-end encryption + UI</li>
+            <li>Bandwidth throttling, up and down</li>
+            <li>Network awareness — metered / battery / SSID</li>
+            <li>Bulk upload driver for fast initial sync</li>
+            <li>Linux tray support for GNOME</li>
+            <li>Custom colour palettes + builder</li>
+          </ul>
+        </div>
+        <div class="rel-col">
+          <div class="h">Fixes &amp; hardening</div>
+          <ul>
+            <li>jemalloc eliminates RSS growth (AC-3)</li>
+            <li>FUSE unprivileged mount + disk reconciliation</li>
+            <li>Atomic metadata sync preserves local state</li>
+            <li>Account switcher scopes data per account</li>
+            <li>Auth-on-first-sync passes raw app password</li>
+            <li>E2EE runner lifecycle — cancel on remove</li>
+            <li>Daemon registered in journal DB on startup</li>
+            <li>Inline sync errors in the pair row</li>
+          </ul>
+        </div>
+        <div class="rel-col">
+          <div class="h">Platform</div>
+          <ul>
+            <li>Linux — deb · rpm · AppImage</li>
+            <li>FUSE3 required for virtual files</li>
+            <li>GNOME tray integration</li>
+            <li>Cross-platform CI pipeline</li>
+            <li>Windows build — in progress</li>
+            <li>macOS — planned</li>
+          </ul>
+        </div>
+      </div>
+      <div class="rel-foot">
+        <a class="btn btn-ghost" style="font-size:13px" href="#">Full changelog ↗</a>
+        <span class="mono" style="font-size:11px;color:var(--tx-mut)">16 features · 50+ fixes · CI rebuilt</span>
+      </div>
+    </section>
+
+    <!-- download -->
+    <section id="download" class="dl">
+      <div class="inner">
+        <svg class="mark" width="40" height="40" viewBox="0 0 60 60" fill="none" aria-hidden="true">
+          <path d="M8 42 C 18 14, 42 14, 52 42" stroke="var(--tx)" stroke-width="3" stroke-linecap="round" fill="none"/>
+          <circle cx="8" cy="42" r="5" fill="var(--tx)"/>
+          <circle cx="52" cy="42" r="5" fill="var(--el)"/>
+        </svg>
+        <h2>Begin <span class="el">softly.</span></h2>
+        <p>One binary. Connect your Nextcloud and you're synced in under a minute.</p>
+        <div class="cta">
+          <a class="btn btn-el btn-lg" href="#">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17 18a4 4 0 0 0 0-8 6 6 0 0 0-11.5 1.5A3.5 3.5 0 0 0 6.5 18H17Z"/><path d="M12 12v6m0 0-2-2m2 2 2-2"/></svg>
+            Download for Linux
+          </a>
+          <a class="btn btn-ghost btn-lg" href="#">View source ↗</a>
+        </div>
+        <!--
+        <div class="cmd"><span class="p">$</span><span>curl -sSL adagio.so/install | sh</span></div> -->
+      </div>
+    </section>
+  </main>
+
+  <!-- footer -->
+  <footer class="foot">
+    <div class="brand">
+      <svg class="mark" width="20" height="20" viewBox="0 0 60 60" fill="none" aria-hidden="true">
+        <path d="M8 42 C 18 14, 42 14, 52 42" stroke="var(--tx)" stroke-width="3" stroke-linecap="round" fill="none"/>
+        <circle cx="8" cy="42" r="5" fill="var(--tx)"/>
+        <circle cx="52" cy="42" r="5" fill="var(--el)"/>
+      </svg>
+      <span class="name" style="font-size:18px">adagio</span>
+      <span class="mono" style="font-size:11px;color:var(--tx-mut);margin-left:6px">v0.1.0 · 2026-06-04</span>
+    </div>
+    <div class="links">
+      <a class="link" href="#">GitHub</a>
+      <a class="link" href="#">Docs</a>
+      <a class="link" href="#">Privacy</a>
+      <a class="link" href="#">Imprint</a>
+    </div>
+    <span class="copy">© 2026 Sound GmbH · AGPL-3.0</span>
+  </footer>
+
+</body>
+</html>
