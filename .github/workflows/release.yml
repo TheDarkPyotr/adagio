@@ -166,8 +166,8 @@ jobs:
           echo "--- installed files ---"
           dpkg -L adagio
 
-          # Check all three binaries are present (CLI binary is named 'adagio', not 'adagio-cli')
-          for BIN in adagio-desktop adagio-daemon adagio; do
+          # Check all three binaries are present (CLI binary is bundled as 'adagio-cli')
+          for BIN in adagio-desktop adagio-daemon adagio-cli; do
             dpkg -L adagio | grep -qE "/${BIN}$" || {
               echo "::error::Binary '$BIN' not found in installed package"
               exit 1
