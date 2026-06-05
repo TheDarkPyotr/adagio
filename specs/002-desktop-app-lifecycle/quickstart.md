@@ -34,9 +34,9 @@ the platform app-config directory:
 
 | Platform | Path                                                           |
 |----------|----------------------------------------------------------------|
-| Linux    | `~/.config/ai.neuralagent.adagio/config.json`                  |
-| macOS    | `~/Library/Application Support/ai.neuralagent.adagio/config.json` |
-| Windows  | `%APPDATA%\ai.neuralagent.adagio\config.json`                  |
+| Linux    | `~/.config/adagio/config.json`                  |
+| macOS    | `~/Library/Application Support/adagio/config.json` |
+| Windows  | `%APPDATA%\adagio\config.json`                  |
 
 ---
 
@@ -48,7 +48,7 @@ the platform app-config directory:
 4. Quit the app (`Ctrl-C` in the terminal or close the window)
 5. Relaunch — the account and pair should be present without reconfiguration
 
-**Verify**: `cat ~/.config/ai.neuralagent.adagio/config.json` (Linux) should show
+**Verify**: `cat ~/.config/adagio/config.json` (Linux) should show
 the account and pair entries.
 
 ---
@@ -100,10 +100,10 @@ cargo test -p adagio-core --lib cycle::runner
 
 ```bash
 # Linux/macOS
-cat ~/.config/ai.neuralagent.adagio/config.json | python3 -m json.tool
+cat ~/.config/adagio/config.json | python3 -m json.tool
 
 # Reset to clean state (removes all saved accounts and pairs)
-rm ~/.config/ai.neuralagent.adagio/config.json
+rm ~/.config/adagio/config.json
 ```
 
 **Note**: Removing the config file does NOT remove credentials from the OS keychain.

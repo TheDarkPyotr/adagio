@@ -23,7 +23,7 @@ pkill adagio-daemon 2>/dev/null; true
 
 ```bash
 # With daemon already running
-./target/debug/adagio-daemon --config-dir ~/.config/ai.neuralagent.adagio/ &
+./target/debug/adagio-daemon --config-dir ~/.config/adagio/ &
 sleep 1
 
 ./target/debug/adagio status

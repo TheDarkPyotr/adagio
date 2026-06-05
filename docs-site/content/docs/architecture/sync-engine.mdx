@@ -1,40 +1,73 @@
 ---
 title: Sync Engine
-description: Internals of the Adagio sync engine — journal, reconciler, propagator.
+description: Inside the journal, reconciler, and propagator that drive every sync cycle.
 ---
 
-The sync engine lives in `adagio-core` and is orchestrated by `adagio-daemon`.
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+The sync engine lives in `adagio-core` and is orchestrated by `adagio-daemon`. Every sync cycle passes through three stages in sequence: the **Journal** records what changed locally, the **Reconciler** computes what needs to happen, and the **Propagator** executes those operations against Nextcloud.
 
 ## Journal
 
-The journal is a SQLite database with WAL mode enabled, stored at:
+The journal is a SQLite database running in WAL mode, stored at:
 
 ```
-~/.config/ai.neuralagent.adagio/journal.db
+~/.config/adagio/journal.db
 ```
 
-It records every file-system event detected by `inotify` (Linux): create, modify, delete, rename. Each event is stored with a monotonic sequence number, pair ID, relative path, and change type.
+It records every filesystem event delivered by `inotify` on Linux. Each row captures:
 
-The journal acts as a durable event queue so that sync can resume exactly where it left off after a crash or restart.
+| Column | Description |
+|---|---|
+| `seq` | Monotonically increasing sequence number |
+| `pair_id` | Identifies which sync pair the event belongs to |
+| `path` | Relative path within the pair root |
+| `change_type` | One of `create`, `modify`, `delete`, `rename` |
+
+The journal is a durable event queue. If the daemon crashes or is killed mid-cycle, the next startup replays from the last unacknowledged sequence number — no events are lost.
 
 ## Reconciler
 
-The reconciler compares the journal's pending events against the last known remote state (stored in the journal's `remote_state` table). It produces a diff: a list of operations to propagate — upload, download, delete, or conflict-mark.
+The reconciler reads the pending journal events and diffs them against the `remote_state` table, which holds the last known state of every remote file. The output is an ordered list of operations:
 
-Operations are deduplicated: if the same file was modified five times between two sync cycles only one upload is produced.
+| Operation | When produced |
+|---|---|
+| `upload` | Local file is newer or absent remotely |
+| `download` | Remote file is newer or absent locally |
+| `delete` | File removed on one side and unchanged on the other |
+| `conflict-mark` | Both sides modified independently since the last sync |
+
+**Deduplication** is applied before the list is passed to the propagator. If the same file was modified five times between two sync cycles, only a single `upload` operation is emitted.
 
 ## Propagator
 
 The propagator executes the diff produced by the reconciler:
 
-- **Upload**: reads the local file and sends it to Nextcloud via WebDAV PUT.
-- **Download**: fetches the remote file via WebDAV GET and writes it locally.
-- **Delete**: removes the local or remote file.
+- **Upload** — reads the local file and sends it to Nextcloud via WebDAV PUT.
+- **Download** — fetches the remote file via WebDAV GET and writes it locally.
+- **Delete** — removes the local or remote file as appropriate.
+- **Conflict-mark** — renames the local copy with a conflict suffix and schedules a download of the remote version.
 
-## Bulk upload driver
+### Bulk Upload Driver
 
-When many files need to be uploaded the propagator uses a parallel bulk-upload driver that runs up to 4 concurrent WebDAV uploads, subject to the per-account bandwidth token bucket.
+When a large batch of files needs to be uploaded, the propagator uses a parallel bulk-upload driver that runs up to **4 concurrent** WebDAV connections. Concurrency is bounded to avoid overwhelming the Nextcloud server or saturating the network interface.
 
-## Bandwidth token bucket
+### Bandwidth Token Bucket
 
-Each account has an upload and a download token bucket. Buckets are refilled at the configured rate (bytes/s). Transfers consume tokens proportional to bytes. When the bucket is empty the transfer sleeps until tokens are available, achieving precise rate limiting without busy-waiting.
+Each account has a separate upload token bucket and a download token bucket. The algorithm:
+
+1. Buckets fill at the rate configured in `bytes_per_second` (per account, per direction).
+2. Before sending each chunk a transfer acquires tokens proportional to the chunk size.
+3. If the bucket is empty the transfer sleeps until enough tokens have accumulated.
+
+<Callout type="info">
+Sleeping on an empty bucket — rather than spinning — means bandwidth limiting adds zero CPU overhead between transfers.
+</Callout>
+
+Set `upload_rate_bytes` and `download_rate_bytes` to `0` to disable rate limiting for an account entirely.
+
+<Cards>
+  <Card href="/docs/user-guide/bandwidth" title="Bandwidth Controls" description="Configure per-account upload and download rate limits." />
+  <Card href="/docs/architecture/vfs-driver" title="VFS Driver" description="FUSE3 on-demand filesystem." />
+</Cards>

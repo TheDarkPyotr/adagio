@@ -1,33 +1,55 @@
 ---
 title: IPC Protocol
-description: How the Adagio CLI and desktop frontend communicate with the daemon.
+description: The Unix socket NDJSON protocol used by the Adagio daemon.
 ---
+
+The Adagio daemon exposes a Unix domain socket for local inter-process communication. Both the CLI and the Tauri desktop frontend use this socket exclusively — there is no HTTP server and no shared memory segment.
+
+## Socket path
+
+```
+~/.config/adagio/daemon.sock
+```
+
+The socket is created when the daemon starts and removed when it exits cleanly.
 
 ## Transport
 
-The daemon listens on a Unix domain socket at:
+The transport is a **Unix domain socket** carrying **newline-delimited JSON (NDJSON)**. Each message is a single JSON object terminated by a newline character (`\n`). There is no framing, length prefix, or envelope — the newline is the frame boundary.
 
-```
-~/.config/ai.neuralagent.adagio/daemon.sock
-```
+<Callout type="info">
+NDJSON means you can pipe messages with standard Unix tools (`nc`, `socat`, `jq`) without any custom framing library.
+</Callout>
 
-All messages are newline-delimited JSON (NDJSON). Each line is a complete JSON object followed by `\n`.
+## Request format
 
-## Request / response lifecycle
+Every request is a JSON object with at minimum:
 
-1. **Client sends a request** — a JSON object with an `id` field (integer) and a `method` field identifying the request variant, plus any additional fields as parameters.
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | integer | Caller-assigned correlation ID. Echoed back in the response. |
+| `method` | string | Snake-case method name (e.g. `get_status`, `trigger_sync`). |
+| _(extra fields)_ | any | Method-specific parameters inlined at the top level. |
 
 ```json
 {"id": 1, "method": "get_status"}
 ```
 
-2. **Daemon sends a response** — a JSON object with the same `id` and either a `result` field (success) or an `error` field (failure).
+```json
+{"id": 2, "method": "trigger_sync", "pair_id": "abc123"}
+```
+
+## Response format
+
+### Success
 
 ```json
 {"id": 1, "result": {"status": "idle", "pairs": []}}
 ```
 
-## Error format
+The `result` value is method-specific. See [Message Types](./message-types) for every variant.
+
+### Error
 
 ```json
 {
@@ -39,22 +61,71 @@ All messages are newline-delimited JSON (NDJSON). Each line is a complete JSON o
 }
 ```
 
-## Push events (subscription connection)
+| Field | Description |
+|-------|-------------|
+| `error.code` | Machine-readable snake-case error code. |
+| `error.message` | Human-readable explanation. |
 
-A client can open a second connection to the same socket and send:
+## Subscriptions (push events)
+
+A client opens a **second connection** to the same socket and sends a single subscribe message:
 
 ```json
 {"id": 0, "method": "subscribe"}
 ```
 
-The daemon will then push events as they occur, without any request:
+The daemon acknowledges with a `Unit` result, then pushes `DaemonEvent` objects on that connection as they occur — no polling required.
+
+### Push event format
 
 ```json
 {"event": "sync_status_changed", "payload": {"status": "syncing", "pair_id": "abc123"}}
 ```
 
-See [Message Types](./message-types) for all `DaemonEvent` variants.
+| Field | Description |
+|-------|-------------|
+| `event` | Snake-case event name. |
+| `payload` | Event-specific data object. |
+
+The subscription connection is read-only after the initial subscribe message. Any further writes are ignored by the daemon.
 
 ## Versioning
 
-The IPC protocol is versioned via the `Pong` response to a `Ping` request. The `version` field contains the daemon's semver string. Clients should compare the major version to detect incompatibilities.
+Send a `Ping` request; the `Pong` response contains the daemon's semver string:
+
+```json
+{"id": 1, "method": "ping"}
+```
+
+```json
+{"id": 1, "result": {"version": "0.1.0", "uptime_secs": 3721}}
+```
+
+Clients must compare the **major version** only. A mismatch in major version means the client and daemon are incompatible and the client should prompt the user to restart. Minor and patch differences are always backward-compatible.
+
+## Code example
+
+The example below sends a `get_status` request using `nc` and pretty-prints the response with `jq`.
+
+```bash
+echo '{"id":1,"method":"get_status"}' \
+  | nc -U ~/.config/adagio/daemon.sock \
+  | head -n 1 \
+  | jq .
+```
+
+<Callout type="tip">
+Use `socat UNIX-CONNECT:~/.config/adagio/daemon.sock -` for an interactive session where you can type requests line by line and see responses in real time.
+</Callout>
+
+To subscribe to push events in a separate shell:
+
+```bash
+echo '{"id":0,"method":"subscribe"}' \
+  | socat - UNIX-CONNECT:~/.config/adagio/daemon.sock
+```
+
+<Cards>
+  <Card href="/docs/daemon-ipc/message-types" title="Message Types" />
+  <Card href="/docs/cli-reference" title="CLI Reference" />
+</Cards>

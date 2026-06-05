@@ -8,7 +8,7 @@ End-to-end validation for all five user stories.
 
 ```bash
 cargo build -p adagio-daemon -p adagio-cli
-./target/debug/adagio-daemon --config-dir ~/.config/ai.neuralagent.adagio/ &
+./target/debug/adagio-daemon --config-dir ~/.config/adagio/ &
 sleep 1
 ```
 
@@ -53,7 +53,7 @@ sleep 1
 # If you can switch to that SSID, network status should show paused
 # Otherwise verify the list is persisted:
 pkill adagio-daemon
-./target/debug/adagio-daemon --config-dir ~/.config/ai.neuralagent.adagio/ &
+./target/debug/adagio-daemon --config-dir ~/.config/adagio/ &
 sleep 1
 ./target/debug/adagio network list-blocked
 # Expected: ["TestNetwork-Blocked"] (survived restart)

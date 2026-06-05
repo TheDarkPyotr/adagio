@@ -48,7 +48,7 @@ Add a minimal `#[tauri::command] pub fn get_platform() -> &'static str` using `#
 
 ### 6. Desktop-app autostart deferred to v2
 
-The daemon already writes `~/.config/autostart/adagio-daemon.desktop` via `set_start_at_login`. A separate `ai.neuralagent.adagio.desktop` entry for the GUI app would require `tauri-plugin-autostart` or direct file I/O. This is out of scope for v1; users launch the GUI manually and the daemon is already running.
+The daemon already writes `~/.config/autostart/adagio-daemon.desktop` via `set_start_at_login`. A separate `adagio.desktop` entry for the GUI app would require `tauri-plugin-autostart` or direct file I/O. This is out of scope for v1; users launch the GUI manually and the daemon is already running.
 
 ---
 

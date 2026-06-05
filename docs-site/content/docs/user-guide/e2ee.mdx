@@ -1,30 +1,75 @@
 ---
-title: End-to-End Encryption (E2EE)
-description: Encrypting a sync pair with Nextcloud's end-to-end encryption protocol.
+title: End-to-End Encryption
+description: Encrypt sync pairs with Nextcloud E2EE v2 — the server never sees your file contents.
 ---
 
-## Overview
+Adagio implements Nextcloud's E2EE v2 protocol. Every file in an encrypted pair is sealed with AES-128-GCM before it leaves your device; the server stores only UUID-named ciphertext blobs.
 
-Adagio implements Nextcloud's E2EE v2 protocol. Files in an E2EE pair are encrypted with AES-128-GCM before upload; the server only ever stores UUID-named ciphertext.
+## Understand what E2EE protects
 
-Key material is protected by RSA-2048 and summarised in a BIP-39 mnemonic (24 words) that you must back up.
+| Component | Detail |
+|-----------|--------|
+| File encryption | AES-128-GCM per-file |
+| Key protection | RSA-2048 key pair |
+| Key backup | BIP-39 24-word mnemonic |
+| Server visibility | UUID-named ciphertext only — no filenames, no contents |
 
-## Prerequisites
+## Prepare the server
 
-<Callout type="danger">Nextcloud server-side encryption (SSE) must be disabled before E2EE will work. Run on the server: `docker exec --user www-data nextcloud php occ encryption:disable`</Callout>
+<Callout type="danger">Nextcloud server-side encryption (SSE) must be disabled before E2EE will work. Running both simultaneously corrupts metadata. Execute the following on the server before enabling E2EE on any pair.</Callout>
 
-## Initialising E2EE for a pair
+```bash
+docker exec --user www-data nextcloud php occ encryption:disable
+```
 
-1. In **Settings** → **Pairs** select the pair you want to encrypt
-2. Click **Enable E2EE**
-3. Adagio generates an RSA-2048 key pair, submits a PKCS#10 CSR to the server, and creates an encrypted metadata folder
-4. A 24-word BIP-39 mnemonic is displayed — **write it down and store it safely**; it is the only way to recover your keys
-5. Click **Done** — E2EE is now active for the pair
+Confirm the output reads `Encryption disabled`.
 
-## What gets stored on the server
+## Initialise E2EE for a pair
 
-Each file is stored as a UUID-named blob. The actual filename and content are only visible to clients that hold the private key.
+<Steps>
+  <Step>
+    Go to **Settings** → **Pairs** and select the pair you want to encrypt.
+  </Step>
+  <Step>
+    Click **Enable E2EE**.
+  </Step>
+  <Step>
+    Adagio generates an RSA-2048 key pair, submits a PKCS#10 CSR to the server, and creates an encrypted metadata folder on Nextcloud. This takes a few seconds.
+  </Step>
+  <Step>
+    A 24-word BIP-39 mnemonic is displayed. Write it down and store it in a safe place before proceeding.
+  </Step>
+  <Step>
+    Click **Done**. E2EE is now active — subsequent syncs for this pair will encrypt all file content before upload.
+  </Step>
+</Steps>
 
-## Recovery
+<Callout type="warning">The mnemonic is the only way to recover your encryption keys if you lose access to this device. Back it up before clicking Done. It will not be shown again.</Callout>
 
-If you lose access to your keys you can re-initialise E2EE using the BIP-39 mnemonic in **Settings** → **E2EE** → **Recover from mnemonic**.
+## Understand what the server stores
+
+After E2EE is enabled, Nextcloud holds only:
+
+- UUID-named binary blobs (the encrypted file content)
+- An encrypted metadata document that only your client can decrypt
+
+The actual filenames, directory structure, and file contents are never transmitted in plaintext.
+
+## Recover keys from a mnemonic
+
+If you reinstall Adagio or lose your local key material, recover access to an E2EE pair using your mnemonic:
+
+**Settings** → **E2EE** → **Recover from mnemonic**
+
+Or via the CLI:
+
+```bash
+adagio e2ee pair --mnemonic "word1 word2 word3 ... word24"
+```
+
+<Callout type="info">VFS on-demand is not compatible with E2EE on the same pair. If a pair has E2EE enabled, the Virtual filesystem option will be unavailable for that pair.</Callout>
+
+<Cards>
+  <Card href="/docs/architecture/e2ee-protocol" title="E2EE Protocol (Architecture)" />
+  <Card href="/docs/user-guide/vfs" title="Virtual Filesystem (VFS)" />
+</Cards>

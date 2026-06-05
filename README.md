@@ -118,7 +118,7 @@ Or install from https://extensions.gnome.org/extension/615/appindicator-support/
 cargo build --workspace
 
 # Build and run the daemon
-cargo run -p adagio-daemon -- --config-dir ~/.config/ai.neuralagent.adagio
+cargo run -p adagio-daemon -- --config-dir ~/.config/adagio
 
 # Build the desktop app (requires Tauri CLI)
 cargo tauri dev

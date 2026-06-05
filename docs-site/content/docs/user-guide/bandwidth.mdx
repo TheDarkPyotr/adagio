@@ -1,25 +1,37 @@
 ---
 title: Bandwidth Controls
-description: Limit upload and download speeds per account.
+description: Throttle upload and download speeds per account.
 ---
 
-## Per-account limits
+Adagio lets you cap upload and download speeds independently for each Nextcloud account, so syncing never saturates your connection.
 
-Adagio implements token-bucket throttling independently for uploads and downloads on each account.
+## Set per-account limits
 
-Set limits in **Settings** → **Accounts** → *select account* → **Bandwidth**:
+Open **Settings** → **Accounts** → *select account* → **Bandwidth** to configure speed limits.
 
-| Setting | Default | Range |
-|---------|---------|-------|
-| Upload limit | Unlimited | 10 KB/s – 1 GB/s |
-| Download limit | Unlimited | 10 KB/s – 1 GB/s |
+| Setting | Default | Valid range | Remove limit |
+|---------|---------|-------------|--------------|
+| Upload limit | Unlimited | 10 KB/s – 1 GB/s | Enter `0` |
+| Download limit | Unlimited | 10 KB/s – 1 GB/s | Enter `0` |
 
-Enter `0` or leave blank to remove the limit.
+Changes take effect immediately for any in-progress transfers.
 
-## How it works
+## Understand token-bucket throttling
 
-The bandwidth token bucket refills at the configured rate. Each WebDAV read/write operation consumes tokens proportional to the bytes transferred. When the bucket is empty the transfer sleeps until enough tokens accumulate.
+Adagio uses a **token-bucket** algorithm to enforce limits:
 
-## Effect on sync speed
+- A bucket is maintained for uploads and a separate one for downloads.
+- Each bucket refills continuously at the configured rate (e.g. 500 KB/s fills 500 KB of tokens per second).
+- Every WebDAV read or write operation draws tokens from the corresponding bucket proportional to the bytes transferred.
+- When the bucket is empty the transfer sleeps until enough tokens accumulate, naturally capping throughput to the configured rate.
 
-Throttling affects the propagation stage only. The reconciler and journal continue to track changes at full speed regardless of bandwidth limits.
+This approach allows short bursts up to the bucket capacity while keeping sustained throughput at or below the limit.
+
+## Understand what is throttled
+
+Throttling applies to the **propagation stage only** — the part of the pipeline that moves file data via WebDAV. The journal (inotify event capture) and the reconciler (diff computation) are not affected and continue to run at full speed regardless of bandwidth limits.
+
+<Cards>
+  <Card href="/docs/user-guide/network-awareness" title="Network Awareness" />
+  <Card href="/docs/user-guide/file-sync" title="File Sync" />
+</Cards>

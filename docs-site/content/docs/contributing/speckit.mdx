@@ -1,37 +1,57 @@
 ---
 title: SpecKit
-description: The AI-assisted feature specification workflow used in Adagio.
+description: The AI-assisted specification workflow used for every Adagio feature.
 ---
 
-SpecKit is a set of Claude Code slash commands that guide a feature from idea to implementation with structured, reviewable artifacts.
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+SpecKit is a suite of Claude Code slash commands that take a feature from a natural language idea all the way to a committed implementation, producing structured and reviewable artifacts at each stage. Every significant Adagio feature goes through this pipeline.
 
 ## Commands
 
 | Command | What it does |
-|---------|-------------|
-| `/speckit-specify` | Turns a natural language description into a feature spec (`spec.md`) with user stories, FRs, and acceptance criteria |
-| `/speckit-clarify` | Asks up to 5 targeted questions to resolve underspecified areas in the spec |
-| `/speckit-plan` | Generates an implementation plan (`plan.md`) with tech stack, architecture, and file structure |
-| `/speckit-tasks` | Produces `tasks.md` — an ordered, dependency-resolved task list ready to execute |
-| `/speckit-implement` | Executes the task list, marking tasks complete as it goes |
-| `/speckit-git-commit` | Stages and commits the result |
-| `/speckit-analyze` | Runs a cross-artifact consistency and quality analysis |
+|---|---|
+| `/speckit-specify` | Turns a natural language description into `spec.md` with user stories, functional requirements, and acceptance criteria |
+| `/speckit-clarify` | Asks up to 5 targeted questions to resolve underspecified areas in the spec and encodes the answers back in |
+| `/speckit-plan` | Generates `plan.md` with technology choices, architecture decisions, and a proposed file structure |
+| `/speckit-tasks` | Produces `tasks.md` — a dependency-ordered, ready-to-execute task list |
+| `/speckit-implement` | Executes the task list, marking each task complete as it finishes |
+| `/speckit-git-commit` | Stages and commits the result with a structured commit message |
+| `/speckit-analyze` | Runs a cross-artifact consistency and quality analysis across spec, plan, and tasks |
 
-## Artifact locations
+## Artifact Locations
 
-All SpecKit artifacts for feature NNN live at:
+All SpecKit artifacts for a feature live under `specs/NNN-feature-name/`:
 
 ```
 specs/NNN-feature-name/
-├── spec.md
-├── research.md
-├── plan.md
-├── data-model.md
-├── tasks.md
-├── contracts/
-└── checklists/
+├── spec.md          # User stories, FRs, acceptance criteria
+├── research.md      # Technology research and decisions
+├── plan.md          # Architecture, file structure, tech stack
+├── data-model.md    # Schema and type definitions
+├── tasks.md         # Ordered implementation task list
+├── contracts/       # Interface contracts (IPC messages, API shapes)
+└── checklists/      # QA and review checklists
 ```
 
-## Adding documentation alongside a feature
+<Callout type="info">
+The `contracts/` directory is the authoritative source for any cross-crate interface introduced by the feature. If you change an IPC message type or a storage schema, update the corresponding contract file before opening a PR.
+</Callout>
 
-When implementing a new feature (e.g. `019-lan-peer`), add corresponding MDX pages to `docs-site/content/docs/` as part of the same PR. Update the relevant `meta.json` and verify the build passes.
+## Adding Docs Alongside a Feature
+
+Documentation for a new feature belongs in the **same PR** as the implementation. When working on feature `NNN`:
+
+1. Add `.mdx` pages to `docs-site/content/docs/` in the appropriate section.
+2. Register each new slug in the section's `meta.json` `pages` array.
+3. Run `npm run build` inside `docs-site/` and confirm the build passes with zero errors.
+
+<Callout type="tip">
+If you are unsure which section a new page belongs in, check the existing `meta.json` files in `docs-site/content/docs/` for the section structure, or open a draft PR and ask for guidance in the description.
+</Callout>
+
+<Cards>
+  <Card href="/docs/contributing/dev-workflow" title="Dev Workflow" description="Branch naming, PR process, and the full contribution guide." />
+  <Card href="/docs/contributing/build" title="Build the Docs" description="Run and build the documentation site locally." />
+</Cards>

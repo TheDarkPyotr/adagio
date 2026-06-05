@@ -15,9 +15,9 @@ desirable for debugging, and credentials must never be written to disk.
 Store configuration as a JSON file (`config.json`) in the platform's application config
 directory, resolved by Tauri's `app_config_dir()`:
 
-- **Linux**: `~/.config/ai.neuralagent.adagio/config.json`
-- **macOS**: `~/Library/Application Support/ai.neuralagent.adagio/config.json`
-- **Windows**: `%APPDATA%\ai.neuralagent.adagio\config.json`
+- **Linux**: `~/.config/adagio/config.json`
+- **macOS**: `~/Library/Application Support/adagio/config.json`
+- **Windows**: `%APPDATA%\adagio\config.json`
 
 Serialisation via `serde_json` (already a workspace dependency).
 The file contains account metadata and pair configuration.

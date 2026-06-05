@@ -1,26 +1,58 @@
 ---
 title: Network Awareness
-description: How Adagio adapts sync behaviour to the current network and battery state.
+description: Adagio automatically adapts sync behaviour to metered connections, battery state, and blocked SSIDs.
 ---
 
-## Metered connection detection
+Adagio monitors your network type and power source so that syncing never runs up an unexpected data bill or drains your battery during a meeting.
 
-Adagio queries NetworkManager to determine whether the active connection is metered (e.g. a mobile hotspot). On metered connections sync pauses automatically.
+## Detect metered connections
 
-Override this in **Settings** → **Network** → **Sync on metered connections**.
+Adagio queries **NetworkManager** to determine whether the active connection is flagged as metered (for example, a mobile hotspot or a tethered LTE connection). When a metered connection is detected, sync pauses automatically.
 
-## Battery state
+Override this behaviour in **Settings** → **Network** → **Sync on metered connections**.
 
-On battery power Adagio reduces sync frequency to conserve energy. Full sync resumes when AC power is detected.
+## Adapt to battery state
 
-Override in **Settings** → **Network** → **Sync on battery**.
+On battery power Adagio reduces the sync polling frequency to conserve energy. Full-speed polling resumes automatically when AC power is detected.
 
-## SSID blocklist
+Override this in **Settings** → **Network** → **Sync on battery**.
 
-Add network names (SSIDs) that should never trigger sync — useful for untrusted Wi-Fi or expensive roaming networks.
+## Block specific SSIDs
 
-**Settings** → **Network** → **Blocked SSIDs** → **Add**.
+Add network names (SSIDs) that should never trigger sync — useful for untrusted public Wi-Fi, expensive hotel networks, or roaming connections that NetworkManager does not automatically flag as metered.
 
-## Manual override
+**Settings** → **Network** → **Blocked SSIDs** → **Add**
 
-The **Sync Now** button in the tray menu always triggers an immediate cycle regardless of network-awareness rules. Use this when you know a sync is safe.
+Or use the CLI:
+
+```bash
+adagio network block-ssid "Coffee Shop Free WiFi"
+```
+
+To remove a blocked SSID:
+
+```bash
+adagio network unblock-ssid "Coffee Shop Free WiFi"
+```
+
+## Review the policy options
+
+| Policy setting | Option | Behaviour |
+|----------------|--------|-----------|
+| `on_metered` | `allow` | Sync proceeds normally on metered connections |
+| `on_metered` | `throttle` | Sync runs at a reduced bandwidth cap |
+| `on_metered` | `pause` | Sync halts until the connection is no longer metered |
+| `on_battery` | `allow` | Sync proceeds at full frequency on battery |
+| `on_battery` | `throttle` | Sync polls less frequently on battery |
+| `on_battery` | `pause` | Sync halts until AC power is restored |
+
+<Callout type="info">All network-awareness overrides are available in **Settings** → **Network**.</Callout>
+
+## Override network rules manually
+
+**Sync Now** in the tray menu always fires an immediate full sync cycle regardless of any active network-awareness rules. Use this when you know the transfer is safe and you need the latest files now.
+
+<Cards>
+  <Card href="/docs/user-guide/bandwidth" title="Bandwidth Controls" />
+  <Card href="/docs/user-guide/file-sync" title="File Sync" />
+</Cards>

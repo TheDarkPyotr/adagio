@@ -8,7 +8,7 @@
 cargo build -p adagio-daemon -p adagio-cli
 
 # Daemon running with a configured Nextcloud account
-./target/debug/adagio-daemon --config-dir ~/.config/ai.neuralagent.adagio/ &
+./target/debug/adagio-daemon --config-dir ~/.config/adagio/ &
 sleep 1
 
 # Confirm the Nextcloud server has end_to_end_encryption ≥ 2.0 enabled
@@ -131,7 +131,7 @@ Open the desktop app → navigate to the E2EE pair in the file browser.
 
 ```bash
 # Simulate unknown metadata version by manually patching the DB
-sqlite3 ~/.config/ai.neuralagent.adagio/adagio.db \
+sqlite3 ~/.config/adagio/adagio.db \
   "UPDATE e2ee_folder_state SET metadata_version='99.0' WHERE pair_id='$PAIR_ID';"
 
 # Attempt upload; the runner should abort immediately

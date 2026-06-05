@@ -1,37 +1,95 @@
 ---
 title: Development Workflow
-description: How to contribute code and documentation to Adagio.
+description: Branch naming, PR process, and the SpecKit feature pipeline.
 ---
 
-## Feature workflow
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
 
-Adagio uses the SpecKit workflow for all significant new features:
+Every significant feature in Adagio goes through a structured pipeline using SpecKit slash commands before a line of production code is written. Smaller fixes and documentation changes can skip directly to a branch and PR.
 
-1. **Specify** — `/speckit-specify` creates a spec from a natural language description
-2. **Research** — decisions and technology choices are recorded in `research.md`
-3. **Plan** — `/speckit-plan` generates `plan.md` with architecture and file structure
-4. **Tasks** — `/speckit-tasks` produces `tasks.md` with ordered, dependency-resolved tasks
-5. **Implement** — `/speckit-implement` executes the task plan
-6. **Commit** — `/speckit-git-commit` stages and commits the result
+## Feature Workflow
 
-Design artifacts live in `specs/NNN-feature-name/`.
+<Steps>
+<Step>
+**Specify** — run `/speckit-specify` with a natural language description of the feature. This produces `spec.md` with user stories, functional requirements, and acceptance criteria.
+</Step>
+<Step>
+**Clarify** — run `/speckit-clarify` to surface underspecified areas. Up to five targeted questions are asked and their answers are encoded back into the spec before continuing.
+</Step>
+<Step>
+**Plan** — run `/speckit-plan` to generate `plan.md` with the chosen technology, architecture decisions, and a proposed file structure.
+</Step>
+<Step>
+**Tasks** — run `/speckit-tasks` to produce `tasks.md`: a dependency-ordered list of concrete implementation tasks.
+</Step>
+<Step>
+**Implement** — run `/speckit-implement` to execute the task list. Tasks are marked complete as they finish.
+</Step>
+<Step>
+**Commit** — run `/speckit-git-commit` to stage and commit the result with a structured commit message.
+</Step>
+</Steps>
 
-## Branch naming
+All design artifacts for feature `NNN` live under:
+
+```
+specs/NNN-feature-name/
+```
+
+## Branch Naming
+
+Branches follow sequential three-digit numbering:
 
 ```
 NNN-short-description
 ```
 
-Examples: `013-e2ee-encryption`, `018-mkdocs-docs-site`.
+Examples: `013-e2ee-encryption`, `018-mkdocs-docs-site`, `019-lan-peer`.
 
-## Pull request process
+<Callout type="tip">
+Open the PR as a draft immediately after pushing the first commit. This lets CI run on every subsequent push without waiting for the branch to be marked ready for review.
+</Callout>
 
-1. Open a draft PR early so CI can run on each push.
-2. Ensure `cargo clippy -- -D warnings`, `cargo fmt --check`, and `cargo test` all pass.
-3. For documentation changes: `npm run build` inside `docs-site/` must pass with zero errors.
-4. Add a brief description in the PR body explaining *why* the change is needed.
-5. Request review from a maintainer.
+## Pull Request Process
+
+All of the following must pass before a PR can be merged:
+
+| Check | Command |
+|---|---|
+| Rust lint | `cargo clippy -- -D warnings` |
+| Rust formatting | `cargo fmt --check` |
+| Rust tests | `cargo test` |
+| Docs build (if docs changed) | `npm run build` inside `docs-site/` |
+
+In addition:
+
+- Write a PR description that explains **why** the change is needed, not just what it does.
+- For features that include new or changed public API, storage schema, or cross-crate interfaces, create an ADR before the PR is opened (see below).
+- Request review from a maintainer when CI is green.
 
 ## Architecture Decision Records
 
-Significant design decisions are recorded as ADRs in `docs/adr/`. Create an ADR file named `ADR-NNN-short-description.md` before implementing any decision that affects the public API, storage format, or cross-crate interface.
+Any decision that affects:
+
+- a public API surface,
+- the on-disk storage format (e.g. journal schema changes), or
+- a cross-crate interface (e.g. changes to `adagio-ipc` message types)
+
+must be documented as an ADR **before** the implementation PR is opened.
+
+Create the file at:
+
+```
+docs/adr/ADR-NNN-short-description.md
+```
+
+<Callout type="warning">
+ADRs are append-only records. If a previous decision is superseded, write a new ADR that references the old one — do not edit the original.
+</Callout>
+
+<Cards>
+  <Card href="/docs/contributing/speckit" title="SpecKit" description="AI-assisted specification workflow for new features." />
+  <Card href="/docs/contributing/build" title="Build the Docs" description="Run and build the documentation site locally." />
+</Cards>

@@ -115,9 +115,7 @@ pub fn run() {
             //
             // On macOS / Windows, the same menu is available on right-click;
             // left-click still toggles the WebView popover directly.
-            let tray = app
-                .tray_by_id("main")
-                .or_else(|| app.tray_by_id("ai.neuralagent.adagio"));
+            let tray = app.tray_by_id("main").or_else(|| app.tray_by_id("adagio"));
             if tray.is_none() {
                 tracing::warn!(
                     "no tray icon registered — tray host may be unavailable \

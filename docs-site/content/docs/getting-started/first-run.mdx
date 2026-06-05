@@ -1,36 +1,80 @@
 ---
 title: First Run
-description: Launching Adagio for the first time.
+description: Launch Adagio for the first time, complete the onboarding wizard, and confirm the background daemon is running.
 ---
 
-After installation, launch Adagio from your application launcher or by running:
+The first time you launch Adagio it runs an onboarding wizard that connects your Nextcloud account and configures your first sync pair. The whole process takes about two minutes.
+
+## Launch Adagio
+
+<Steps>
+<Step>
+Open Adagio from your application launcher, or run it from a terminal:
 
 ```bash
 adagio-desktop
 ```
 
-## Onboarding wizard
+The application window opens and the onboarding wizard starts automatically on the first launch.
+</Step>
+<Step>
+**Welcome screen** — Read the feature overview and click **Get started**.
+</Step>
+<Step>
+**Add account** — Enter your Nextcloud server URL, username, and password. Adagio tests the connection before moving on. See [Account Setup](/docs/getting-started/account-setup) for details.
+</Step>
+<Step>
+**Choose pairs** — Select which local directory to sync with which Nextcloud folder. You can add, remove, or reconfigure pairs later from **Settings → Pairs**.
+</Step>
+<Step>
+**Review** — Confirm your settings and click **Start syncing**. Adagio registers the systemd user service and the initial sync begins.
+</Step>
+</Steps>
 
-On first launch the onboarding wizard guides you through:
+## Manage the background daemon
 
-1. **Welcome** — overview of Adagio features
-2. **Add account** — provide your Nextcloud server URL, username and password
-3. **Choose pairs** — select which local directories to sync with Nextcloud folders
-4. **Review** — confirm settings before the daemon starts
-
-## Daemon auto-start
-
-Adagio registers a systemd user service on first run so the daemon (`adagio-daemon`) starts automatically on login. You can manage it with:
+Adagio registers `adagio-daemon` as a systemd user service on first run so it starts automatically at login, even when the desktop UI is closed.
 
 ```bash
+# Check daemon status
 systemctl --user status adagio-daemon
+
+# Restart after a configuration change
 systemctl --user restart adagio-daemon
+
+# Stop the daemon
+systemctl --user stop adagio-daemon
+
+# Disable auto-start (not recommended)
+systemctl --user disable adagio-daemon
 ```
 
-## Configuration files
+<Callout type="info">
+The daemon and the UI communicate over a Unix domain socket. The socket path is `~/.config/adagio/daemon.sock`. If the desktop UI cannot connect, check that the daemon service is running with the `status` command above.
+</Callout>
 
-All configuration and state files live under:
+## Configuration directory
+
+All configuration, credentials cache, and state files live under:
 
 ```
-~/.config/ai.neuralagent.adagio/
+~/.config/adagio/
 ```
+
+Key files inside that directory:
+
+| File | Purpose |
+|---|---|
+| `config.toml` | Account and pair definitions |
+| `daemon.sock` | Unix socket for IPC |
+| `daemon.log` | Rolling log file for the daemon |
+| `pairs/<id>/` | Per-pair state and conflict records |
+
+<Callout type="tip">
+To reset Adagio to a clean state, stop the daemon and delete `~/.config/adagio/`. The next launch will run the onboarding wizard again.
+</Callout>
+
+<Cards>
+  <Card href="/docs/getting-started/account-setup" title="Account Setup" />
+  <Card href="/docs/user-guide/file-sync" title="File Sync" />
+</Cards>

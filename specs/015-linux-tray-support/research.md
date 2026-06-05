@@ -178,7 +178,7 @@ const mod = platform === 'macos' ? '⌘' : 'Ctrl+';
 
 **Decision**: The existing `set_start_at_login` command forwards to the daemon, which handles XDG autostart. No changes needed to the autostart mechanism for this feature.
 
-**Rationale**: `daemon.rs` already has `set_start_at_login` which calls `DaemonRequest::SetStartAtLogin`. The daemon writes `~/.config/autostart/ai.neuralagent.adagio.desktop`. This launches the **daemon** at login, not the desktop app. For the tray icon to appear automatically, the desktop app also needs an autostart entry. This is a separate concern already covered by Tauri's `tauri-plugin-autostart` or the user launching Adagio from the application launcher.
+**Rationale**: `daemon.rs` already has `set_start_at_login` which calls `DaemonRequest::SetStartAtLogin`. The daemon writes `~/.config/autostart/adagio.desktop`. This launches the **daemon** at login, not the desktop app. For the tray icon to appear automatically, the desktop app also needs an autostart entry. This is a separate concern already covered by Tauri's `tauri-plugin-autostart` or the user launching Adagio from the application launcher.
 
 For v1, the scope is: the tray icon appears when the user manually starts Adagio. The "Start at login" preference (for the daemon) is a separate pre-existing feature. A future feature can add GUI-launched autostart for the desktop app.
 

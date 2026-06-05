@@ -11,7 +11,7 @@ cargo build -p adagio-daemon -p adagio-cli
 ls /dev/fuse && fusermount3 --version
 
 # Daemon running
-./target/debug/adagio-daemon --config-dir ~/.config/ai.neuralagent.adagio/ &
+./target/debug/adagio-daemon --config-dir ~/.config/adagio/ &
 sleep 1
 ```
 

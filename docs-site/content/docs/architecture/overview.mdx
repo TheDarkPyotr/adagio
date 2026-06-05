@@ -1,45 +1,77 @@
 ---
 title: Architecture Overview
-description: How the Adagio crates fit together.
+description: How the eight Adagio crates fit together.
 ---
 
-Adagio is a Rust/Tauri application structured as a Cargo workspace with eight crates.
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
 
-## Crate map
+Adagio is a Rust/Tauri workspace split into eight crates. A long-running daemon process owns the sync engine and exposes a Unix domain socket; the desktop UI (Tauri + React) and the CLI both connect to that socket and exchange NDJSON IPC messages to query state and trigger actions.
+
+## Crate Map
 
 | Crate | Purpose |
-|-------|---------|
+|---|---|
 | `adagio-core` | Shared domain types, sync engine (journal, reconciler, propagator), SQLite WAL journal |
-| `adagio-daemon` | Long-running background process; hosts the sync engine and Unix socket IPC server |
-| `adagio-desktop` | Tauri + React desktop UI; communicates with the daemon via IPC |
-| `adagio-cli` | Command-line interface; thin client that sends IPC requests to the daemon |
-| `adagio-ipc` | IPC message types (`DaemonRequest`, `DaemonResponse`, `DaemonEvent`) shared by all crates |
-| `adagio-nextcloud` | Nextcloud WebDAV and API client (file listing, propfind, upload, metadata) |
-| `adagio-e2ee` | Nextcloud E2EE v2 protocol implementation (RSA, AES-128-GCM, metadata, mnemonic) |
-| `adagio-vfs` | FUSE3 virtual filesystem driver for on-demand file delivery |
+| `adagio-daemon` | Long-running IPC server and sync orchestrator |
+| `adagio-desktop` | Tauri + React desktop UI; communicates with the daemon over IPC |
+| `adagio-cli` | `clap`-based CLI; thin IPC client that forwards commands to the daemon |
+| `adagio-ipc` | Shared `DaemonRequest`, `DaemonResponse`, and `DaemonEvent` message types |
+| `adagio-nextcloud` | WebDAV + Nextcloud REST API client (propfind, upload, file metadata) |
+| `adagio-e2ee` | Nextcloud E2EE v2 protocol — RSA-2048, AES-128-GCM, BIP-39 mnemonic |
+| `adagio-vfs` | FUSE3 on-demand virtual filesystem driver |
 
-## Architecture diagram
+## Architecture Diagram
 
 ```
-┌─────────────────┐   IPC (Unix socket)  ┌───────────────────────────────┐
-│  adagio-desktop │◄────────────────────►│          adagio-daemon         │
-│  (Tauri/React)  │                      │  ┌───────────┐  ┌──────────┐  │
-└─────────────────┘                      │  │ SyncEngine│  │ IPC srv  │  │
-                                         │  └─────┬─────┘  └──────────┘  │
-┌─────────────────┐   IPC (Unix socket)  │        │                       │
-│   adagio-cli    │◄────────────────────►│  ┌─────▼─────┐                │
-│   (clap CLI)    │                      │  │ Propagator│                │
-└─────────────────┘                      │  └─────┬─────┘                │
-                                         └────────┼───────────────────────┘
-                                                  │ WebDAV
-                                         ┌────────▼──────────┐
-                                         │ adagio-nextcloud  │
-                                         │  (reqwest client) │
-                                         └───────────────────┘
+┌──────────────────┐  IPC (Unix socket, NDJSON)  ┌─────────────────────────────────────────┐
+│  adagio-desktop  │◄───────────────────────────►│             adagio-daemon               │
+│  (Tauri / React) │                             │  ┌────────────────┐  ┌───────────────┐  │
+└──────────────────┘                             │  │  SyncEngine    │  │  IPC server   │  │
+                                                 │  │  (adagio-core) │  └───────────────┘  │
+┌──────────────────┐  IPC (Unix socket, NDJSON)  │  └───────┬────────┘                     │
+│   adagio-cli     │◄───────────────────────────►│          │ Propagator                   │
+│   (clap CLI)     │                             └──────────┼──────────────────────────────┘
+└──────────────────┘                                        │
+                                          ┌─────────────────┼──────────────────┐
+                                          │                 │ WebDAV / OCS     │
+                                          │   ┌─────────────▼────────────────┐ │
+                                          │   │      adagio-nextcloud        │ │
+                                          │   └──────────────────────────────┘ │
+                                          │                                     │
+                                          │   ┌──────────────────────────────┐ │
+                                          │   │        adagio-e2ee           │ │
+                                          │   └──────────────────────────────┘ │
+                                          │                                     │
+                                          │   ┌──────────────────────────────┐ │
+                                          │   │        adagio-vfs            │ │
+                                          │   └──────────────────────────────┘ │
+                                          └─────────────────────────────────────┘
 ```
 
-## IPC flow
+## IPC Flow
 
-1. The desktop UI or CLI sends a `DaemonRequest` JSON message over the Unix socket.
-2. The daemon's IPC server deserialises the message, dispatches to the appropriate handler, and returns a `DaemonResponse`.
-3. Push events (`DaemonEvent`) are sent asynchronously to all subscription connections when sync state changes.
+All communication between clients (desktop or CLI) and the daemon follows the same three-step lifecycle.
+
+<Steps>
+<Step>
+**Send request** — the desktop UI or CLI serialises a `DaemonRequest` as a newline-delimited JSON message and writes it to the Unix socket.
+</Step>
+<Step>
+**Dispatch and respond** — the daemon's IPC server deserialises the message, routes it to the appropriate handler, and writes a `DaemonResponse` back to the same connection.
+</Step>
+<Step>
+**Receive push events** — the daemon broadcasts `DaemonEvent` messages asynchronously to all connected subscribers whenever sync state changes (file uploaded, conflict detected, pair status update, etc.).
+</Step>
+</Steps>
+
+<Callout type="info">
+The IPC message types are defined in `adagio-ipc` and re-exported by every crate that needs them, so there is a single source of truth for the wire format.
+</Callout>
+
+<Cards>
+  <Card href="/docs/architecture/sync-engine" title="Sync Engine" description="Journal, reconciler, and propagator internals." />
+  <Card href="/docs/architecture/vfs-driver" title="VFS Driver" description="FUSE3 on-demand filesystem." />
+  <Card href="/docs/architecture/e2ee-protocol" title="E2EE Protocol" description="Nextcloud E2EE v2 implementation." />
+</Cards>

@@ -1,67 +1,95 @@
 ---
 title: CLI Reference
-description: Complete reference for the adagio command-line interface.
+description: Complete reference for every adagio subcommand.
 ---
 
-The `adagio` CLI communicates with the background daemon over a Unix socket. All commands accept `--json` before the subcommand to output machine-readable JSON instead of formatted text.
+The `adagio` CLI is the primary interface for managing sync pairs, accounts, conflicts, bandwidth, network policies, VFS, and end-to-end encryption. Every subcommand communicates with the background daemon over a Unix socket.
+
+<Callout type="info">
+All commands require the daemon to be running. Start it with `adagio daemon start` before using any other subcommand.
+</Callout>
+
+## Global flags
+
+| Flag | Description |
+|------|-------------|
+| `--json` | Output machine-readable JSON instead of formatted text. Place before the subcommand: `adagio --json status`. |
+| `--help` | Show help for any command or subcommand. |
+| `--version` | Print the installed version and exit. |
 
 ```bash
-adagio [--json] <command> [subcommand] [options]
+adagio [--json] <command> [subcommand] [flags]
 ```
 
 ---
 
 ## adagio status
 
-Show sync status for all configured pairs.
+Show the current sync status across all configured pairs.
 
 ```bash
 adagio status
 ```
 
+Returns the engine state (`idle`, `syncing`, or `error`), per-pair transfer counts, and any active conflict count.
+
 ---
 
 ## adagio sync
 
-Trigger an immediate sync cycle.
+Trigger an immediate out-of-schedule sync cycle.
 
 ```bash
-adagio sync [--pair-id <PAIR_ID>]
+adagio sync [--pair-id <ID>]
 ```
 
-| Flag | Description |
-|------|-------------|
-| `--pair-id` | Sync only this pair. Omit to sync all pairs. |
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--pair-id` | string | — | Sync only the specified pair. Omit to sync all pairs. |
+
+```bash
+adagio sync --pair-id abc123
+```
 
 ---
 
-## adagio pause / resume
+## adagio pause / adagio resume
+
+Pause or resume all sync activity without removing pairs.
 
 ```bash
-adagio pause    # Pause all sync activity
-adagio resume   # Resume after pause
+adagio pause    # Suspend all sync polling and transfers
+adagio resume   # Resume after a pause
 ```
 
 ---
 
 ## adagio activity
 
-Show recent sync activity log.
+Show the recent sync activity log.
 
 ```bash
 adagio activity [--limit <N>] [--filter <edit|sync|conflict>]
 ```
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--limit` | 50 | Maximum log entries to show |
-| `--filter` | — | Filter by kind: `edit`, `sync`, `conflict` |
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--limit` | integer | 50 | Maximum number of log entries to return. |
+| `--filter` | string | — | Restrict output to entries of kind `edit`, `sync`, or `conflict`. |
+
+```bash
+adagio activity --limit 100 --filter conflict
+```
 
 ---
 
 ## adagio pairs
 
+Manage sync pairs — the link between a local directory and a remote Nextcloud folder.
+
 ### pairs list
+
+List all configured pairs with their IDs, local roots, remote roots, and current status.
 
 ```bash
 adagio pairs list
@@ -69,27 +97,41 @@ adagio pairs list
 
 ### pairs add
 
+Create a new sync pair.
+
 ```bash
 adagio pairs add --local <PATH> --remote <PATH> --account <ID> [--vfs] [--vfs-cache-bytes <N>]
 ```
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--local` | ✓ | Local directory to sync |
-| `--remote` | ✓ | Remote Nextcloud folder path |
-| `--account` | ✓ | Account ID to associate with this pair |
-| `--vfs` | — | Enable VFS on-demand mode |
-| `--vfs-cache-bytes` | — | Max VFS cache size in bytes (default: 20 GB) |
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--local` | path | **required** | Local directory to sync. |
+| `--remote` | path | **required** | Remote Nextcloud folder path (e.g. `/Documents`). |
+| `--account` | string | **required** | Account ID to associate with this pair. |
+| `--vfs` | bool | false | Enable FUSE3 virtual filesystem on-demand mode. |
+| `--vfs-cache-bytes` | integer | 21474836480 | Maximum local VFS cache size in bytes (default 20 GB). |
+
+```bash
+adagio pairs add --local ~/Nextcloud --remote / --account acct1 --vfs --vfs-cache-bytes 10737418240
+```
 
 ### pairs remove
+
+Remove a pair. The remote files are never deleted; local files are preserved unless `--delete-local-files` is passed.
 
 ```bash
 adagio pairs remove <PAIR_ID> [--delete-local-files]
 ```
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--delete-local-files` | bool | false | Also delete the local directory and its contents. |
+
 ---
 
 ## adagio accounts
+
+Manage Nextcloud accounts.
 
 ### accounts list
 
@@ -103,9 +145,15 @@ adagio accounts list
 adagio accounts remove <ACCOUNT_ID>
 ```
 
+<Callout type="warn">
+Removing an account also stops all pairs that depend on it. The daemon will not delete any local or remote files.
+</Callout>
+
 ---
 
 ## adagio conflicts
+
+Inspect and resolve file conflicts.
 
 ### conflicts list
 
@@ -113,15 +161,27 @@ adagio accounts remove <ACCOUNT_ID>
 adagio conflicts list [<PAIR_ID>]
 ```
 
+Omit `PAIR_ID` to list conflicts across all pairs.
+
 ### conflicts resolve
+
+Resolve a single conflict by choosing which version to keep.
 
 ```bash
 adagio conflicts resolve <CONFLICT_ID> --keep <local|remote|both>
 ```
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--keep` | string | **required** | Which version to keep: `local`, `remote`, or `both` (saves a copy of each). |
+
+```bash
+adagio conflicts resolve c7f3a --keep local
+```
+
 ### conflicts dismiss
 
-Dismiss all pending conflicts without file I/O:
+Dismiss all pending conflicts without writing any files. Useful when you want to silence stale conflicts surfaced after a schema migration.
 
 ```bash
 adagio conflicts dismiss
@@ -131,17 +191,37 @@ adagio conflicts dismiss
 
 ## adagio daemon
 
-### daemon start / stop / status
+Control the background daemon process.
+
+### daemon start
 
 ```bash
 adagio daemon start
-adagio daemon stop    # Waits up to 30 s for in-flight transfers
+```
+
+Spawns the daemon as a detached background process and returns immediately.
+
+### daemon stop
+
+```bash
+adagio daemon stop
+```
+
+Requests graceful shutdown. The daemon drains in-flight transfers for up to 30 seconds before exiting.
+
+### daemon status
+
+```bash
 adagio daemon status
 ```
+
+Returns whether the daemon is running, its PID, uptime, and connection state.
 
 ---
 
 ## adagio bandwidth
+
+Manage per-account transfer rate limits using a token-bucket throttle.
 
 ### bandwidth status
 
@@ -155,7 +235,18 @@ adagio bandwidth status
 adagio bandwidth set [--upload-kbps <N>] [--download-kbps <N>]
 ```
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--upload-kbps` | integer | unlimited | Upload rate cap in kilobits per second. |
+| `--download-kbps` | integer | unlimited | Download rate cap in kilobits per second. |
+
+```bash
+adagio bandwidth set --upload-kbps 1024 --download-kbps 4096
+```
+
 ### bandwidth clear
+
+Remove all bandwidth limits and restore unlimited transfer rates.
 
 ```bash
 adagio bandwidth clear
@@ -164,6 +255,8 @@ adagio bandwidth clear
 ---
 
 ## adagio network
+
+Configure behaviour on metered connections, battery, and blocked Wi-Fi networks.
 
 ### network status
 
@@ -174,10 +267,24 @@ adagio network status
 ### network set
 
 ```bash
-adagio network set [--on-metered <allow|throttle|pause>] [--on-battery <allow|throttle|pause>] [--throttle-kbps <N>]
+adagio network set [--on-metered <allow|throttle|pause>] \
+                   [--on-battery <allow|throttle|pause>] \
+                   [--throttle-kbps <N>]
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--on-metered` | string | `allow` | Behaviour on metered connections: `allow`, `throttle`, or `pause`. |
+| `--on-battery` | string | `allow` | Behaviour when running on battery: `allow`, `throttle`, or `pause`. |
+| `--throttle-kbps` | integer | — | Rate used when the policy is `throttle`, in kbps. |
+
+```bash
+adagio network set --on-metered throttle --throttle-kbps 512
 ```
 
 ### network block-ssid / unblock-ssid / list-blocked
+
+Prevent syncing when connected to specific Wi-Fi networks.
 
 ```bash
 adagio network block-ssid <SSID>
@@ -185,9 +292,15 @@ adagio network unblock-ssid <SSID>
 adagio network list-blocked
 ```
 
+```bash
+adagio network block-ssid "CoffeeShop-Guest"
+```
+
 ---
 
 ## adagio vfs
+
+Manage the FUSE3 virtual filesystem. Files exist as placeholders until accessed; the daemon fetches content on demand.
 
 ### vfs status
 
@@ -195,38 +308,74 @@ adagio network list-blocked
 adagio vfs status [--pair-id <ID>]
 ```
 
-### vfs pin / unpin
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--pair-id` | string | — | Scope output to a single pair. |
+
+### vfs pin / vfs unpin
+
+Mark a path so its content is always kept local (pinned) or return it to on-demand mode (unpinned).
 
 ```bash
-adagio vfs pin <PATH> --pair-id <ID>
+adagio vfs pin   <PATH> --pair-id <ID>
 adagio vfs unpin <PATH> --pair-id <ID>
+```
+
+```bash
+adagio vfs pin Documents/tax-2025.pdf --pair-id abc123
 ```
 
 ### vfs evict
 
+Remove cached content for a file or directory, freeing local disk space. The placeholder remains; the daemon re-fetches on next access.
+
 ```bash
 adagio vfs evict [<PATH>] --pair-id <ID> [--all]
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--pair-id` | string | **required** | Pair whose cache to evict from. |
+| `--all` | bool | false | Evict the entire pair cache. `PATH` is ignored when `--all` is set. |
+
+```bash
+adagio vfs evict Videos/ --pair-id abc123
 ```
 
 ---
 
 ## adagio e2ee
 
+Manage Nextcloud E2EE v2 (AES-128-GCM) for a pair. The BIP-39 mnemonic is the recovery secret — store it securely offline.
+
 ### e2ee init
 
-Initialise E2EE for a pair and print the one-time BIP-39 mnemonic:
+Initialise end-to-end encryption for a pair. Generates RSA-2048 keys, posts V2 metadata, and prints the one-time BIP-39 mnemonic.
 
 ```bash
 adagio e2ee init [--pair-id <ID>]
 ```
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--pair-id` | string | — | Pair to initialise. Required if more than one pair exists. |
+
+```bash
+adagio e2ee init --pair-id abc123
+```
+
 ### e2ee pair
 
-Pair this device with an existing E2EE key:
+Register this device with an existing E2EE key by supplying the mnemonic from the init device.
 
 ```bash
 adagio e2ee pair [--pair-id <ID>] [--mnemonic <WORDS>]
 ```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--pair-id` | string | — | Pair to register this device for. |
+| `--mnemonic` | string | — | Space-separated BIP-39 mnemonic (24 words). Prompted interactively if omitted. |
 
 ### e2ee status
 
@@ -234,12 +383,9 @@ adagio e2ee pair [--pair-id <ID>] [--mnemonic <WORDS>]
 adagio e2ee status [--pair-id <ID>]
 ```
 
----
+Shows whether E2EE is enabled, the key fingerprint, and the number of encrypted files in the pair.
 
-## Global flags
-
-| Flag | Description |
-|------|-------------|
-| `--json` | Output JSON instead of formatted text (place before subcommand) |
-| `--help` | Show help |
-| `--version` | Show version |
+<Cards>
+  <Card href="/docs/daemon-ipc/protocol" title="Daemon IPC Protocol" />
+  <Card href="/docs/architecture/overview" title="Architecture Overview" />
+</Cards>

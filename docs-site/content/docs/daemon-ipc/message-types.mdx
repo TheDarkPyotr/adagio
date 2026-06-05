@@ -1,15 +1,17 @@
 ---
 title: Message Types
-description: All DaemonRequest, DaemonResponse, and DaemonEvent variants with JSON schemas.
+description: All DaemonRequest, DaemonResponse, and DaemonEvent variants with JSON examples.
 ---
 
-## DaemonRequest variants
+All messages use the NDJSON framing described in [IPC Protocol](./protocol). Request `id` values are caller-assigned integers echoed back in every response.
 
-All requests are serialised as `{"id": N, "method": "<snake_case>", ...fields}`.
+## DaemonRequest
+
+All requests: `{"id": N, "method": "<snake_case>", ...params}`.
 
 ### Ping
 
-Health-check; returns version and uptime.
+Health-check. Returns the daemon version and uptime.
 
 ```json
 {"id": 1, "method": "ping"}
@@ -17,7 +19,7 @@ Health-check; returns version and uptime.
 
 ### StopDaemon
 
-Request graceful shutdown (30 s drain).
+Request graceful shutdown. The daemon drains in-flight transfers for up to 30 seconds.
 
 ```json
 {"id": 2, "method": "stop_daemon"}
@@ -25,13 +27,15 @@ Request graceful shutdown (30 s drain).
 
 ### SetStartAtLogin
 
+Enable or disable launch-at-login registration.
+
 ```json
 {"id": 3, "method": "set_start_at_login", "enabled": true}
 ```
 
 ### GetStatus
 
-Return the current engine-level sync status.
+Return the current engine-level sync state.
 
 ```json
 {"id": 4, "method": "get_status"}
@@ -39,24 +43,41 @@ Return the current engine-level sync status.
 
 ### TriggerSync
 
+Force an immediate sync cycle for one pair or all pairs.
+
 ```json
 {"id": 5, "method": "trigger_sync", "pair_id": "abc123"}
 ```
 
-### PauseSyncAll / ResumeSyncAll
+### PauseSyncAll
+
+Suspend all sync polling and transfers.
 
 ```json
 {"id": 6, "method": "pause_sync_all"}
+```
+
+### ResumeSyncAll
+
+Resume after `pause_sync_all`.
+
+```json
 {"id": 7, "method": "resume_sync_all"}
 ```
 
 ### GetActivityLog
 
+Fetch the recent activity log, optionally filtered by kind.
+
 ```json
 {"id": 8, "method": "get_activity_log", "limit": 50, "filter": null}
 ```
 
+`filter` accepts `"edit"`, `"sync"`, `"conflict"`, or `null` for all.
+
 ### SearchFiles
+
+Full-text search across synced file names.
 
 ```json
 {"id": 9, "method": "search_files", "query": "report", "limit": 20}
@@ -64,113 +85,239 @@ Return the current engine-level sync status.
 
 ### GetSectionCounts
 
+Return UI section badge counts (all, recent, errors, conflicts).
+
 ```json
 {"id": 10, "method": "get_section_counts", "pair_id": null}
 ```
 
 ### GetErrorItems
 
+Return files currently in an error state for a pair.
+
 ```json
 {"id": 11, "method": "get_error_items", "pair_id": "abc123"}
 ```
 
-### ListPairs / CreatePair / DeletePair / ListSyncedFiles / ListRemoteTree
+### ListPairs
+
+Return all configured sync pairs.
 
 ```json
 {"id": 12, "method": "list_pairs"}
+```
 
-{"id": 13, "method": "create_pair",
+### CreatePair
+
+Create a new sync pair. `vfs_cache_max_bytes` defaults to 20 GB; `vfs_eviction_threshold_bytes` defaults to 16 GB.
+
+```json
+{
+  "id": 13,
+  "method": "create_pair",
   "account_id": "acct1",
   "local_root": "/home/user/Nextcloud",
   "remote_root": "/",
   "vfs_enabled": false,
   "vfs_cache_max_bytes": 21474836480,
-  "vfs_eviction_threshold_bytes": 17179869184}
+  "vfs_eviction_threshold_bytes": 17179869184
+}
+```
 
+### DeletePair
+
+Remove a pair. Set `delete_local_files` to `true` to also wipe the local directory.
+
+```json
 {"id": 14, "method": "delete_pair", "pair_id": "abc123", "delete_local_files": false}
+```
 
+### ListSyncedFiles
+
+List files tracked in the sync journal for a pair, optionally scoped to a sub-path.
+
+```json
 {"id": 15, "method": "list_synced_files", "pair_id": "abc123", "relative_path": null}
+```
 
+### ListRemoteTree
+
+Enumerate the remote Nextcloud folder tree for a pair.
+
+```json
 {"id": 16, "method": "list_remote_tree", "pair_id": "abc123"}
 ```
 
-### ListAccounts / AddAccount / RemoveAccount / ConnectAccountOAuth2
+### ListAccounts
 
 ```json
 {"id": 17, "method": "list_accounts"}
+```
 
-{"id": 18, "method": "add_account",
+### AddAccount
+
+Register a Nextcloud account with an app-password credential.
+
+```json
+{
+  "id": 18,
+  "method": "add_account",
   "server_url": "https://cloud.example.com",
   "username": "alice",
   "display_name": "Alice",
-  "secret": "app-password"}
+  "secret": "app-password"
+}
+```
 
+### RemoveAccount
+
+```json
 {"id": 19, "method": "remove_account", "account_id": "acct1"}
+```
 
+### ConnectAccountOAuth2
+
+Initiate an OAuth2 browser login flow for a Nextcloud instance.
+
+```json
 {"id": 20, "method": "connect_account_o_auth2", "server_url": "https://cloud.example.com"}
 ```
 
-### Conflicts
+### ListConflicts
 
 ```json
 {"id": 21, "method": "list_conflicts", "pair_id": "abc123"}
+```
+
+### ResolveConflict
+
+Resolve a single conflict. `side` is `"local"`, `"remote"`, or `"both"`.
+
+```json
 {"id": 22, "method": "resolve_conflict", "id": "conflict1", "side": "local"}
+```
+
+### DismissAllConflicts
+
+Dismiss all pending conflicts without writing any files.
+
+```json
 {"id": 23, "method": "dismiss_all_conflicts"}
 ```
 
-### Bandwidth
+### GetBandwidthStatus
 
 ```json
 {"id": 24, "method": "get_bandwidth_status", "account_id": null}
+```
+
+Pass `account_id` to scope to a single account, or `null` for global limits.
+
+### SetBandwidthLimits
+
+```json
 {"id": 25, "method": "set_bandwidth_limits", "account_id": null, "upload_kbps": 1024, "download_kbps": 2048}
+```
+
+### ClearBandwidthLimits
+
+```json
 {"id": 26, "method": "clear_bandwidth_limits", "account_id": null}
 ```
 
-### Network
+### GetNetworkStatus
 
 ```json
 {"id": 27, "method": "get_network_status"}
+```
+
+### SetNetworkPolicy
+
+`on_metered` and `on_battery` accept `"allow"`, `"throttle"`, or `"pause"`. Pass `null` to leave a field unchanged.
+
+```json
 {"id": 28, "method": "set_network_policy", "on_metered": "throttle", "on_battery": null, "throttle_kbps": 512}
+```
+
+### ManageBlockedSsid
+
+`action` is `"add"` or `"remove"`.
+
+```json
 {"id": 29, "method": "manage_blocked_ssid", "action": "add", "ssid": "CoffeeShop"}
 ```
 
-### VFS
+### GetVfsStats
 
 ```json
 {"id": 30, "method": "get_vfs_stats", "pair_id": "abc123"}
+```
+
+### SetVfsPin
+
+Pin or unpin a path. Set `pinned` to `false` to return a path to on-demand mode.
+
+```json
 {"id": 31, "method": "set_vfs_pin", "pair_id": "abc123", "path": "Documents/", "pinned": true}
+```
+
+### EvictVfsFile
+
+Free cached content for a specific file. The placeholder remains in place.
+
+```json
 {"id": 32, "method": "evict_vfs_file", "pair_id": "abc123", "path": "Videos/large.mp4"}
 ```
 
-### E2EE
+### E2eeInit
+
+Initialise E2EE for a pair. Generates RSA-2048 keys, posts Nextcloud E2EE v2 metadata, and returns the one-time BIP-39 mnemonic.
 
 ```json
 {"id": 33, "method": "e2ee_init", "pair_id": "abc123"}
-{"id": 34, "method": "e2ee_pair", "pair_id": "abc123", "mnemonic": "abandon ability ..."}
+```
+
+### E2eePair
+
+Register this device with an existing E2EE key using the mnemonic from the init device.
+
+```json
+{"id": 34, "method": "e2ee_pair", "pair_id": "abc123", "mnemonic": "abandon ability able ..."}
+```
+
+### E2eeStatus
+
+```json
 {"id": 35, "method": "e2ee_status", "pair_id": "abc123"}
+```
+
+### E2eeDisable
+
+Disable E2EE for a pair. Does not delete ciphertext from the remote.
+
+```json
 {"id": 36, "method": "e2ee_disable", "pair_id": "abc123"}
 ```
 
 ---
 
-## DaemonResponse variants
+## DaemonResponse
 
-All responses are `{"id": N, "result": <payload>}` or `{"id": N, "error": {...}}`.
+All responses: `{"id": N, "result": <payload>}` on success, or `{"id": N, "error": {"code": "...", "message": "..."}}` on failure.
 
 | Variant | Payload shape |
 |---------|---------------|
 | `Pong` | `{"version": "0.1.0", "uptime_secs": 3600}` |
 | `Unit` | `{}` |
-| `Status` | JSON object with sync engine state |
+| `Status` | Sync engine state object (status, active pair count, transfer stats) |
 | `Pairs` | Array of pair objects |
 | `Pair` | Single pair object |
 | `Accounts` | Array of account objects |
 | `Account` | Single account object |
 | `SyncedFiles` | Array of file-tree entries |
-| `Strings` | Array of strings (e.g. blocked SSIDs) |
-| `RemoteTree` | Array of remote file entries |
-| `ActivityLog` | Array of log entries |
-| `ErrorItems` | Array of error entries |
+| `Strings` | Array of strings (e.g. blocked SSIDs, file paths) |
+| `ActivityLog` | Array of activity log entries |
+| `ErrorItems` | Array of error-state file entries |
 | `Conflicts` | Array of conflict objects |
 | `DismissedCount` | `{"dismissed_count": N}` |
 | `Users` | Array of Nextcloud user objects |
@@ -179,14 +326,19 @@ All responses are `{"id": N, "result": <payload>}` or `{"id": N, "error": {...}}
 
 ---
 
-## DaemonEvent variants (push)
+## DaemonEvent
 
-Push events are `{"event": "<snake_case>", "payload": {...}}` sent on subscription connections.
+Push events are delivered on subscription connections as `{"event": "<snake_case>", "payload": {...}}`.
 
-| Event | Payload |
-|-------|---------|
-| `conflict_detected` | `{"pending_count": N}` |
-| `conflict_resolved` | `{"id": "...", "pending_count": N}` |
-| `sync_status_changed` | `{"status": "syncing\|idle\|error", "pair_id": "..."}` |
-| `transfer_progress` | `{"pair_id": "...", "path": "...", "bytes_done": N, "bytes_total": N}` |
-| `shutting_down` | `{"reason": "..."}` |
+| Event | Payload fields |
+|-------|----------------|
+| `conflict_detected` | `pending_count: integer` |
+| `conflict_resolved` | `id: string`, `pending_count: integer` |
+| `sync_status_changed` | `status: "syncing" \| "idle" \| "error"`, `pair_id: string` |
+| `transfer_progress` | `pair_id: string`, `path: string`, `bytes_done: integer`, `bytes_total: integer` |
+| `shutting_down` | `reason: string` |
+
+<Cards>
+  <Card href="/docs/daemon-ipc/protocol" title="IPC Protocol" />
+  <Card href="/docs/cli-reference" title="CLI Reference" />
+</Cards>

@@ -72,7 +72,7 @@
 
 - [x] T019 [P] [US1] Write `docs-site/content/docs/index.mdx` (home page): project tagline, key properties (conflict-aware, bandwidth-aware, network-aware, VFS, E2EE), architecture ASCII diagram from README, links to Getting Started and feature sections
 - [x] T020 [P] [US1] Write `docs-site/content/docs/getting-started/installation.mdx`: install methods for DEB, RPM, AppImage, build from source (Rust stable + Node.js prerequisites, `cargo tauri build`); Linux tray requirements
-- [x] T021 [P] [US1] Write `docs-site/content/docs/getting-started/first-run.mdx`: launching `adagio-desktop`, onboarding wizard, daemon auto-start, config file locations (`~/.config/ai.neuralagent.adagio/`)
+- [x] T021 [P] [US1] Write `docs-site/content/docs/getting-started/first-run.mdx`: launching `adagio-desktop`, onboarding wizard, daemon auto-start, config file locations (`~/.config/adagio/`)
 - [x] T022 [P] [US1] Write `docs-site/content/docs/getting-started/account-setup.mdx`: adding a Nextcloud account, server URL, username/password, connection test, credential storage (system keychain)
 - [x] T023 [P] [US1] Write `docs-site/content/docs/user-guide/file-sync.mdx`: daemon polling, journal, reconciler/propagator, sync status badges, Sync Now, selected pairs
 - [x] T024 [P] [US1] Write `docs-site/content/docs/user-guide/conflict-resolution.mdx`: what a conflict is, three resolution policies, conflict wizard UI, activity log

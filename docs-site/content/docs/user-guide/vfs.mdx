@@ -1,37 +1,77 @@
 ---
 title: Virtual Filesystem (VFS)
-description: Using Adagio's on-demand file delivery with FUSE3.
+description: On-demand file delivery with FUSE3 — browse your Nextcloud without downloading everything.
 ---
 
-## What is VFS on-demand?
+VFS on-demand lets Adagio surface all your Nextcloud files in the local filesystem instantly, downloading their content only when an application actually opens them.
 
-Virtual Filesystem (VFS) mode lets Adagio present all your Nextcloud files in the local filesystem without downloading them in advance. Files appear as regular entries but their content is fetched from the server only when an application opens them.
+## Understand VFS on-demand
 
-## Requirements
+When VFS is enabled for a pair, Adagio mounts the remote folder via FUSE3. Every file appears as a real filesystem entry with correct size and metadata, but the data blocks live on the server until you (or an application) open the file. This means a 200 GB Nextcloud library can appear locally while consuming only a few megabytes of disk space.
 
-VFS requires FUSE3:
+## Install FUSE3
+
+<Callout type="warn">VFS requires FUSE3. The package names differ between distributions.</Callout>
+
+<Tabs items={["Debian / Ubuntu", "Fedora / RHEL"]}>
+  <Tab value="Debian / Ubuntu">
+    ```bash
+    sudo apt install libfuse3-dev fuse3
+    ```
+  </Tab>
+  <Tab value="Fedora / RHEL">
+    ```bash
+    sudo dnf install fuse3 fuse3-libs
+    ```
+  </Tab>
+</Tabs>
+
+Confirm the kernel module is loaded:
 
 ```bash
-# Debian / Ubuntu
-sudo apt install libfuse3-dev fuse3
-
-# Fedora
-sudo dnf install fuse3 fuse3-libs
+modprobe fuse && echo "FUSE OK"
 ```
 
-## Enabling VFS for a pair
+## Enable VFS for a pair
 
-**Settings** → **Pairs** → *select pair* → enable **Virtual filesystem (on-demand)**.
+<Steps>
+  <Step>
+    Open **Settings** → **Pairs** and select the pair you want to put into VFS mode.
+  </Step>
+  <Step>
+    Toggle on **Virtual filesystem (on-demand)**.
+  </Step>
+  <Step>
+    Adagio remounts the pair directory as a FUSE3 volume. Existing locally-downloaded files remain available; files not yet downloaded become on-demand placeholders.
+  </Step>
+</Steps>
 
-<Callout type="warning">VFS cannot be combined with E2EE on the same pair.</Callout>
+<Callout type="warning">VFS is incompatible with E2EE on the same pair. You must choose one or the other.</Callout>
 
-## Pin and evict
+## Pin and evict files
 
-- **Pin** a file or directory to ensure it is always available offline (downloaded proactively).
-- **Evict** a pinned file to free local disk space; it reverts to on-demand delivery.
+Right-click any file or directory in the VFS mount in your file manager to access these actions:
 
-Right-click any file in the VFS mount to access Pin / Evict options.
+- **Pin** — force a full download so the file is always available offline. Useful for documents you know you will need without a connection.
+- **Evict** — free the local disk space occupied by a downloaded file. It reverts to on-demand placeholder status.
 
-## Offline access
+## Understand file states
 
-Pinned files are available offline. Non-pinned files show a placeholder icon and fail to open without a network connection.
+| State | Icon | Description |
+|-------|------|-------------|
+| Online | Cloud icon | Placeholder only — content fetched on open |
+| Available | Checkmark | Content downloaded and cached locally |
+| Pinned | Pin icon | Always downloaded; never evicted automatically |
+
+## Work offline
+
+Pinned files open normally with no network connection. Non-pinned files display their placeholder icon and cannot be opened until connectivity is restored.
+
+## Configure the cache budget
+
+Adagio evicts the least-recently-used non-pinned files when the local cache exceeds the configured limit. Set the limit in **Settings** → **Pairs** → *select pair* → **VFS cache budget** (`vfs_cache_max_bytes`). Set to `0` to disable automatic eviction.
+
+<Cards>
+  <Card href="/docs/user-guide/bandwidth" title="Bandwidth Controls" />
+  <Card href="/docs/user-guide/e2ee" title="End-to-End Encryption" />
+</Cards>

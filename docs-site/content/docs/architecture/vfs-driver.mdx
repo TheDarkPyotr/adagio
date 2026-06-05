@@ -1,45 +1,68 @@
 ---
 title: VFS Driver
-description: How Adagio implements on-demand virtual filesystem via FUSE3.
+description: How the FUSE3 on-demand filesystem works inside adagio-vfs.
 ---
 
-The VFS driver lives in `adagio-vfs` and is managed by a per-pair `VfsPairRunner` task in `adagio-daemon`.
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
 
-## FUSE3 mount
+The VFS driver lives in `adagio-vfs` and is managed per-pair by `adagio-daemon`. When VFS is enabled for a sync pair the daemon mounts a FUSE3 filesystem at the pair's local root, presenting the full Nextcloud remote tree as a browsable local directory — without downloading any file content in advance.
 
-When VFS is enabled for a pair the daemon mounts a FUSE3 filesystem at the pair's local root. The mount presents the full Nextcloud remote tree as a local directory without downloading any file content in advance.
+## FUSE3 Mount
 
-FUSE3 kernel module forwards all VFS operations (open, read, stat, readdir) to the driver in userspace.
+The FUSE3 kernel module forwards all VFS operations — `open`, `read`, `stat`, `readdir` — to the `adagio-vfs` userspace driver. From the perspective of any application opening files under the mount point, the directory looks like an ordinary filesystem.
+
+<Callout type="info">
+The `fuse3` kernel module must be loaded and the current user must have permission to create FUSE mounts. On most Linux distributions this means being a member of the `fuse` group or having `user_allow_other` set in `/etc/fuse.conf`.
+</Callout>
 
 ## VfsPairRunner
 
-Each VFS-enabled pair has a `VfsPairRunner` background task that:
+Each VFS-enabled pair runs a dedicated `VfsPairRunner` background task that:
 
-1. Fetches and caches the remote directory tree from Nextcloud.
-2. Handles FUSE operation callbacks from the kernel.
-3. Manages the pin/evict state machine for each path.
+1. Fetches and caches the remote directory tree from Nextcloud on startup and after each sync cycle.
+2. Handles FUSE operation callbacks from the kernel (stat, readdir, open, read).
+3. Manages the pin/evict state machine for every path in the tree.
 
-## Pin / evict state machine
+## Pin / Evict State Machine
 
-Each file has one of three VFS states:
+Each file tracked by the VFS driver is in one of three states:
 
-| State | Description |
-|-------|-------------|
-| `Online` | Placeholder only — content fetched on first open |
+| State | Meaning |
+|---|---|
+| `Online` | Placeholder only — no local content; fetched on first `open()` |
+| `Available` | Content downloaded and present on disk; evictable when cache budget is exceeded |
 | `Pinned` | Content downloaded and retained on disk regardless of cache budget |
-| `Available` | Content downloaded but evictable when cache budget is exceeded |
 
-State transitions:
+State transitions follow these rules:
 
 ```
-Online ──open()──► Available
-Available ──pin──► Pinned
-Pinned ──unpin──► Available
-Available ──evict──► Online
+Online ──── first open() ────► Available
+Available ── pin request ────► Pinned
+Pinned ───── unpin request ──► Available
+Available ── cache eviction ─► Online
 ```
 
-## Cache management
+<Callout type="tip">
+Pin files that you need offline — documents, project folders — to guarantee they are never evicted. Leave large media files in the `Available` or `Online` state to let the cache manager reclaim space automatically.
+</Callout>
 
-The driver tracks total bytes in the `Available` state. When the configured `vfs_cache_max_bytes` threshold is reached the eviction policy removes the least-recently-accessed `Available` files until the cache size drops below `vfs_eviction_threshold_bytes`.
+## Cache Management
 
-`Pinned` files are never evicted.
+The driver maintains a running total of bytes stored in the `Available` state. When that total exceeds `vfs_cache_max_bytes`:
+
+1. The eviction policy selects the least-recently-accessed `Available` files.
+2. Their local content is deleted and their state is reset to `Online`.
+3. Eviction continues until the total drops below `vfs_eviction_threshold_bytes`.
+
+`Pinned` files are **never** evicted.
+
+| Config key | Default | Description |
+|---|---|---|
+| `vfs_cache_max_bytes` | `10 GiB` | Trigger threshold for cache eviction |
+| `vfs_eviction_threshold_bytes` | `8 GiB` | Target size after an eviction pass |
+
+<Cards>
+  <Card href="/docs/user-guide/vfs" title="VFS On-Demand" description="Enable and use virtual filesystem for a sync pair." />
+  <Card href="/docs/architecture/e2ee-protocol" title="E2EE Protocol" description="Nextcloud E2EE v2 implementation." />
+</Cards>

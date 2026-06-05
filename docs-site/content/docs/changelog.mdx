@@ -3,24 +3,28 @@ title: Changelog
 description: Release history for Adagio.
 ---
 
+All notable changes are documented here. Adagio follows [Semantic Versioning](https://semver.org).
+
 ## [0.1.0] — 2026-06-01
 
-Initial release. Implements features 001–017:
+Initial public release. Implements all planned features from the 001–017 roadmap.
 
-- 001 GUI framework (Tauri + React)
-- 002 Journal storage (SQLite WAL)
-- 003 WebDAV client
-- 004 Config persistence
-- 005 OAuth2 flow
-- 006 Conflict resolution
-- 007 Missed-tick skip
-- 008 Bounded conflict channel
-- 009 IPC transport
-- 010 Detached process spawn
-- 011 No-table crate
-- 012 Platform config dir migration
-- 013 Chunk-level throttling
-- 014 Login flow v2 + network awareness
-- 015 Bulk upload driver
-- 016 VFS platform drivers
-- 017 E2EE protocol + release packaging
+### Added
+
+- **Core sync engine** — SQLite WAL journal, file reconciler, and change propagator. Detects local and remote edits, resolves non-conflicting changes automatically, and surfaces conflicts for user resolution.
+- **Tauri + React desktop UI** — native window with system tray integration, pair list, activity feed, conflict inbox, and settings panel.
+- **WebDAV + Nextcloud API client** — full WebDAV support for file operations plus Nextcloud-specific endpoints for shares, users, E2EE metadata, and OAuth2 login flow.
+- **Persistent configuration** — all accounts, pairs, and preferences stored in SQLite.
+- **OAuth2 browser login flow** — opens a local callback server, completes the Nextcloud Login Flow v2 in the system browser, and stores the resulting app-password credential.
+- **Conflict resolution** — Ask, Keep-Local, and Keep-Remote policies per pair. Conflicts are surfaced in the UI and resolvable via CLI or IPC.
+- **Missed-tick skip logic** — sync polling skips ticks that land while a previous cycle is still running, preventing queue pile-up on slow connections.
+- **Bounded conflict channel** — back-pressure on the internal conflict channel prevents unbounded memory growth during bulk imports.
+- **Unix socket NDJSON IPC** — daemon exposes a request/response socket plus a push-event subscription channel. See [IPC Protocol](/docs/daemon-ipc/protocol).
+- **Detached daemon process spawn** — the CLI forks the daemon as a fully detached child process; the terminal session can be closed without stopping sync.
+- **Bandwidth throttling** — per-account token-bucket rate limiter with configurable upload and download caps. Limits survive daemon restarts.
+- **Network awareness** — configurable policies for metered connections, battery power, and an SSID blocklist. Sync automatically throttles or pauses when policies are triggered.
+- **Bulk upload driver** — parallel WebDAV uploads with configurable concurrency, dramatically reducing time to first-sync on large folders.
+- **FUSE3 virtual filesystem (VFS)** — on-demand file materialisation. Files appear as zero-byte placeholders and are fetched transparently on first access. Supports pinning, unpinning, and cache eviction.
+- **End-to-end encryption** — Nextcloud E2EE v2 protocol using AES-128-GCM for file content and RSA-2048 for key exchange. BIP-39 mnemonic recovery phrase generated at init time.
+- **Linux release packaging** — DEB, RPM, and AppImage artifacts built and published via GitHub Actions on every tagged release.
+- **Linux system tray** — persistent tray icon with status indicator, quick-access sync toggle, and open-window action.

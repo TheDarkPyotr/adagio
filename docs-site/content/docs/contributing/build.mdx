@@ -1,50 +1,112 @@
 ---
-title: Build Guide
-description: How to build and preview the Adagio documentation locally.
+title: Build the Docs
+description: Run the documentation site locally in under 5 minutes.
 ---
 
-## Prerequisites
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
 
-- **Node.js 20+** and **npm** (or pnpm / bun)
-- The `docs-site/` directory inside the Adagio repository
+The Adagio documentation site is a [fumadocs](https://fumadocs.vercel.app/) project inside `docs-site/`. All content lives as MDX files under `docs-site/content/docs/`.
 
-## Install dependencies
+<Callout type="info">
+**Prerequisites:** Node.js 20 or later and npm must be installed. Run `node --version` to verify.
+</Callout>
+
+## Run Locally
+
+<Steps>
+<Step>
+**Enter the docs directory:**
 
 ```bash
 cd docs-site
+```
+</Step>
+<Step>
+**Install dependencies:**
+
+```bash
 npm ci
 ```
 
-## Local preview
+This installs the exact versions pinned in `package-lock.json`.
+</Step>
+<Step>
+**Start the dev server:**
 
 ```bash
 npm run dev
 ```
 
-Open `http://localhost:3000/docs` in your browser. Changes to MDX files hot-reload automatically.
+Open `http://localhost:3000/docs` in your browser. Changes to MDX files hot-reload automatically — no restart needed.
+</Step>
+</Steps>
 
-## Production build
+## Add a New Page
+
+<Steps>
+<Step>
+**Create the MDX file** in the correct section directory:
+
+```bash
+# Example: a new page under architecture/
+touch content/docs/architecture/my-topic.mdx
+```
+</Step>
+<Step>
+**Register the slug** in the section's `meta.json` `pages` array:
+
+```json
+{
+  "pages": [
+    "overview",
+    "sync-engine",
+    "vfs-driver",
+    "e2ee-protocol",
+    "my-topic"
+  ]
+}
+```
+</Step>
+<Step>
+**Verify the build passes:**
 
 ```bash
 npm run build
 ```
 
-Output is placed in `docs-site/out/`. This is the directory deployed to GitHub Pages.
+A missing file or a slug that does not match a filename produces a build error with the exact path that is wrong.
+</Step>
+</Steps>
 
-To preview the production build locally:
+<Callout type="tip">
+Always run `npm run build` before pushing documentation changes. The CI pipeline runs the same check and will block the PR if the build fails.
+</Callout>
+
+## Production Build
+
+```bash
+npm run build
+```
+
+The static output is placed in `docs-site/out/`. This is the directory deployed to GitHub Pages. To preview it locally:
 
 ```bash
 npx serve docs-site/out
 ```
 
-## Type checking
+## Type Check
+
+Run the TypeScript type checker without producing output files:
 
 ```bash
 npm run typecheck
 ```
 
-## Adding a new page
+This is useful for catching type errors in custom MDX components or `fumadocs` configuration before committing.
 
-1. Create an `.mdx` file in the appropriate `content/docs/<section>/` directory.
-2. Add the page slug to the corresponding `meta.json` `pages` array.
-3. Run `npm run build` — a missing file or slug mismatch will produce a build error.
+<Cards>
+  <Card href="/docs/contributing/dev-workflow" title="Dev Workflow" description="Branch naming, PR process, and the full contribution guide." />
+  <Card href="/docs/contributing/speckit" title="SpecKit" description="AI-assisted specification workflow for new features." />
+</Cards>

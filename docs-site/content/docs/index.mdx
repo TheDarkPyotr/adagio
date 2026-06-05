@@ -1,8 +1,36 @@
 ---
 title: Adagio Documentation
-description: A conflict-aware, bandwidth-aware Nextcloud sync client for Linux.
+description: A conflict-aware, bandwidth-aware Nextcloud sync client for Linux with on-demand VFS and end-to-end encryption.
 ---
 
-Adagio is a feature-rich Nextcloud sync client for Linux with end-to-end encryption, virtual filesystem, and network-awareness built in.
+Adagio is a Nextcloud sync client for Linux with on-demand VFS, end-to-end encryption, bandwidth throttling, and network-awareness built in.
 
-Browse the sidebar to explore installation guides, user documentation, CLI reference, and architecture internals.
+## What Adagio does
+
+Adagio runs as a background daemon that keeps your local folders in sync with any Nextcloud server. The desktop UI and the `adagio-cli` tool both connect to the daemon over a Unix socket, so you can manage everything from a terminal or the system tray without interrupting active syncs.
+
+The three main processes are:
+
+- **adagio-daemon** — sync engine, VFS driver, IPC server. Runs as a systemd user service.
+- **adagio-desktop** — Tauri-based UI. Connects to the daemon over the Unix socket at `~/.config/adagio/daemon.sock`.
+- **adagio-cli** — command-line interface for scripting, status checks, and headless environments.
+
+## Explore the docs
+
+<Cards>
+  <Card href="/docs/user-guide/file-sync" title="File Sync" />
+  <Card href="/docs/user-guide/e2ee" title="End-to-End Encryption" />
+  <Card href="/docs/user-guide/vfs" title="Virtual Filesystem (VFS)" />
+  <Card href="/docs/cli-reference" title="CLI Reference" />
+  <Card href="/docs/architecture/overview" title="Architecture Overview" />
+  <Card href="/docs/contributing/build" title="Contributing" />
+</Cards>
+
+## Get started now
+
+Install Adagio and run it for the first time in under five minutes.
+
+<Cards>
+  <Card href="/docs/getting-started/installation" title="Install Adagio" />
+  <Card href="/docs/getting-started/first-run" title="First Run" />
+</Cards>

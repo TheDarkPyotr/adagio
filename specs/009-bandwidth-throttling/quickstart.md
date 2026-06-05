@@ -12,7 +12,7 @@ cargo build -p adagio-core -p adagio-daemon -p adagio-cli 2>&1 | grep -c "^error
 cargo test --lib -p adagio-core  # still 133+ pass
 
 # Daemon running with test config
-./target/debug/adagio-daemon --config-dir ~/.config/ai.neuralagent.adagio/ &
+./target/debug/adagio-daemon --config-dir ~/.config/adagio/ &
 sleep 1
 ```
 

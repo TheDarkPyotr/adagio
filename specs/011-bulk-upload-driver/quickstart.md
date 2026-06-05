@@ -15,7 +15,7 @@ for i in $(seq 1 100); do dd if=/dev/urandom of=/tmp/bulk-test/file-$i.bin bs=10
 # 100 files × 100 KB = 10 MB total
 
 # Start daemon
-./target/debug/adagio-daemon --config-dir ~/.config/ai.neuralagent.adagio/ &
+./target/debug/adagio-daemon --config-dir ~/.config/adagio/ &
 sleep 1
 ```
 
@@ -63,7 +63,7 @@ sleep 5 && kill $SYNC_PID
 ./target/debug/adagio status  # note files completed
 
 # Restart daemon and sync again
-./target/debug/adagio-daemon --config-dir ~/.config/ai.neuralagent.adagio/ &
+./target/debug/adagio-daemon --config-dir ~/.config/adagio/ &
 sleep 1
 ./target/debug/adagio sync
 

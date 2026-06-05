@@ -24,7 +24,7 @@ inspect or repair manually. No extra dependency required.
 **Decision**: `app.path().app_config_dir()` from Tauri's `PathResolver`, file name `config.json`
 
 **Rationale**: Tauri 2.x resolves `app_config_dir()` to the correct platform directory
-automatically (`~/.config/adagio/` on Linux, `~/Library/Application Support/ai.neuralagent.adagio/`
+automatically (`~/.config/adagio/` on Linux, `~/Library/Application Support/adagio/`
 on macOS, `%APPDATA%\adagio\` on Windows). No manual path logic needed.
 
 **Alternatives considered**:

@@ -1,44 +1,111 @@
 ---
 title: E2EE Protocol
-description: Adagio's implementation of Nextcloud E2EE v2.
+description: Adagio's implementation of Nextcloud end-to-end encryption v2.
 ---
 
-The E2EE implementation lives in `adagio-e2ee`. It follows Nextcloud's end-to-end encryption v2 specification.
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
 
-## Key generation
+The E2EE implementation lives in `adagio-e2ee`. It follows the Nextcloud end-to-end encryption **v2** specification. All encryption and decryption happens on device — the server never has access to plaintext file content or private keys.
 
-1. An RSA-2048 key pair is generated on device.
-2. A PKCS#10 certificate signing request (CSR) is submitted to the Nextcloud server via `/ocs/v2.php/apps/end_to_end_encryption/api/v1/public-key`.
-3. The server signs and stores the public key; the private key never leaves the device.
+<Callout type="warning">
+All E2EE API calls use the `/api/v2/` path prefix, **not** `/api/v1/`. Using the v1 endpoints will return unexpected errors or silently corrupt metadata.
+</Callout>
 
-## BIP-39 mnemonic
+## Key Generation
 
-The RSA private key is exported as PKCS#8 DER, encrypted with AES-256-GCM using a key derived from a randomly-generated 256-bit seed, and stored in the Nextcloud keychain. The seed is encoded as a 24-word BIP-39 mnemonic.
+When E2EE is initialised for an account, Adagio runs a six-step sequence:
 
-The mnemonic is the only way to restore keys on a new device. **It must be written down and stored safely.**
+<Steps>
+<Step>
+**Generate RSA-2048 key pair** — both public and private keys are generated locally using the system's CSPRNG.
+</Step>
+<Step>
+**Submit PKCS#10 CSR** — a certificate signing request is POSTed to:
 
-## V2 metadata format
+```
+/ocs/v2.php/apps/end_to_end_encryption/api/v1/public-key
+```
 
-Nextcloud E2EE v2 stores file metadata in a double-encoded JSON structure:
+The server signs the CSR and stores the public certificate. The private key never leaves the device.
+</Step>
+<Step>
+**Derive BIP-39 mnemonic** — a random 256-bit seed is generated and encoded as a **24-word BIP-39 mnemonic**. The seed is used to derive an AES-256-GCM encryption key.
+</Step>
+<Step>
+**Encrypt private key** — the RSA private key is exported as PKCS#8 DER and encrypted with AES-256-GCM using the derived key.
+</Step>
+<Step>
+**Store encrypted key** — the encrypted private key blob is stored in the Nextcloud keychain.
+</Step>
+<Step>
+**Mark folder as encrypted** — the target folder is marked as an E2EE folder on the server via the metadata API.
+</Step>
+</Steps>
 
-- The outer envelope is a JSON string that is stored as the `meta-data` field.
-- `serde_json::from_str` is called twice to deserialise the inner object.
-- The `userId` field inside `build_outer`/`parse_outer` is the Nextcloud **username** (e.g. `"alice"`), not the internal adagio UUID.
+<Callout type="danger">
+The 24-word mnemonic is the **only** way to restore E2EE keys on a new device. Write it down and store it in a safe place immediately after initialisation. It is not recoverable from the server.
+</Callout>
 
-## Lock / upload / unlock cycle
+## V2 Metadata Format
 
-For every upload to an E2EE pair:
+Nextcloud E2EE v2 stores file keys and filenames in a **double-encoded JSON** structure:
 
-1. **Lock** — POST to `/api/v2/meta-data/{folder_id}/lock` with `X-NC-E2EE-COUNTER` header; returns an `e2e-token`.
-2. **Encrypt** — AES-128-GCM encrypt the file content; generate a random UUID as the ciphertext filename.
-3. **Upload** — WebDAV PUT the ciphertext with the `e2e-token` query parameter.
-4. **Update metadata** — PUT the updated V2 metadata with `e2e-token` and `X-NC-E2EE-SIGNATURE` headers.
-5. **Unlock** — DELETE the lock token.
+- The outer envelope is a JSON string stored in the `meta-data` API field.
+- The inner object is a JSON string embedded as a value inside the outer envelope.
+- Deserialisation requires calling `serde_json::from_str` **twice**.
 
-## AES-128-GCM encryption
+The `userId` field inside `build_outer` / `parse_outer` must be the Nextcloud **username** (e.g. `"alice"`), not the internal adagio account UUID.
 
-Each file is encrypted with a unique 128-bit AES key and 96-bit random nonce. Both are stored encrypted inside the V2 metadata blob, protected by the folder's RSA public key.
+```rust
+// Correct: username string from the Nextcloud account config
+let outer = build_outer(&keys, "alice", counter)?;
 
-## CMS signatures
+// Wrong: adagio internal UUID
+let outer = build_outer(&keys, "550e8400-e29b-41d4-a716", counter)?;
+```
 
-The V2 metadata is signed using CMS (Cryptographic Message Syntax) with the device's private key and verified by the server and other paired devices.
+## Lock / Upload / Unlock Cycle
+
+Every file upload to an E2EE pair follows this five-step cycle:
+
+<Steps>
+<Step>
+**Acquire lock** — POST to `/api/v2/meta-data/{folder_id}/lock`. Include the `X-NC-E2EE-COUNTER` HTTP header with the current counter value. The response body contains an `e2e-token` that must accompany all subsequent requests in this cycle.
+</Step>
+<Step>
+**Encrypt file** — encrypt the file content with a freshly generated 128-bit AES key and 96-bit random nonce using AES-128-GCM. Generate a random UUID as the ciphertext filename — the real filename is stored only inside the encrypted metadata blob.
+</Step>
+<Step>
+**Upload ciphertext** — WebDAV PUT the encrypted bytes to the pair's remote folder using the UUID filename. Pass the `e2e-token` as an HTTP header on the request.
+</Step>
+<Step>
+**Update V2 metadata** — PUT the updated metadata blob to `/api/v2/meta-data/{folder_id}`. The request must include both the `e2e-token` header and the `X-NC-E2EE-SIGNATURE` header containing the CMS signature.
+</Step>
+<Step>
+**Release lock** — DELETE `/api/v2/meta-data/{folder_id}/lock` to release the token. If the upload or metadata PUT failed, the lock must still be released to unblock other clients.
+</Step>
+</Steps>
+
+<Callout type="warning">
+`e2e-token` is an HTTP **header** on the lock POST response, not a JSON body field. `X-NC-E2EE-COUNTER` is likewise a header, not a query parameter.
+</Callout>
+
+## CMS Signatures
+
+The V2 metadata blob is signed using CMS (Cryptographic Message Syntax) with the device's RSA private key. The server and other paired devices verify this signature before accepting a metadata update, ensuring that only authorised devices can modify the encrypted folder's manifest.
+
+Each file entry in the metadata includes:
+
+| Field | Content |
+|---|---|
+| `encrypted` | AES-128-GCM ciphertext of the file key + nonce |
+| `authenticationTag` | GCM authentication tag |
+| `filename` | Encrypted real filename |
+| `mimetype` | Encrypted MIME type |
+
+<Cards>
+  <Card href="/docs/user-guide/e2ee" title="E2EE User Guide" description="Enable and use end-to-end encryption for a folder." />
+  <Card href="/docs/architecture/sync-engine" title="Sync Engine" description="Journal, reconciler, and propagator internals." />
+</Cards>

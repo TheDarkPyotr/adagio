@@ -1,32 +1,67 @@
 ---
 title: File Sync
-description: How Adagio synchronises files with your Nextcloud server.
+description: How Adagio keeps your local folders in sync with Nextcloud.
 ---
 
-## How sync works
+Adagio runs a background daemon that continuously watches your local folders and reconciles them against your Nextcloud server via WebDAV.
 
-Adagio uses a daemon process (`adagio-daemon`) that runs in the background and coordinates all sync activity.
+## Understand how sync works
 
-The sync pipeline has three stages:
+The sync pipeline has three sequential stages:
 
-1. **Journal** — a SQLite WAL database records every local file-system event (create, modify, delete, rename).
-2. **Reconciler** — compares journal entries against the remote Nextcloud state and produces a diff of changes to propagate.
-3. **Propagator** — applies the diff: uploads new/changed local files via WebDAV; downloads new/changed remote files.
+1. **Journal** — a SQLite WAL database captures every inotify filesystem event (create, modify, delete, rename) from your local pair directories.
+2. **Reconciler** — compares journal entries against the current remote Nextcloud state and produces a diff of what needs to move.
+3. **Propagator** — executes the diff: uploads changed local files and downloads changed remote files over WebDAV.
 
-## Sync status indicators
+The daemon polls on a configurable interval; changes detected by inotify are queued immediately and flushed at each poll tick.
 
-The system tray icon shows the current state:
+## Read sync status indicators
 
-| Icon | Meaning |
-|------|---------|
-| Rotating arrows | Sync in progress |
-| Checkmark | Idle — all files up to date |
-| Warning triangle | One or more errors; see activity log |
+The system tray icon reflects the current daemon state at a glance:
 
-## Triggering sync manually
+| Icon | State | Meaning |
+|------|-------|---------|
+| Rotating arrows | Syncing | Propagator is actively uploading or downloading |
+| Checkmark | Idle | All pairs are up to date |
+| Warning triangle | Error | One or more files failed; open the activity log for details |
 
-Click the tray icon → **Sync Now** to force an immediate sync cycle without waiting for the polling interval.
+## Trigger sync manually
 
-## Pairs
+Click the tray icon and select **Sync Now** to start an immediate sync cycle without waiting for the next polling interval. This ignores any active network-awareness rules.
 
-Only directories configured as *pairs* are synced. A pair links a local directory to a specific remote Nextcloud folder. Manage pairs in **Settings** → **Pairs**.
+## Manage sync pairs
+
+<Callout type="info">Only directories configured as pairs are ever synced. Adagio never touches files outside a defined pair.</Callout>
+
+A **pair** links a local directory to a specific remote Nextcloud folder. To manage pairs, go to **Settings** → **Pairs**.
+
+From the Pairs screen you can:
+
+- Add a new pair (local path + remote path + account)
+- Remove an existing pair
+- Edit per-pair settings such as conflict policy, VFS, and exclude patterns
+- View per-pair sync statistics
+
+## Configure exclude patterns
+
+Exclude patterns prevent specific files or directories from being synced within a pair. View current patterns for all pairs with:
+
+```bash
+adagio pairs list
+```
+
+Add or remove patterns per pair in **Settings** → **Pairs** → *select pair* → **Exclude patterns**.
+
+Patterns follow glob syntax. Common examples:
+
+| Pattern | Excludes |
+|---------|----------|
+| `*.tmp` | All `.tmp` files in the pair |
+| `.git/` | Git repositories |
+| `node_modules/` | Node dependency trees |
+| `~$*` | Office temporary lock files |
+
+<Cards>
+  <Card href="/docs/user-guide/conflict-resolution" title="Conflict Resolution" />
+  <Card href="/docs/user-guide/bandwidth" title="Bandwidth Controls" />
+</Cards>

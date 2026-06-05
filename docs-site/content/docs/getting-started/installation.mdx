@@ -1,41 +1,150 @@
 ---
 title: Installation
-description: How to install Adagio on Linux.
+description: Install Adagio on Debian, Fedora, or any Linux distro that supports AppImage — or build from source.
 ---
 
-Adagio supports several installation methods on Linux.
+Adagio ships as a DEB, RPM, AppImage, and source build. Pick the method that matches your distribution.
 
-## DEB package (Debian / Ubuntu)
+## Install on Debian or Ubuntu
+
+<Steps>
+<Step>
+Download the latest `.deb` from the [Releases page](https://github.com/TheDarkPyotr/adagio/releases).
+</Step>
+<Step>
+Install the package:
 
 ```bash
 sudo dpkg -i adagio_0.1.0_amd64.deb
 ```
 
-## RPM package (Fedora / openSUSE)
+If `dpkg` reports missing dependencies, resolve them with:
+
+```bash
+sudo apt-get install -f
+```
+</Step>
+<Step>
+Verify the installation:
+
+```bash
+adagio-cli --version
+```
+</Step>
+</Steps>
+
+## Install on Fedora or openSUSE
+
+<Steps>
+<Step>
+Download the latest `.rpm` from the [Releases page](https://github.com/TheDarkPyotr/adagio/releases).
+</Step>
+<Step>
+Install the package:
 
 ```bash
 sudo rpm -i adagio-0.1.0-1.x86_64.rpm
 ```
+</Step>
+<Step>
+Verify the installation:
 
-## AppImage
+```bash
+adagio-cli --version
+```
+</Step>
+</Steps>
+
+## Run the AppImage
+
+AppImage bundles all dependencies and runs on any modern Linux distribution without installation.
+
+<Steps>
+<Step>
+Download the latest `.AppImage` from the [Releases page](https://github.com/TheDarkPyotr/adagio/releases).
+</Step>
+<Step>
+Make it executable:
 
 ```bash
 chmod +x Adagio_0.1.0_amd64.AppImage
+```
+</Step>
+<Step>
+Launch Adagio:
+
+```bash
 ./Adagio_0.1.0_amd64.AppImage
 ```
 
+To integrate with your desktop launcher, move it to `~/.local/bin/` and create a `.desktop` entry.
+</Step>
+</Steps>
+
 ## Build from source
 
-Prerequisites: Rust stable toolchain, Node.js 22, `libfuse3-dev`, `fuse3`, a system tray provider.
+<Callout type="info">
+Prerequisites: Rust stable toolchain, Node.js 22, `libfuse3-dev`, `fuse3`, and a system tray provider. Install them before proceeding.
+
+```bash
+# Debian / Ubuntu
+sudo apt-get install libfuse3-dev fuse3 libayatana-appindicator3-dev
+
+# Fedora
+sudo dnf install fuse3-devel libappindicator-gtk3-devel
+```
+</Callout>
+
+<Steps>
+<Step>
+Clone the repository:
 
 ```bash
 git clone https://github.com/TheDarkPyotr/adagio
 cd adagio
+```
+</Step>
+<Step>
+Install the Rust toolchain if you do not already have it:
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+```
+</Step>
+<Step>
+Install Node.js 22 dependencies (used by the Tauri frontend):
+
+```bash
+npm install
+```
+</Step>
+<Step>
+Build all packages:
+
+```bash
 cargo tauri build
 ```
 
-The built packages are placed in `target/release/bundle/`.
+Built packages land in `target/release/bundle/`. Install the `.deb` or `.rpm` from there, or run the binary directly at `target/release/adagio-desktop`.
+</Step>
+</Steps>
 
-## System tray requirements
+## System tray on GNOME
 
-Adagio relies on a system tray implementation. On GNOME ensure `gnome-shell-extension-appindicator` is installed and enabled.
+<Callout type="warn">
+GNOME does not display system tray icons by default. Install and enable the AppIndicator extension before launching Adagio:
+
+```bash
+sudo apt-get install gnome-shell-extension-appindicator   # Debian / Ubuntu
+# then enable it:
+gnome-extensions enable appindicatorsupport@rgcjonas.gmail.com
+```
+
+Log out and back in for the extension to take effect.
+</Callout>
+
+<Cards>
+  <Card href="/docs/getting-started/first-run" title="First Run" />
+  <Card href="/docs/getting-started/account-setup" title="Account Setup" />
+</Cards>

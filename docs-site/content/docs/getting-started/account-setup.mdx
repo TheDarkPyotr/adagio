@@ -1,24 +1,76 @@
 ---
 title: Account Setup
-description: Adding and managing Nextcloud accounts in Adagio.
+description: Add a Nextcloud account to Adagio, verify credentials, and understand how pairs link local folders to remote storage.
 ---
 
-## Adding a Nextcloud account
+Adagio supports multiple Nextcloud accounts simultaneously. Each account can have one or more sync pairs that link a local folder to a remote Nextcloud folder.
 
-1. Open Adagio from the system tray → **Settings** → **Accounts** → **Add account**
-2. Enter your Nextcloud server URL (e.g. `https://cloud.example.com`)
-3. Enter your username and password
-4. Click **Test connection** — Adagio verifies the credentials before saving
-5. Click **Add** — the account is now paired and the first sync begins
+## Add a Nextcloud account
 
-## Credential storage
+<Steps>
+<Step>
+Open the system tray icon and choose **Settings**, or launch Adagio and navigate to **Settings → Accounts**.
+</Step>
+<Step>
+Click **Add account**.
+</Step>
+<Step>
+Enter your Nextcloud server URL, for example:
 
-Passwords are stored in the system keychain (libsecret / kwallet). Adagio never stores plaintext passwords on disk.
+```
+https://cloud.example.com
+```
+
+Do not include a trailing slash or a sub-path — Adagio appends the required API paths automatically.
+</Step>
+<Step>
+Enter your Nextcloud **username** and **password**.
+
+<Callout type="info">
+Adagio stores your password in the system keychain (libsecret on GNOME/KDE, or kwallet on KDE if libsecret is unavailable). Your password is never written to disk as plaintext.
+</Callout>
+</Step>
+<Step>
+Click **Test connection**. Adagio contacts the server and verifies the credentials. A green check means the connection succeeded. If you see an error, double-check the server URL and confirm that WebDAV is enabled on your Nextcloud instance.
+</Step>
+<Step>
+Click **Add**. The account is now paired and Adagio opens the pair configuration screen. Select a local folder and a remote Nextcloud folder, then click **Save pair**.
+</Step>
+</Steps>
 
 ## What "paired" means
 
-A *pair* links a local directory on your computer to a remote Nextcloud folder. After account setup you can configure pairs in **Settings** → **Pairs**.
+A *pair* is a directional link between a local directory on your machine and a folder on a Nextcloud server. Once a pair is active, Adagio continuously watches both sides for changes and reconciles them. You can have multiple pairs per account, including overlapping subtrees.
 
-## Removing an account
+Pairs are listed under **Settings → Pairs** where you can:
 
-**Settings** → **Accounts** → select the account → **Remove**. This stops sync for all pairs belonging to that account but does not delete local files.
+- Pause or resume an individual pair
+- Change the sync strategy (full two-way, upload-only, download-only)
+- Enable VFS (on-demand) mode so remote files appear locally without consuming disk space until opened
+
+## Manage multiple accounts
+
+All configured accounts appear in **Settings → Accounts**. Click any account row to see its connection status, last sync time, and the pairs that belong to it. You can add as many accounts as you like — each runs its own sync loop in the daemon.
+
+## Remove an account
+
+<Steps>
+<Step>
+Go to **Settings → Accounts** and select the account you want to remove.
+</Step>
+<Step>
+Click **Remove account**.
+</Step>
+<Step>
+Confirm the removal in the dialog. Adagio stops all sync activity for this account immediately.
+</Step>
+</Steps>
+
+<Callout type="warn">
+Removing an account stops sync but does not delete any local files. Remote files remain on your Nextcloud server untouched. If you re-add the same account later, Adagio reconciles the local state with the server on the first sync.
+</Callout>
+
+<Cards>
+  <Card href="/docs/user-guide/file-sync" title="File Sync" />
+  <Card href="/docs/user-guide/conflict-resolution" title="Conflict Resolution" />
+</Cards>
