@@ -3,4 +3,4 @@
 :HL["/adagio/_next/static/media/7697a0255dfbbb29-s.p.woff2","font",{"crossOrigin":"","type":"font/woff2"}]
 :HL["/adagio/_next/static/media/d62f748a5a22f95f-s.p.woff2","font",{"crossOrigin":"","type":"font/woff2"}]
 :HL["/adagio/_next/static/css/b59208d5c507f2ec.css","style"]
-0:{"tree":{"name":"","param":null,"prefetchHints":16,"slots":{"children":{"name":"docs","param":null,"prefetchHints":0,"slots":{"children":{"name":"slug","param":{"type":"oc","key":"getting-started/installation","siblings":null},"prefetchHints":0,"slots":{"children":{"name":"__PAGE__","param":null,"prefetchHints":0,"slots":null}}}}}}},"staleTime":300,"buildId":"HkgsbBbKhsNfH2sGug9jQ"}
+0:{"tree":{"name":"","param":null,"prefetchHints":16,"slots":{"children":{"name":"docs","param":null,"prefetchHints":0,"slots":{"children":{"name":"slug","param":{"type":"oc","key":"getting-started/installation","siblings":null},"prefetchHints":0,"slots":{"children":{"name":"__PAGE__","param":null,"prefetchHints":0,"slots":null}}}}}}},"staleTime":300,"buildId":"B40TZek2C1mv4cJQOGwhS"}
