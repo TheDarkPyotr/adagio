@@ -1,9 +1,0 @@
-1:"$Sreact.fragment"
-2:I[9006,["166","static/chunks/166-d89154ba039f9464.js","278","static/chunks/278-8eb1fd2e01cfa9cd.js","754","static/chunks/754-4e4f35d1d494015d.js","870","static/chunks/app/docs/%5B%5B...slug%5D%5D/page-65a809b2987fcf32.js"],"DocsPage"]
-3:I[9006,["166","static/chunks/166-d89154ba039f9464.js","278","static/chunks/278-8eb1fd2e01cfa9cd.js","754","static/chunks/754-4e4f35d1d494015d.js","870","static/chunks/app/docs/%5B%5B...slug%5D%5D/page-65a809b2987fcf32.js"],"DocsTitle"]
-4:I[9006,["166","static/chunks/166-d89154ba039f9464.js","278","static/chunks/278-8eb1fd2e01cfa9cd.js","754","static/chunks/754-4e4f35d1d494015d.js","870","static/chunks/app/docs/%5B%5B...slug%5D%5D/page-65a809b2987fcf32.js"],"DocsDescription"]
-5:I[9006,["166","static/chunks/166-d89154ba039f9464.js","278","static/chunks/278-8eb1fd2e01cfa9cd.js","754","static/chunks/754-4e4f35d1d494015d.js","870","static/chunks/app/docs/%5B%5B...slug%5D%5D/page-65a809b2987fcf32.js"],"DocsBody"]
-6:I[484,[],"OutletBoundary"]
-7:"$Sreact.suspense"
-0:{"rsc":["$","$1","c",{"children":[["$","$L2",null,{"toc":[],"editOnGithub":{"owner":"TheDarkPyotr","repo":"adagio","sha":"main","path":"docs-site/content/docs/index.mdx"},"children":[["$","$L3",null,{"children":"Adagio Documentation"}],["$","$L4",null,{"children":"A conflict-aware, bandwidth-aware Nextcloud sync client for Linux."}],["$","$L5",null,{"children":[["$","p",null,{"children":"Adagio is a feature-rich Nextcloud sync client for Linux with end-to-end encryption, virtual filesystem, and network-awareness built in."}],"\n",["$","p",null,{"children":"Browse the sidebar to explore installation guides, user documentation, CLI reference, and architecture internals."}]]}]]}],null,["$","$L6",null,{"children":["$","$7",null,{"name":"Next.MetadataOutlet","children":"$@8"}]}]]}],"isPartial":false,"staleTime":300,"varyParams":null,"buildId":"CI6vrVN5iV2oeH3iwiJEp"}
-8:null

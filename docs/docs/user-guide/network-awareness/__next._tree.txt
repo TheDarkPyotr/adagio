@@ -1,2 +1,0 @@
-:HL["/docs/_next/static/css/fbf1b90a459f9f24.css","style"]
-0:{"tree":{"name":"","param":null,"prefetchHints":16,"slots":{"children":{"name":"docs","param":null,"prefetchHints":0,"slots":{"children":{"name":"slug","param":{"type":"oc","key":"user-guide/network-awareness","siblings":null},"prefetchHints":0,"slots":{"children":{"name":"__PAGE__","param":null,"prefetchHints":0,"slots":null}}}}}}},"staleTime":300,"buildId":"CI6vrVN5iV2oeH3iwiJEp"}
