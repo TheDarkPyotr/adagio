@@ -1,0 +1,13 @@
+{
+  "title": "Adagio Docs",
+  "pages": [
+    "index",
+    "getting-started",
+    "user-guide",
+    "cli-reference",
+    "daemon-ipc",
+    "architecture",
+    "contributing",
+    "changelog"
+  ]
+}

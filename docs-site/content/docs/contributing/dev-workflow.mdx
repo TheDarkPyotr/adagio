@@ -1,0 +1,37 @@
+---
+title: Development Workflow
+description: How to contribute code and documentation to Adagio.
+---
+
+## Feature workflow
+
+Adagio uses the SpecKit workflow for all significant new features:
+
+1. **Specify** — `/speckit-specify` creates a spec from a natural language description
+2. **Research** — decisions and technology choices are recorded in `research.md`
+3. **Plan** — `/speckit-plan` generates `plan.md` with architecture and file structure
+4. **Tasks** — `/speckit-tasks` produces `tasks.md` with ordered, dependency-resolved tasks
+5. **Implement** — `/speckit-implement` executes the task plan
+6. **Commit** — `/speckit-git-commit` stages and commits the result
+
+Design artifacts live in `specs/NNN-feature-name/`.
+
+## Branch naming
+
+```
+NNN-short-description
+```
+
+Examples: `013-e2ee-encryption`, `018-mkdocs-docs-site`.
+
+## Pull request process
+
+1. Open a draft PR early so CI can run on each push.
+2. Ensure `cargo clippy -- -D warnings`, `cargo fmt --check`, and `cargo test` all pass.
+3. For documentation changes: `npm run build` inside `docs-site/` must pass with zero errors.
+4. Add a brief description in the PR body explaining *why* the change is needed.
+5. Request review from a maintainer.
+
+## Architecture Decision Records
+
+Significant design decisions are recorded as ADRs in `docs/adr/`. Create an ADR file named `ADR-NNN-short-description.md` before implementing any decision that affects the public API, storage format, or cross-crate interface.

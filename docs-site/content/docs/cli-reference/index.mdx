@@ -1,0 +1,245 @@
+---
+title: CLI Reference
+description: Complete reference for the adagio command-line interface.
+---
+
+The `adagio` CLI communicates with the background daemon over a Unix socket. All commands accept `--json` before the subcommand to output machine-readable JSON instead of formatted text.
+
+```bash
+adagio [--json] <command> [subcommand] [options]
+```
+
+---
+
+## adagio status
+
+Show sync status for all configured pairs.
+
+```bash
+adagio status
+```
+
+---
+
+## adagio sync
+
+Trigger an immediate sync cycle.
+
+```bash
+adagio sync [--pair-id <PAIR_ID>]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--pair-id` | Sync only this pair. Omit to sync all pairs. |
+
+---
+
+## adagio pause / resume
+
+```bash
+adagio pause    # Pause all sync activity
+adagio resume   # Resume after pause
+```
+
+---
+
+## adagio activity
+
+Show recent sync activity log.
+
+```bash
+adagio activity [--limit <N>] [--filter <edit|sync|conflict>]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--limit` | 50 | Maximum log entries to show |
+| `--filter` | — | Filter by kind: `edit`, `sync`, `conflict` |
+
+---
+
+## adagio pairs
+
+### pairs list
+
+```bash
+adagio pairs list
+```
+
+### pairs add
+
+```bash
+adagio pairs add --local <PATH> --remote <PATH> --account <ID> [--vfs] [--vfs-cache-bytes <N>]
+```
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--local` | ✓ | Local directory to sync |
+| `--remote` | ✓ | Remote Nextcloud folder path |
+| `--account` | ✓ | Account ID to associate with this pair |
+| `--vfs` | — | Enable VFS on-demand mode |
+| `--vfs-cache-bytes` | — | Max VFS cache size in bytes (default: 20 GB) |
+
+### pairs remove
+
+```bash
+adagio pairs remove <PAIR_ID> [--delete-local-files]
+```
+
+---
+
+## adagio accounts
+
+### accounts list
+
+```bash
+adagio accounts list
+```
+
+### accounts remove
+
+```bash
+adagio accounts remove <ACCOUNT_ID>
+```
+
+---
+
+## adagio conflicts
+
+### conflicts list
+
+```bash
+adagio conflicts list [<PAIR_ID>]
+```
+
+### conflicts resolve
+
+```bash
+adagio conflicts resolve <CONFLICT_ID> --keep <local|remote|both>
+```
+
+### conflicts dismiss
+
+Dismiss all pending conflicts without file I/O:
+
+```bash
+adagio conflicts dismiss
+```
+
+---
+
+## adagio daemon
+
+### daemon start / stop / status
+
+```bash
+adagio daemon start
+adagio daemon stop    # Waits up to 30 s for in-flight transfers
+adagio daemon status
+```
+
+---
+
+## adagio bandwidth
+
+### bandwidth status
+
+```bash
+adagio bandwidth status
+```
+
+### bandwidth set
+
+```bash
+adagio bandwidth set [--upload-kbps <N>] [--download-kbps <N>]
+```
+
+### bandwidth clear
+
+```bash
+adagio bandwidth clear
+```
+
+---
+
+## adagio network
+
+### network status
+
+```bash
+adagio network status
+```
+
+### network set
+
+```bash
+adagio network set [--on-metered <allow|throttle|pause>] [--on-battery <allow|throttle|pause>] [--throttle-kbps <N>]
+```
+
+### network block-ssid / unblock-ssid / list-blocked
+
+```bash
+adagio network block-ssid <SSID>
+adagio network unblock-ssid <SSID>
+adagio network list-blocked
+```
+
+---
+
+## adagio vfs
+
+### vfs status
+
+```bash
+adagio vfs status [--pair-id <ID>]
+```
+
+### vfs pin / unpin
+
+```bash
+adagio vfs pin <PATH> --pair-id <ID>
+adagio vfs unpin <PATH> --pair-id <ID>
+```
+
+### vfs evict
+
+```bash
+adagio vfs evict [<PATH>] --pair-id <ID> [--all]
+```
+
+---
+
+## adagio e2ee
+
+### e2ee init
+
+Initialise E2EE for a pair and print the one-time BIP-39 mnemonic:
+
+```bash
+adagio e2ee init [--pair-id <ID>]
+```
+
+### e2ee pair
+
+Pair this device with an existing E2EE key:
+
+```bash
+adagio e2ee pair [--pair-id <ID>] [--mnemonic <WORDS>]
+```
+
+### e2ee status
+
+```bash
+adagio e2ee status [--pair-id <ID>]
+```
+
+---
+
+## Global flags
+
+| Flag | Description |
+|------|-------------|
+| `--json` | Output JSON instead of formatted text (place before subcommand) |
+| `--help` | Show help |
+| `--version` | Show version |

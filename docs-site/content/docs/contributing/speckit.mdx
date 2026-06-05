@@ -1,0 +1,37 @@
+---
+title: SpecKit
+description: The AI-assisted feature specification workflow used in Adagio.
+---
+
+SpecKit is a set of Claude Code slash commands that guide a feature from idea to implementation with structured, reviewable artifacts.
+
+## Commands
+
+| Command | What it does |
+|---------|-------------|
+| `/speckit-specify` | Turns a natural language description into a feature spec (`spec.md`) with user stories, FRs, and acceptance criteria |
+| `/speckit-clarify` | Asks up to 5 targeted questions to resolve underspecified areas in the spec |
+| `/speckit-plan` | Generates an implementation plan (`plan.md`) with tech stack, architecture, and file structure |
+| `/speckit-tasks` | Produces `tasks.md` — an ordered, dependency-resolved task list ready to execute |
+| `/speckit-implement` | Executes the task list, marking tasks complete as it goes |
+| `/speckit-git-commit` | Stages and commits the result |
+| `/speckit-analyze` | Runs a cross-artifact consistency and quality analysis |
+
+## Artifact locations
+
+All SpecKit artifacts for feature NNN live at:
+
+```
+specs/NNN-feature-name/
+├── spec.md
+├── research.md
+├── plan.md
+├── data-model.md
+├── tasks.md
+├── contracts/
+└── checklists/
+```
+
+## Adding documentation alongside a feature
+
+When implementing a new feature (e.g. `019-lan-peer`), add corresponding MDX pages to `docs-site/content/docs/` as part of the same PR. Update the relevant `meta.json` and verify the build passes.

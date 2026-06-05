@@ -1,0 +1,192 @@
+---
+title: Message Types
+description: All DaemonRequest, DaemonResponse, and DaemonEvent variants with JSON schemas.
+---
+
+## DaemonRequest variants
+
+All requests are serialised as `{"id": N, "method": "<snake_case>", ...fields}`.
+
+### Ping
+
+Health-check; returns version and uptime.
+
+```json
+{"id": 1, "method": "ping"}
+```
+
+### StopDaemon
+
+Request graceful shutdown (30 s drain).
+
+```json
+{"id": 2, "method": "stop_daemon"}
+```
+
+### SetStartAtLogin
+
+```json
+{"id": 3, "method": "set_start_at_login", "enabled": true}
+```
+
+### GetStatus
+
+Return the current engine-level sync status.
+
+```json
+{"id": 4, "method": "get_status"}
+```
+
+### TriggerSync
+
+```json
+{"id": 5, "method": "trigger_sync", "pair_id": "abc123"}
+```
+
+### PauseSyncAll / ResumeSyncAll
+
+```json
+{"id": 6, "method": "pause_sync_all"}
+{"id": 7, "method": "resume_sync_all"}
+```
+
+### GetActivityLog
+
+```json
+{"id": 8, "method": "get_activity_log", "limit": 50, "filter": null}
+```
+
+### SearchFiles
+
+```json
+{"id": 9, "method": "search_files", "query": "report", "limit": 20}
+```
+
+### GetSectionCounts
+
+```json
+{"id": 10, "method": "get_section_counts", "pair_id": null}
+```
+
+### GetErrorItems
+
+```json
+{"id": 11, "method": "get_error_items", "pair_id": "abc123"}
+```
+
+### ListPairs / CreatePair / DeletePair / ListSyncedFiles / ListRemoteTree
+
+```json
+{"id": 12, "method": "list_pairs"}
+
+{"id": 13, "method": "create_pair",
+  "account_id": "acct1",
+  "local_root": "/home/user/Nextcloud",
+  "remote_root": "/",
+  "vfs_enabled": false,
+  "vfs_cache_max_bytes": 21474836480,
+  "vfs_eviction_threshold_bytes": 17179869184}
+
+{"id": 14, "method": "delete_pair", "pair_id": "abc123", "delete_local_files": false}
+
+{"id": 15, "method": "list_synced_files", "pair_id": "abc123", "relative_path": null}
+
+{"id": 16, "method": "list_remote_tree", "pair_id": "abc123"}
+```
+
+### ListAccounts / AddAccount / RemoveAccount / ConnectAccountOAuth2
+
+```json
+{"id": 17, "method": "list_accounts"}
+
+{"id": 18, "method": "add_account",
+  "server_url": "https://cloud.example.com",
+  "username": "alice",
+  "display_name": "Alice",
+  "secret": "app-password"}
+
+{"id": 19, "method": "remove_account", "account_id": "acct1"}
+
+{"id": 20, "method": "connect_account_o_auth2", "server_url": "https://cloud.example.com"}
+```
+
+### Conflicts
+
+```json
+{"id": 21, "method": "list_conflicts", "pair_id": "abc123"}
+{"id": 22, "method": "resolve_conflict", "id": "conflict1", "side": "local"}
+{"id": 23, "method": "dismiss_all_conflicts"}
+```
+
+### Bandwidth
+
+```json
+{"id": 24, "method": "get_bandwidth_status", "account_id": null}
+{"id": 25, "method": "set_bandwidth_limits", "account_id": null, "upload_kbps": 1024, "download_kbps": 2048}
+{"id": 26, "method": "clear_bandwidth_limits", "account_id": null}
+```
+
+### Network
+
+```json
+{"id": 27, "method": "get_network_status"}
+{"id": 28, "method": "set_network_policy", "on_metered": "throttle", "on_battery": null, "throttle_kbps": 512}
+{"id": 29, "method": "manage_blocked_ssid", "action": "add", "ssid": "CoffeeShop"}
+```
+
+### VFS
+
+```json
+{"id": 30, "method": "get_vfs_stats", "pair_id": "abc123"}
+{"id": 31, "method": "set_vfs_pin", "pair_id": "abc123", "path": "Documents/", "pinned": true}
+{"id": 32, "method": "evict_vfs_file", "pair_id": "abc123", "path": "Videos/large.mp4"}
+```
+
+### E2EE
+
+```json
+{"id": 33, "method": "e2ee_init", "pair_id": "abc123"}
+{"id": 34, "method": "e2ee_pair", "pair_id": "abc123", "mnemonic": "abandon ability ..."}
+{"id": 35, "method": "e2ee_status", "pair_id": "abc123"}
+{"id": 36, "method": "e2ee_disable", "pair_id": "abc123"}
+```
+
+---
+
+## DaemonResponse variants
+
+All responses are `{"id": N, "result": <payload>}` or `{"id": N, "error": {...}}`.
+
+| Variant | Payload shape |
+|---------|---------------|
+| `Pong` | `{"version": "0.1.0", "uptime_secs": 3600}` |
+| `Unit` | `{}` |
+| `Status` | JSON object with sync engine state |
+| `Pairs` | Array of pair objects |
+| `Pair` | Single pair object |
+| `Accounts` | Array of account objects |
+| `Account` | Single account object |
+| `SyncedFiles` | Array of file-tree entries |
+| `Strings` | Array of strings (e.g. blocked SSIDs) |
+| `RemoteTree` | Array of remote file entries |
+| `ActivityLog` | Array of log entries |
+| `ErrorItems` | Array of error entries |
+| `Conflicts` | Array of conflict objects |
+| `DismissedCount` | `{"dismissed_count": N}` |
+| `Users` | Array of Nextcloud user objects |
+| `Share` | Share details object |
+| `DaemonStatus` | `{"running": true, "uptime_secs": 3600, "connection_state": "ok"}` |
+
+---
+
+## DaemonEvent variants (push)
+
+Push events are `{"event": "<snake_case>", "payload": {...}}` sent on subscription connections.
+
+| Event | Payload |
+|-------|---------|
+| `conflict_detected` | `{"pending_count": N}` |
+| `conflict_resolved` | `{"id": "...", "pending_count": N}` |
+| `sync_status_changed` | `{"status": "syncing\|idle\|error", "pair_id": "..."}` |
+| `transfer_progress` | `{"pair_id": "...", "path": "...", "bytes_done": N, "bytes_total": N}` |
+| `shutting_down` | `{"reason": "..."}` |

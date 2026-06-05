@@ -1,0 +1,11 @@
+{
+  "title": "User Guide",
+  "pages": [
+    "file-sync",
+    "conflict-resolution",
+    "vfs",
+    "bandwidth",
+    "network-awareness",
+    "e2ee"
+  ]
+}

@@ -70,3 +70,8 @@ perf.data
 
 # Temporary adagio sync files (should never appear in repo)
 .adagio_tmp_*
+
+# docs-site (Next.js + fumadocs)
+docs-site/.next/
+docs-site/out/
+docs-site/.source/

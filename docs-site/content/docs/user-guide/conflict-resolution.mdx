@@ -1,0 +1,30 @@
+---
+title: Conflict Resolution
+description: How Adagio handles sync conflicts between local and remote versions of a file.
+---
+
+## What is a conflict?
+
+A conflict occurs when the same file is modified both locally and on the server between two sync cycles and neither version is a descendant of the other.
+
+## Resolution policies
+
+Configure the conflict policy per pair in **Settings** → **Pairs** → *select pair* → **Conflict policy**:
+
+| Policy | Behaviour |
+|--------|-----------|
+| **Ask** (default) | Pauses sync for the conflicted file and opens the conflict wizard |
+| **Keep Local** | Always keeps the local version; overwrites the server copy |
+| **Keep Remote** | Always keeps the remote version; overwrites the local copy |
+
+## Conflict wizard
+
+When policy is **Ask** the conflict wizard shows:
+
+1. **Local version** — last modified timestamp and size
+2. **Remote version** — last modified timestamp and size
+3. **Choose** — buttons to keep local, keep remote, or keep both (the other copy is renamed `filename.conflict.TIMESTAMP.ext`)
+
+## Activity log
+
+All conflict events (detected, resolved, skipped) are recorded in the activity log. Open it from the tray icon → **Activity**.

@@ -1,0 +1,4 @@
+{
+  "title": "Daemon & IPC",
+  "pages": ["protocol", "message-types"]
+}

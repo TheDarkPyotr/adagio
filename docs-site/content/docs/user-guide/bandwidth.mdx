@@ -1,0 +1,25 @@
+---
+title: Bandwidth Controls
+description: Limit upload and download speeds per account.
+---
+
+## Per-account limits
+
+Adagio implements token-bucket throttling independently for uploads and downloads on each account.
+
+Set limits in **Settings** → **Accounts** → *select account* → **Bandwidth**:
+
+| Setting | Default | Range |
+|---------|---------|-------|
+| Upload limit | Unlimited | 10 KB/s – 1 GB/s |
+| Download limit | Unlimited | 10 KB/s – 1 GB/s |
+
+Enter `0` or leave blank to remove the limit.
+
+## How it works
+
+The bandwidth token bucket refills at the configured rate. Each WebDAV read/write operation consumes tokens proportional to the bytes transferred. When the bucket is empty the transfer sleeps until enough tokens accumulate.
+
+## Effect on sync speed
+
+Throttling affects the propagation stage only. The reconciler and journal continue to track changes at full speed regardless of bandwidth limits.

@@ -1,0 +1,32 @@
+---
+title: File Sync
+description: How Adagio synchronises files with your Nextcloud server.
+---
+
+## How sync works
+
+Adagio uses a daemon process (`adagio-daemon`) that runs in the background and coordinates all sync activity.
+
+The sync pipeline has three stages:
+
+1. **Journal** — a SQLite WAL database records every local file-system event (create, modify, delete, rename).
+2. **Reconciler** — compares journal entries against the remote Nextcloud state and produces a diff of changes to propagate.
+3. **Propagator** — applies the diff: uploads new/changed local files via WebDAV; downloads new/changed remote files.
+
+## Sync status indicators
+
+The system tray icon shows the current state:
+
+| Icon | Meaning |
+|------|---------|
+| Rotating arrows | Sync in progress |
+| Checkmark | Idle — all files up to date |
+| Warning triangle | One or more errors; see activity log |
+
+## Triggering sync manually
+
+Click the tray icon → **Sync Now** to force an immediate sync cycle without waiting for the polling interval.
+
+## Pairs
+
+Only directories configured as *pairs* are synced. A pair links a local directory to a specific remote Nextcloud folder. Manage pairs in **Settings** → **Pairs**.

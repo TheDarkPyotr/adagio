@@ -1,0 +1,101 @@
+@import "tailwindcss";
+@import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/preset.css";
+
+/* ── Self-hosted Geist fonts ──────────────────────────────────────────────── */
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/Geist-Regular.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/Geist-Medium.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/GeistMono-Regular.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/GeistMono-Medium.woff2") format("woff2");
+}
+
+/* ── Adagio midnight design tokens ───────────────────────────────────────── */
+:root {
+  --background: #0f1117;
+  --foreground: #e8eef8;
+  --card: #131820;
+  --card-foreground: #e8eef8;
+  --popover: #131820;
+  --popover-foreground: #e8eef8;
+  --primary: #5b9bd6;
+  --primary-foreground: #0f1117;
+  --secondary: #1e2433;
+  --secondary-foreground: #e8eef8;
+  --muted: #1e2433;
+  --muted-foreground: #9aa5bb;
+  --accent: #1e2433;
+  --accent-foreground: #e8eef8;
+  --destructive: #d96650;
+  --destructive-foreground: #e8eef8;
+  --border: #2a3347;
+  --input: #2a3347;
+  --ring: #82b4e0;
+  --fd-sidebar-background: #131820;
+  --fd-sidebar-border: #2a3347;
+  --fd-nav-background: #0f1117;
+}
+
+/* ── Typography ───────────────────────────────────────────────────────────── */
+body {
+  font-family: "Geist", system-ui, sans-serif;
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+code,
+pre,
+kbd,
+samp,
+tt {
+  font-family: "Geist Mono", ui-monospace, monospace;
+}
+
+/* ── Code block overrides (Shiki vitesse-dark base) ─────────────────────── */
+.shiki,
+.shiki span {
+  background-color: #131820 !important;
+}
+
+/* string/template */ .shiki .token.string,
+.shiki .token.template-string { color: #6ab88a !important; }
+/* keyword */ .shiki .token.keyword { color: #5b9bd6 !important; }
+/* comment */ .shiki .token.comment { color: #616e82 !important; }
+/* number/literal */ .shiki .token.number,
+.shiki .token.boolean { color: #d4a04a !important; }
+/* operator/punctuation */ .shiki .token.operator,
+.shiki .token.punctuation { color: #e8eef8 !important; }
+
+/* ── Admonition colours ───────────────────────────────────────────────────── */
+.fd-callout[data-type="note"] { --fd-callout-color: #5b9bd6; }
+.fd-callout[data-type="info"] { --fd-callout-color: #5b9bd6; }
+.fd-callout[data-type="tip"]  { --fd-callout-color: #6ab88a; }
+.fd-callout[data-type="warn"],
+.fd-callout[data-type="warning"] { --fd-callout-color: #d4a04a; }
+.fd-callout[data-type="danger"],
+.fd-callout[data-type="error"] { --fd-callout-color: #d96650; }
