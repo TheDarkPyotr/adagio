@@ -1,0 +1,24 @@
+---
+title: Account Setup
+description: Adding and managing Nextcloud accounts in Adagio.
+---
+
+## Adding a Nextcloud account
+
+1. Open Adagio from the system tray → **Settings** → **Accounts** → **Add account**
+2. Enter your Nextcloud server URL (e.g. `https://cloud.example.com`)
+3. Enter your username and password
+4. Click **Test connection** — Adagio verifies the credentials before saving
+5. Click **Add** — the account is now paired and the first sync begins
+
+## Credential storage
+
+Passwords are stored in the system keychain (libsecret / kwallet). Adagio never stores plaintext passwords on disk.
+
+## What "paired" means
+
+A *pair* links a local directory on your computer to a remote Nextcloud folder. After account setup you can configure pairs in **Settings** → **Pairs**.
+
+## Removing an account
+
+**Settings** → **Accounts** → select the account → **Remove**. This stops sync for all pairs belonging to that account but does not delete local files.

@@ -1,4 +1,4 @@
-/* website.jsx — adagio.so landing page (modernized v2) */
+/* website.jsx — landing page (modernized v2) */
 
 function Website() {
   const [tab, setTab] = React.useState('linux');
@@ -522,8 +522,8 @@ function WebDownload({ tab, setTab }) {
     { id: 'win',   label: 'Windows', sub: 'msi · winget · scoop',            icon: <WindowsGlyph /> },
   ];
   const installs = {
-    linux: ['flatpak install flathub so.adagio.Adagio', 'apt install adagio', 'dnf install adagio', 'curl adagio.so/install | sh'],
-    mac:   ['brew install --cask adagio', 'curl adagio.so/install | sh'],
+    linux: ['flatpak install flathub so.adagio.Adagio', 'apt install adagio', 'dnf install adagio', 'curl https://thedarkpyotr.github.io/adagio/install | sh'],
+    mac:   ['brew install --cask adagio', 'curl https://thedarkpyotr.github.io/adagio/install | sh'],
     win:   ['winget install Adagio.Adagio', 'scoop install adagio'],
   };
   const files = {
@@ -570,7 +570,7 @@ function WebDownload({ tab, setTab }) {
             </button>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <Icon name="shield" size={14} color="var(--forest)" />
-              <Mono>signed by Sound GmbH · SHA256 3f1b…a07c</Mono>
+              <Mono>signed by Luca · SHA256 3f1b…a07c</Mono>
             </div>
           </div>
           <div style={{ background: 'var(--ink)', padding: 24, borderRadius: 'var(--r-2)', fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--cream)', display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -589,7 +589,7 @@ function WebDownload({ tab, setTab }) {
         <div style={{ marginTop: 24, padding: 24, background: 'var(--paper-2)', borderRadius: 'var(--r-3)', border: '1px solid var(--hairline)', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 32 }}>
           {[
             ['Source', 'github.com/adagio/adagio'],
-            ['Verify', 'minisign keys · adagio.so/keys'],
+            ['Verify', 'minisign keys · https://thedarkpyotr.github.io/adagio/keys'],
             ['Mirror', 'EU · Frankfurt · 146 ms'],
           ].map(([h, b]) => (
             <div key={h}>
@@ -651,7 +651,7 @@ function WebFooter() {
             adagio
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end', paddingBottom: 24 }}>
-            <Mono style={{ color: 'var(--ink)' }}>made in leipzig</Mono>
+            <Mono style={{ color: 'var(--ink)' }}>made in Munich</Mono>
             <Mono>by sound gmbh</Mono>
             <Mono>since 2024</Mono>
           </div>
@@ -665,7 +665,7 @@ function WebFooter() {
             <AdagioWord size={24} weight={500} />
           </div>
           <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--ink-soft)', maxWidth: 280, margin: 0 }}>
-            Adagio is made in Leipzig by a small studio called Sound. We design tools you stop noticing.
+            Adagio is made in Munich by a small studio called Sound. We design tools you stop noticing.
           </p>
           <div style={{ marginTop: 24, padding: '10px 14px', display: 'inline-flex', alignItems: 'center', gap: 10, background: 'var(--paper)', border: '1px solid var(--hairline)', borderRadius: 'var(--r-2)' }}>
             <span style={{ width: 7, height: 7, borderRadius: 4, background: 'var(--good)' }}/>
@@ -684,7 +684,7 @@ function WebFooter() {
         ))}
       </div>
       <div style={{ marginTop: 28, display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-muted)' }}>
-        <span>© 2026 Sound GmbH · Leipzig · AGPL-3.0</span>
+        <span>© 2026 · Munich · AGPL-3.0</span>
         <span style={{ display: 'flex', gap: 24 }}>
           <span>Imprint</span>
           <span>Privacy</span>

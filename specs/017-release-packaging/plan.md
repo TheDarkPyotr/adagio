@@ -1,92 +1,130 @@
-# Implementation Plan: Binary Release Packaging
+# Implementation Plan: [FEATURE]
 
-**Branch**: `017-release-packaging` | **Date**: 2026-06-03 | **Spec**: [spec.md](spec.md)
+**Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
 
-**Input**: Feature specification from `specs/017-release-packaging/spec.md`
+**Input**: Feature specification from `/specs/[###-feature-name]/spec.md`
+
+**Note**: This template is filled in by the `/speckit-plan` command. See `.specify/templates/plan-template.md` for the execution workflow.
 
 ## Summary
 
-Automate binary release packaging for Adagio: a tag-triggered GitHub Actions workflow builds `.deb`, `.rpm`, `.tar.gz`, and `.dmg` artifacts using Tauri's bundler (with `externalBin` for daemon + CLI), generates a changelog via `git-cliff`, attaches SHA-256 checksums, and publishes a GitHub Release. Linux packages include a custom XDG `.desktop` file and icons at all standard sizes.
+[Extract from feature spec: primary requirement + technical approach from research]
 
 ## Technical Context
 
-**Language/Version**: Rust 1.78 (stable), workspace edition 2021
+<!--
+  ACTION REQUIRED: Replace the content in this section with the technical details
+  for the project. The structure here is presented in advisory capacity to guide
+  the iteration process.
+-->
 
-**Primary Dependencies**:
-- Tauri 2 (`tauri build`) — produces `.deb`, `.rpm`, `.AppImage`, `.dmg` from one command
-- `git-cliff` — changelog generation from conventional commits
-- `softprops/action-gh-release` (GitHub Action) — publish release + attach artifacts
-- `sha256sum` / `shasum -a 256` — checksum generation
+**Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]
 
-**Storage**: N/A (CI pipeline artifacts; no persistent storage)
+**Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]
 
-**Testing**: `cargo test --workspace` (existing); smoke test via `dpkg --info` / `rpm -qip` in CI
+**Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]
 
-**Target Platform**: Linux (Ubuntu runner for `.deb`/`.rpm`/`.tar.gz`), macOS (macOS runner for `.dmg`)
+**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]
 
-**Project Type**: CI/CD pipeline + packaging configuration (no new Rust code)
+**Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]
 
-**Performance Goals**: Full pipeline (test → build → publish) completes in < 30 min (SC-002)
+**Project Type**: [e.g., library/cli/web-service/mobile-app/compiler/desktop-app or NEEDS CLARIFICATION]
 
-**Constraints**:
-- All three components (`adagio-desktop`, `adagio-daemon`, `adagio-cli`) must be in one package (FR-003)
-- Version MUST match between `Cargo.toml` workspace version and git tag
-- No macOS code signing / notarization in v1
+**Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]
 
-**Scale/Scope**: Single-maintainer release workflow; targets Ubuntu 22.04 and Fedora 40 as primary Linux targets
+**Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]
+
+**Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
 
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
+Verify each gate; mark ✅ pass / ❌ fail / N/A:
+
 | Gate | Principle | Status |
 |------|-----------|--------|
-| Tests authored and FAIL before implementation begins | I. Test-First | ✅ CI smoke tests validate packages before publish step |
-| All public Rust items have `///` doc comments | II. Documentation as Code | N/A — no new public Rust items |
-| ADR recorded in `docs/adr/` for significant design decisions | II. Documentation as Code | ✅ ADR for `externalBin` bundling strategy added in contracts |
-| Structured logging added to all new sync/network operations | III. Observability | N/A — CI pipeline, not runtime code |
-| No `println!` in production code paths | III. Observability | N/A |
-| New feature implemented as independent crate/module with no direct coupling to core | IV. Extensibility | N/A — CI config only |
-| Cross-module calls go through defined trait/interface contracts | IV. Extensibility | N/A |
-| Idle memory budget <100 MB RSS confirmed or N/A for this feature | V. Performance-Oriented | N/A |
-| UI actions provide feedback within 100 ms confirmed or N/A | V. Performance-Oriented | N/A |
-| Benchmarks added for any hot-path changes (sync diff, file I/O, network) | V. Performance-Oriented | N/A |
-| `cargo clippy -- -D warnings` passes | Dev Workflow | ✅ Existing CI gate; release workflow inherits |
-| `cargo fmt --check` passes | Dev Workflow | ✅ Existing CI gate; release workflow inherits |
-| All `unsafe` blocks have `// SAFETY:` comments | Dev Workflow | N/A |
-| All three platform CI targets (Linux, macOS, Windows) pass | Technology | ✅ Linux + macOS in release matrix; Windows best-effort |
+| Tests authored and FAIL before implementation begins | I. Test-First | |
+| All public Rust items have `///` doc comments | II. Documentation as Code | |
+| ADR recorded in `docs/adr/` for significant design decisions | II. Documentation as Code | |
+| Structured logging added to all new sync/network operations | III. Observability | |
+| No `println!` in production code paths | III. Observability | |
+| New feature implemented as independent crate/module with no direct coupling to core | IV. Extensibility | |
+| Cross-module calls go through defined trait/interface contracts | IV. Extensibility | |
+| Idle memory budget <100 MB RSS confirmed or N/A for this feature | V. Performance-Oriented | |
+| UI actions provide feedback within 100 ms confirmed or N/A | V. Performance-Oriented | |
+| Benchmarks added for any hot-path changes (sync diff, file I/O, network) | V. Performance-Oriented | |
+| `cargo clippy -- -D warnings` passes | Dev Workflow | |
+| `cargo fmt --check` passes | Dev Workflow | |
+| All `unsafe` blocks have `// SAFETY:` comments | Dev Workflow | |
+| All three platform CI targets (Linux, macOS, Windows) pass | Technology | |
 
 ## Project Structure
 
 ### Documentation (this feature)
 
 ```text
-specs/017-release-packaging/
-├── plan.md              # This file
-├── research.md          # Phase 0 output
-├── contracts/
-│   └── release-workflow.md   # Release pipeline contract
-└── tasks.md             # Phase 2 output (/speckit-tasks)
+specs/[###-feature]/
+├── plan.md              # This file (/speckit-plan command output)
+├── research.md          # Phase 0 output (/speckit-plan command)
+├── data-model.md        # Phase 1 output (/speckit-plan command)
+├── quickstart.md        # Phase 1 output (/speckit-plan command)
+├── contracts/           # Phase 1 output (/speckit-plan command)
+└── tasks.md             # Phase 2 output (/speckit-tasks command - NOT created by /speckit-plan)
 ```
 
 ### Source Code (repository root)
+<!--
+  ACTION REQUIRED: Replace the placeholder tree below with the concrete layout
+  for this feature. Delete unused options and expand the chosen structure with
+  real paths (e.g., apps/admin, packages/something). The delivered plan must
+  not include Option labels.
+-->
 
 ```text
-.github/
-└── workflows/
-    └── release.yml          # NEW: tag-triggered release pipeline
+# [REMOVE IF UNUSED] Option 1: Single project (DEFAULT)
+src/
+├── models/
+├── services/
+├── cli/
+└── lib/
 
-crates/adagio-desktop/
-├── tauri.conf.json          # MODIFY: add icon sizes, externalBin, desktopTemplate
-├── icons/                   # MODIFY: add 16/24/48/64/256/512 png refs
-└── bundler/
-    └── adagio.desktop.template  # NEW: custom XDG desktop entry template
+tests/
+├── contract/
+├── integration/
+└── unit/
 
-cliff.toml                   # NEW: git-cliff changelog config (repo root)
+# [REMOVE IF UNUSED] Option 2: Web application (when "frontend" + "backend" detected)
+backend/
+├── src/
+│   ├── models/
+│   ├── services/
+│   └── api/
+└── tests/
+
+frontend/
+├── src/
+│   ├── components/
+│   ├── pages/
+│   └── services/
+└── tests/
+
+# [REMOVE IF UNUSED] Option 3: Mobile + API (when "iOS/Android" detected)
+api/
+└── [same as backend above]
+
+ios/ or android/
+└── [platform-specific structure: feature modules, UI flows, platform tests]
 ```
 
-**Structure Decision**: Single workflow file + config changes. No new crates. All changes are in CI config, Tauri config, and asset references.
+**Structure Decision**: [Document the selected structure and reference the real
+directories captured above]
 
 ## Complexity Tracking
 
-> No constitution violations requiring justification.
+> **Fill ONLY if Constitution Check has violations that must be justified**
+
+| Violation | Why Needed | Simpler Alternative Rejected Because |
+|-----------|------------|-------------------------------------|
+| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
+| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |

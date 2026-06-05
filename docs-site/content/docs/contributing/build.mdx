@@ -1,0 +1,50 @@
+---
+title: Build Guide
+description: How to build and preview the Adagio documentation locally.
+---
+
+## Prerequisites
+
+- **Node.js 20+** and **npm** (or pnpm / bun)
+- The `docs-site/` directory inside the Adagio repository
+
+## Install dependencies
+
+```bash
+cd docs-site
+npm ci
+```
+
+## Local preview
+
+```bash
+npm run dev
+```
+
+Open `http://localhost:3000/docs` in your browser. Changes to MDX files hot-reload automatically.
+
+## Production build
+
+```bash
+npm run build
+```
+
+Output is placed in `docs-site/out/`. This is the directory deployed to GitHub Pages.
+
+To preview the production build locally:
+
+```bash
+npx serve docs-site/out
+```
+
+## Type checking
+
+```bash
+npm run typecheck
+```
+
+## Adding a new page
+
+1. Create an `.mdx` file in the appropriate `content/docs/<section>/` directory.
+2. Add the page slug to the corresponding `meta.json` `pages` array.
+3. Run `npm run build` — a missing file or slug mismatch will produce a build error.

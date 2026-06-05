@@ -1,0 +1,45 @@
+---
+title: Architecture Overview
+description: How the Adagio crates fit together.
+---
+
+Adagio is a Rust/Tauri application structured as a Cargo workspace with eight crates.
+
+## Crate map
+
+| Crate | Purpose |
+|-------|---------|
+| `adagio-core` | Shared domain types, sync engine (journal, reconciler, propagator), SQLite WAL journal |
+| `adagio-daemon` | Long-running background process; hosts the sync engine and Unix socket IPC server |
+| `adagio-desktop` | Tauri + React desktop UI; communicates with the daemon via IPC |
+| `adagio-cli` | Command-line interface; thin client that sends IPC requests to the daemon |
+| `adagio-ipc` | IPC message types (`DaemonRequest`, `DaemonResponse`, `DaemonEvent`) shared by all crates |
+| `adagio-nextcloud` | Nextcloud WebDAV and API client (file listing, propfind, upload, metadata) |
+| `adagio-e2ee` | Nextcloud E2EE v2 protocol implementation (RSA, AES-128-GCM, metadata, mnemonic) |
+| `adagio-vfs` | FUSE3 virtual filesystem driver for on-demand file delivery |
+
+## Architecture diagram
+
+```
+┌─────────────────┐   IPC (Unix socket)  ┌───────────────────────────────┐
+│  adagio-desktop │◄────────────────────►│          adagio-daemon         │
+│  (Tauri/React)  │                      │  ┌───────────┐  ┌──────────┐  │
+└─────────────────┘                      │  │ SyncEngine│  │ IPC srv  │  │
+                                         │  └─────┬─────┘  └──────────┘  │
+┌─────────────────┐   IPC (Unix socket)  │        │                       │
+│   adagio-cli    │◄────────────────────►│  ┌─────▼─────┐                │
+│   (clap CLI)    │                      │  │ Propagator│                │
+└─────────────────┘                      │  └─────┬─────┘                │
+                                         └────────┼───────────────────────┘
+                                                  │ WebDAV
+                                         ┌────────▼──────────┐
+                                         │ adagio-nextcloud  │
+                                         │  (reqwest client) │
+                                         └───────────────────┘
+```
+
+## IPC flow
+
+1. The desktop UI or CLI sends a `DaemonRequest` JSON message over the Unix socket.
+2. The daemon's IPC server deserialises the message, dispatches to the appropriate handler, and returns a `DaemonResponse`.
+3. Push events (`DaemonEvent`) are sent asynchronously to all subscription connections when sync state changes.

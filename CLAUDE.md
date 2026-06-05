@@ -1,12 +1,12 @@
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan at
-`specs/017-release-packaging/plan.md`.
+`specs/018-mkdocs-docs-site/plan.md`.
 
 Key artifacts for this feature:
-- Spec: `specs/017-release-packaging/spec.md`
-- Research & decisions: `specs/017-release-packaging/research.md`
-- Pipeline contract: `specs/017-release-packaging/contracts/release-workflow.md`
+- Spec: `specs/018-mkdocs-docs-site/spec.md`
+- Research & decisions: `specs/018-mkdocs-docs-site/research.md`
+- Site contract: `specs/018-mkdocs-docs-site/contracts/site-contract.md`
 <!-- SPECKIT END -->
 
 ## Current status (branch `013-e2ee-encryption`)

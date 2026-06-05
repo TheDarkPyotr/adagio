@@ -1,0 +1,45 @@
+---
+title: VFS Driver
+description: How Adagio implements on-demand virtual filesystem via FUSE3.
+---
+
+The VFS driver lives in `adagio-vfs` and is managed by a per-pair `VfsPairRunner` task in `adagio-daemon`.
+
+## FUSE3 mount
+
+When VFS is enabled for a pair the daemon mounts a FUSE3 filesystem at the pair's local root. The mount presents the full Nextcloud remote tree as a local directory without downloading any file content in advance.
+
+FUSE3 kernel module forwards all VFS operations (open, read, stat, readdir) to the driver in userspace.
+
+## VfsPairRunner
+
+Each VFS-enabled pair has a `VfsPairRunner` background task that:
+
+1. Fetches and caches the remote directory tree from Nextcloud.
+2. Handles FUSE operation callbacks from the kernel.
+3. Manages the pin/evict state machine for each path.
+
+## Pin / evict state machine
+
+Each file has one of three VFS states:
+
+| State | Description |
+|-------|-------------|
+| `Online` | Placeholder only — content fetched on first open |
+| `Pinned` | Content downloaded and retained on disk regardless of cache budget |
+| `Available` | Content downloaded but evictable when cache budget is exceeded |
+
+State transitions:
+
+```
+Online ──open()──► Available
+Available ──pin──► Pinned
+Pinned ──unpin──► Available
+Available ──evict──► Online
+```
+
+## Cache management
+
+The driver tracks total bytes in the `Available` state. When the configured `vfs_cache_max_bytes` threshold is reached the eviction policy removes the least-recently-accessed `Available` files until the cache size drops below `vfs_eviction_threshold_bytes`.
+
+`Pinned` files are never evicted.

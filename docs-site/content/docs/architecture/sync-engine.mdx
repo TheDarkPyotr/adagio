@@ -1,0 +1,40 @@
+---
+title: Sync Engine
+description: Internals of the Adagio sync engine — journal, reconciler, propagator.
+---
+
+The sync engine lives in `adagio-core` and is orchestrated by `adagio-daemon`.
+
+## Journal
+
+The journal is a SQLite database with WAL mode enabled, stored at:
+
+```
+~/.config/ai.neuralagent.adagio/journal.db
+```
+
+It records every file-system event detected by `inotify` (Linux): create, modify, delete, rename. Each event is stored with a monotonic sequence number, pair ID, relative path, and change type.
+
+The journal acts as a durable event queue so that sync can resume exactly where it left off after a crash or restart.
+
+## Reconciler
+
+The reconciler compares the journal's pending events against the last known remote state (stored in the journal's `remote_state` table). It produces a diff: a list of operations to propagate — upload, download, delete, or conflict-mark.
+
+Operations are deduplicated: if the same file was modified five times between two sync cycles only one upload is produced.
+
+## Propagator
+
+The propagator executes the diff produced by the reconciler:
+
+- **Upload**: reads the local file and sends it to Nextcloud via WebDAV PUT.
+- **Download**: fetches the remote file via WebDAV GET and writes it locally.
+- **Delete**: removes the local or remote file.
+
+## Bulk upload driver
+
+When many files need to be uploaded the propagator uses a parallel bulk-upload driver that runs up to 4 concurrent WebDAV uploads, subject to the per-account bandwidth token bucket.
+
+## Bandwidth token bucket
+
+Each account has an upload and a download token bucket. Buckets are refilled at the configured rate (bytes/s). Transfers consume tokens proportional to bytes. When the bucket is empty the transfer sleeps until tokens are available, achieving precise rate limiting without busy-waiting.

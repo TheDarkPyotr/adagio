@@ -1,0 +1,41 @@
+---
+title: Installation
+description: How to install Adagio on Linux.
+---
+
+Adagio supports several installation methods on Linux.
+
+## DEB package (Debian / Ubuntu)
+
+```bash
+sudo dpkg -i adagio_0.1.0_amd64.deb
+```
+
+## RPM package (Fedora / openSUSE)
+
+```bash
+sudo rpm -i adagio-0.1.0-1.x86_64.rpm
+```
+
+## AppImage
+
+```bash
+chmod +x Adagio_0.1.0_amd64.AppImage
+./Adagio_0.1.0_amd64.AppImage
+```
+
+## Build from source
+
+Prerequisites: Rust stable toolchain, Node.js 22, `libfuse3-dev`, `fuse3`, a system tray provider.
+
+```bash
+git clone https://github.com/TheDarkPyotr/adagio
+cd adagio
+cargo tauri build
+```
+
+The built packages are placed in `target/release/bundle/`.
+
+## System tray requirements
+
+Adagio relies on a system tray implementation. On GNOME ensure `gnome-shell-extension-appindicator` is installed and enabled.

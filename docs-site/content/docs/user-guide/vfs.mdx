@@ -1,0 +1,37 @@
+---
+title: Virtual Filesystem (VFS)
+description: Using Adagio's on-demand file delivery with FUSE3.
+---
+
+## What is VFS on-demand?
+
+Virtual Filesystem (VFS) mode lets Adagio present all your Nextcloud files in the local filesystem without downloading them in advance. Files appear as regular entries but their content is fetched from the server only when an application opens them.
+
+## Requirements
+
+VFS requires FUSE3:
+
+```bash
+# Debian / Ubuntu
+sudo apt install libfuse3-dev fuse3
+
+# Fedora
+sudo dnf install fuse3 fuse3-libs
+```
+
+## Enabling VFS for a pair
+
+**Settings** → **Pairs** → *select pair* → enable **Virtual filesystem (on-demand)**.
+
+<Callout type="warning">VFS cannot be combined with E2EE on the same pair.</Callout>
+
+## Pin and evict
+
+- **Pin** a file or directory to ensure it is always available offline (downloaded proactively).
+- **Evict** a pinned file to free local disk space; it reverts to on-demand delivery.
+
+Right-click any file in the VFS mount to access Pin / Evict options.
+
+## Offline access
+
+Pinned files are available offline. Non-pinned files show a placeholder icon and fail to open without a network connection.

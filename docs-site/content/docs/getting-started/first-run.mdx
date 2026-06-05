@@ -1,0 +1,36 @@
+---
+title: First Run
+description: Launching Adagio for the first time.
+---
+
+After installation, launch Adagio from your application launcher or by running:
+
+```bash
+adagio-desktop
+```
+
+## Onboarding wizard
+
+On first launch the onboarding wizard guides you through:
+
+1. **Welcome** — overview of Adagio features
+2. **Add account** — provide your Nextcloud server URL, username and password
+3. **Choose pairs** — select which local directories to sync with Nextcloud folders
+4. **Review** — confirm settings before the daemon starts
+
+## Daemon auto-start
+
+Adagio registers a systemd user service on first run so the daemon (`adagio-daemon`) starts automatically on login. You can manage it with:
+
+```bash
+systemctl --user status adagio-daemon
+systemctl --user restart adagio-daemon
+```
+
+## Configuration files
+
+All configuration and state files live under:
+
+```
+~/.config/ai.neuralagent.adagio/
+```

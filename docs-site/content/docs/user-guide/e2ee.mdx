@@ -1,0 +1,30 @@
+---
+title: End-to-End Encryption (E2EE)
+description: Encrypting a sync pair with Nextcloud's end-to-end encryption protocol.
+---
+
+## Overview
+
+Adagio implements Nextcloud's E2EE v2 protocol. Files in an E2EE pair are encrypted with AES-128-GCM before upload; the server only ever stores UUID-named ciphertext.
+
+Key material is protected by RSA-2048 and summarised in a BIP-39 mnemonic (24 words) that you must back up.
+
+## Prerequisites
+
+<Callout type="danger">Nextcloud server-side encryption (SSE) must be disabled before E2EE will work. Run on the server: `docker exec --user www-data nextcloud php occ encryption:disable`</Callout>
+
+## Initialising E2EE for a pair
+
+1. In **Settings** → **Pairs** select the pair you want to encrypt
+2. Click **Enable E2EE**
+3. Adagio generates an RSA-2048 key pair, submits a PKCS#10 CSR to the server, and creates an encrypted metadata folder
+4. A 24-word BIP-39 mnemonic is displayed — **write it down and store it safely**; it is the only way to recover your keys
+5. Click **Done** — E2EE is now active for the pair
+
+## What gets stored on the server
+
+Each file is stored as a UUID-named blob. The actual filename and content are only visible to clients that hold the private key.
+
+## Recovery
+
+If you lose access to your keys you can re-initialise E2EE using the BIP-39 mnemonic in **Settings** → **E2EE** → **Recover from mnemonic**.

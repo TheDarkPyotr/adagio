@@ -1,0 +1,26 @@
+---
+title: Network Awareness
+description: How Adagio adapts sync behaviour to the current network and battery state.
+---
+
+## Metered connection detection
+
+Adagio queries NetworkManager to determine whether the active connection is metered (e.g. a mobile hotspot). On metered connections sync pauses automatically.
+
+Override this in **Settings** → **Network** → **Sync on metered connections**.
+
+## Battery state
+
+On battery power Adagio reduces sync frequency to conserve energy. Full sync resumes when AC power is detected.
+
+Override in **Settings** → **Network** → **Sync on battery**.
+
+## SSID blocklist
+
+Add network names (SSIDs) that should never trigger sync — useful for untrusted Wi-Fi or expensive roaming networks.
+
+**Settings** → **Network** → **Blocked SSIDs** → **Add**.
+
+## Manual override
+
+The **Sync Now** button in the tray menu always triggers an immediate cycle regardless of network-awareness rules. Use this when you know a sync is safe.

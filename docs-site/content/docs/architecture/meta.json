@@ -1,0 +1,4 @@
+{
+  "title": "Architecture",
+  "pages": ["overview", "sync-engine", "vfs-driver", "e2ee-protocol"]
+}

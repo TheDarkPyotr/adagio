@@ -1,0 +1,60 @@
+---
+title: IPC Protocol
+description: How the Adagio CLI and desktop frontend communicate with the daemon.
+---
+
+## Transport
+
+The daemon listens on a Unix domain socket at:
+
+```
+~/.config/ai.neuralagent.adagio/daemon.sock
+```
+
+All messages are newline-delimited JSON (NDJSON). Each line is a complete JSON object followed by `\n`.
+
+## Request / response lifecycle
+
+1. **Client sends a request** — a JSON object with an `id` field (integer) and a `method` field identifying the request variant, plus any additional fields as parameters.
+
+```json
+{"id": 1, "method": "get_status"}
+```
+
+2. **Daemon sends a response** — a JSON object with the same `id` and either a `result` field (success) or an `error` field (failure).
+
+```json
+{"id": 1, "result": {"status": "idle", "pairs": []}}
+```
+
+## Error format
+
+```json
+{
+  "id": 1,
+  "error": {
+    "code": "not_found",
+    "message": "Pair abc123 does not exist"
+  }
+}
+```
+
+## Push events (subscription connection)
+
+A client can open a second connection to the same socket and send:
+
+```json
+{"id": 0, "method": "subscribe"}
+```
+
+The daemon will then push events as they occur, without any request:
+
+```json
+{"event": "sync_status_changed", "payload": {"status": "syncing", "pair_id": "abc123"}}
+```
+
+See [Message Types](./message-types) for all `DaemonEvent` variants.
+
+## Versioning
+
+The IPC protocol is versioned via the `Pong` response to a `Ping` request. The `version` field contains the daemon's semver string. Clients should compare the major version to detect incompatibilities.

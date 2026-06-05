@@ -1,0 +1,44 @@
+---
+title: E2EE Protocol
+description: Adagio's implementation of Nextcloud E2EE v2.
+---
+
+The E2EE implementation lives in `adagio-e2ee`. It follows Nextcloud's end-to-end encryption v2 specification.
+
+## Key generation
+
+1. An RSA-2048 key pair is generated on device.
+2. A PKCS#10 certificate signing request (CSR) is submitted to the Nextcloud server via `/ocs/v2.php/apps/end_to_end_encryption/api/v1/public-key`.
+3. The server signs and stores the public key; the private key never leaves the device.
+
+## BIP-39 mnemonic
+
+The RSA private key is exported as PKCS#8 DER, encrypted with AES-256-GCM using a key derived from a randomly-generated 256-bit seed, and stored in the Nextcloud keychain. The seed is encoded as a 24-word BIP-39 mnemonic.
+
+The mnemonic is the only way to restore keys on a new device. **It must be written down and stored safely.**
+
+## V2 metadata format
+
+Nextcloud E2EE v2 stores file metadata in a double-encoded JSON structure:
+
+- The outer envelope is a JSON string that is stored as the `meta-data` field.
+- `serde_json::from_str` is called twice to deserialise the inner object.
+- The `userId` field inside `build_outer`/`parse_outer` is the Nextcloud **username** (e.g. `"alice"`), not the internal adagio UUID.
+
+## Lock / upload / unlock cycle
+
+For every upload to an E2EE pair:
+
+1. **Lock** — POST to `/api/v2/meta-data/{folder_id}/lock` with `X-NC-E2EE-COUNTER` header; returns an `e2e-token`.
+2. **Encrypt** — AES-128-GCM encrypt the file content; generate a random UUID as the ciphertext filename.
+3. **Upload** — WebDAV PUT the ciphertext with the `e2e-token` query parameter.
+4. **Update metadata** — PUT the updated V2 metadata with `e2e-token` and `X-NC-E2EE-SIGNATURE` headers.
+5. **Unlock** — DELETE the lock token.
+
+## AES-128-GCM encryption
+
+Each file is encrypted with a unique 128-bit AES key and 96-bit random nonce. Both are stored encrypted inside the V2 metadata blob, protected by the folder's RSA public key.
+
+## CMS signatures
+
+The V2 metadata is signed using CMS (Cryptographic Message Syntax) with the device's private key and verified by the server and other paired devices.
