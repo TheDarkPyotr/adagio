@@ -6,6 +6,7 @@ const withMDX = createMDX();
 const config = {
   output: "export",
   basePath: "/adagio",
+  trailingSlash: true,
   images: {
     unoptimized: true,
   },
