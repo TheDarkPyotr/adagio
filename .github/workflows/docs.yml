@@ -38,12 +38,20 @@ jobs:
         working-directory: docs-site
         run: npm run build
 
-      # Merge: website at root, docs at /docs/
+      # Assemble the final gh-pages directory:
+      #   /         ← marketing website (docs/website/)
+      #   /docs/    ← fumadocs pages (docs-site/out/docs/)
+      #   /_next/   ← Next.js static assets (docs-site/out/_next/)
+      #   /fonts/   ← handled by next/font/local → inside _next/static/media/
+      # out/index.html is intentionally excluded (would overwrite the website).
       - name: Assemble deploy directory
         run: |
-          mkdir -p _deploy/docs
+          mkdir -p _deploy
           cp -r docs/website/. _deploy/
-          cp -r docs-site/out/. _deploy/docs/
+          cp -r docs-site/out/docs       _deploy/docs
+          cp -r docs-site/out/_next      _deploy/_next
+          cp    docs-site/out/404.html   _deploy/404.html
+          cp    docs-site/out/sitemap.xml _deploy/sitemap.xml 2>/dev/null || true
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4

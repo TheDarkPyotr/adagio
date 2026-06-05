@@ -5,7 +5,7 @@ const withMDX = createMDX();
 /** @type {import('next').NextConfig} */
 const config = {
   output: "export",
-  basePath: "/docs",
+  basePath: "/adagio",
   images: {
     unoptimized: true,
   },

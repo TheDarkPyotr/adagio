@@ -2,40 +2,8 @@
 @import "fumadocs-ui/css/neutral.css";
 @import "fumadocs-ui/css/preset.css";
 
-/* ── Self-hosted Geist fonts ──────────────────────────────────────────────── */
-@font-face {
-  font-family: "Geist";
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url("/fonts/Geist-Regular.woff2") format("woff2");
-}
-
-@font-face {
-  font-family: "Geist";
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-  src: url("/fonts/Geist-Medium.woff2") format("woff2");
-}
-
-@font-face {
-  font-family: "Geist Mono";
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url("/fonts/GeistMono-Regular.woff2") format("woff2");
-}
-
-@font-face {
-  font-family: "Geist Mono";
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-  src: url("/fonts/GeistMono-Medium.woff2") format("woff2");
-}
-
 /* ── Adagio midnight design tokens ───────────────────────────────────────── */
+/* Fonts are loaded via next/font/local in layout.tsx — see --font-sans and --font-mono CSS vars */
 :root {
   --background: #0f1117;
   --foreground: #e8eef8;
@@ -63,7 +31,7 @@
 
 /* ── Typography ───────────────────────────────────────────────────────────── */
 body {
-  font-family: "Geist", system-ui, sans-serif;
+  font-family: var(--font-sans, system-ui, sans-serif);
   background-color: var(--background);
   color: var(--foreground);
 }
@@ -73,7 +41,7 @@ pre,
 kbd,
 samp,
 tt {
-  font-family: "Geist Mono", ui-monospace, monospace;
+  font-family: var(--font-mono, ui-monospace, monospace);
 }
 
 /* ── Code block overrides (Shiki vitesse-dark base) ─────────────────────── */
