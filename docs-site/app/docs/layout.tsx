@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import Image from "next/image";
 import { DocsLayout } from "fumadocs-ui/layouts/docs";
 import { source } from "@/lib/source";
 
@@ -11,11 +10,12 @@ export default function Layout({ children }: { children: ReactNode }) {
       nav={{
         title: (
           <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <Image
-              src="/adagio_banner.png"
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={`${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/logo.svg`}
               alt="Adagio"
-              width={24}
-              height={24}
+              width={20}
+              height={20}
             />
             Adagio
           </span>

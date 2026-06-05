@@ -48,11 +48,12 @@ jobs:
       - name: Assemble deploy directory
         run: |
           mkdir -p _deploy
+          # Website at root
           cp -r docs/website/. _deploy/
-          cp -r docs-site/out/docs  _deploy/docs
-          cp -r docs-site/out/_next _deploy/_next
-          cp    docs-site/out/404.html _deploy/404.html
-          cp    docs-site/out/sitemap.xml _deploy/sitemap.xml 2>/dev/null || true
+          # Copy everything from out/ except index.html (redirect stub that
+          # would overwrite the website's index.html)
+          find docs-site/out -maxdepth 1 -mindepth 1 ! -name 'index.html' \
+            -exec cp -r {} _deploy/ \;
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
