@@ -2,16 +2,14 @@ name: Deploy static content to Pages
 
 on:
   push:
-    branches: ["main"] 
+    branches: ["main"]
+  workflow_dispatch:
 
-# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
-# However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
 concurrency:
   group: "pages"
   cancel-in-progress: false
@@ -26,14 +24,43 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: docs-site/package-lock.json
+
+      - name: Install dependencies
+        working-directory: docs-site
+        run: npm ci
+
+      - name: Build documentation
+        working-directory: docs-site
+        run: npm run build
+
+      # Assemble final site:
+      #   /        ← marketing website  (docs/website/)
+      #   /docs/   ← fumadocs pages     (docs-site/out/docs/)
+      #   /_next/  ← Next.js JS/CSS     (docs-site/out/_next/)
+      # out/index.html (redirect stub) is intentionally excluded
+      # so it never overwrites the website's index.html.
+      - name: Assemble deploy directory
+        run: |
+          mkdir -p _deploy
+          cp -r docs/website/. _deploy/
+          cp -r docs-site/out/docs  _deploy/docs
+          cp -r docs-site/out/_next _deploy/_next
+          cp    docs-site/out/404.html _deploy/404.html
+          cp    docs-site/out/sitemap.xml _deploy/sitemap.xml 2>/dev/null || true
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          # Tell GitHub to only upload your specific subfolder
-          path: 'docs/website'
+          path: '_deploy'
 
       - name: Deploy to GitHub Pages
         id: deployment
